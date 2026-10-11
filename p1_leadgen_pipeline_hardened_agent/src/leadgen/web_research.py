@@ -166,7 +166,7 @@ class FirecrawlBackend:
             if item.get("url")
         ]
         credits = int(body.get("creditsUsed") or firecrawl_search_credits(len(results)))
-        return SearchResponse(results, self._charge("search", credits, body.get("id")))
+        return SearchResponse(results, self._charge("/search", credits, body.get("id")))
 
     def fetch_page(self, url: str) -> FetchResponse:
         body = self._post("/scrape", {"url": url, "formats": ["markdown"], "onlyMainContent": True})
@@ -189,12 +189,14 @@ class FirecrawlBackend:
             fetched_at=datetime.now(UTC),
         )
         credits = int(body.get("creditsUsed") or FIRECRAWL_CREDITS_PER_SCRAPE)
-        return FetchResponse(page, self._charge("scrape", credits, None))
+        return FetchResponse(page, self._charge("/scrape", credits, None))
 
-    def _charge(self, endpoint: str, credits: int, request_id: str | None) -> Charge:
+    def _charge(self, path: str, credits: int, request_id: str | None) -> Charge:
+        # The ledger names the endpoint as the API path, e.g. "/v2/scrape", so it can be
+        # reconciled against Firecrawl's own usage figures.
         return Charge(
             service=self.name,
-            endpoint=endpoint,
+            endpoint=f"{urlsplit(self._base_url).path}{path}",
             credits=credits,
             cost_usd=self._usd_per_credit * credits,
             request_id=request_id,
@@ -432,20 +434,22 @@ class WebResearcher:
     def _record_charge(self, charge: Charge | None) -> None:
         if charge is None:
             return
-        # Call numbers are unique per run; the next one is read in the same statement.
+        # A non-Claude ledger row names its endpoint and the provider's own units (credits here)
+        # and has no model; the token columns keep their zero defaults. Call numbers are unique
+        # per run; the next one is read in the same statement.
         self.connection.execute(
             """
-            INSERT INTO cost_ledger (run_id, service, model, call_number, input_tokens,
-                cache_creation_input_tokens, cache_read_input_tokens, output_tokens, cost_usd,
-                request_id)
+            INSERT INTO cost_ledger
+                (run_id, service, endpoint, call_number, provider_units, cost_usd, request_id)
             SELECT %(run_id)s, %(service)s, %(endpoint)s, coalesce(max(call_number), 0) + 1,
-                   0, 0, 0, 0, %(cost_usd)s, %(request_id)s
+                   %(provider_units)s, %(cost_usd)s, %(request_id)s
             FROM cost_ledger WHERE run_id = %(run_id)s
             """,
             {
                 "run_id": self.run_id,
                 "service": charge.service,
-                "endpoint": f"{charge.service}/{charge.endpoint}",
+                "endpoint": charge.endpoint,
+                "provider_units": charge.credits,
                 "cost_usd": charge.cost_usd,
                 "request_id": charge.request_id,
             },
