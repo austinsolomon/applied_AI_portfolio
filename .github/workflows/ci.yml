@@ -54,8 +54,13 @@ jobs:
       - name: Install from the lockfile (fails if uv.lock is out of date)
         run: uv sync --locked
 
-      - name: Commit checks (the same hooks that run locally)
+      # The gitleaks hook is skipped here because the next step scans the full history with the same
+      # gitleaks version. The hook would otherwise compile gitleaks from source on every run, which
+      # depends on downloading a Go toolchain and has failed on network timeouts.
+      - name: Commit checks (the same hooks that run locally, except gitleaks)
         working-directory: .
+        env:
+          SKIP: gitleaks
         run: uvx pre-commit@4.6.2 run --all-files --show-diff-on-failure
 
       - name: Secret scan of the full git history
