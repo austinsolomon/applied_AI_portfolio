@@ -109,3 +109,17 @@ def test_ask_without_an_api_key_explains_the_fix(empty_database_url: str, tmp_pa
 
     assert completed.returncode == 2
     assert "ANTHROPIC_API_KEY is not set" in completed.stderr
+
+
+def test_enrich_without_a_blitz_key_explains_instead_of_calling(
+    empty_database_url: str, tmp_path: Path
+) -> None:
+    completed = run_leadgen(
+        "enrich",
+        "https://www.cedar-massage.example",
+        env={"DATABASE_URL": empty_database_url, "PATH": ""},
+        cwd=tmp_path,
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr.strip() == "BLITZ_API_KEY is not set. Add it to .env (never commit it)."
