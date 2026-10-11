@@ -1,0 +1,12 @@
+# Only what the Dockerfile copies belongs in the build context. Secrets never do.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!config/
+.env
+.env.*
+**/__pycache__/
+**/*.py[cod]
+**/.DS_Store

@@ -32,7 +32,7 @@ flowchart LR
 | Python package, pinned toolchain, lockfile | done |
 | Lint, format and pre-commit hooks (incl. secret scanning) | done |
 | Tests and continuous integration | done |
-| Container image | planned |
+| Container image: python-slim + locked deps + Claude Code CLI, built and run in CI | done |
 | Database plumbing: local Postgres, typed config, migrations | done |
 | CRM schema, demand gaps, demo data | done |
 | Demand dashboard | done |
@@ -191,7 +191,22 @@ pre-commit run --all-files
 
 On GitHub, CI runs on every pull request and every push to `main`: install from the lockfile (failing if
 `uv.lock` is out of date), the same commit checks, a secret scan of the full git history, migrations
-against a fresh Postgres service container, and the tests.
+against a fresh Postgres service container, the tests, and the container image (built, then run to
+print its version and to migrate a fresh database).
+
+### Container image
+
+`Dockerfile` builds one image for laptop, CI and cloud: `python:3.12-slim`, the package and its
+dependencies installed from `uv.lock` (`uv sync --locked`), and the Claude Code CLI the Agent SDK
+drives, at a pinned version. It runs as a non-root user, with `leadgen` as the entrypoint. The build
+context is an allowlist (`.dockerignore`), so `.env` can never end up in a layer.
+
+```bash
+docker build -t leadgen .
+docker run --rm leadgen --version
+docker run --rm --env-file .env --network host leadgen db migrate   # Linux: reach a host Postgres
+LEADGEN_CONTAINER_TESTS=1 uv run pytest tests/test_container.py       # also build and run the image
+```
 
 ### Database
 
