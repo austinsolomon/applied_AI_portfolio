@@ -38,6 +38,7 @@ flowchart LR
 | Demand dashboard | done |
 | Raw agent loop on the Claude API | done |
 | US Census places and market expansion | done |
+| Scrape plans, the one approval, run state (nothing runs twice) | done |
 | Sourcing, dedupe, enrichment, qualification, CRM write | planned |
 | Orchestrator agent, approval, budget guard, evals | planned |
 | Scheduled cloud deployment | planned |
