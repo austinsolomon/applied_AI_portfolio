@@ -45,7 +45,7 @@ repeatable at scale.
 | 21 | Retrieval and memory | Hardening | Past samples and recorded lessons inform the planner | Postgres full-text search |
 | 22 | Demo dataset | Hardening | Synthetic markets, goals, CRM leads and recorded scrapes | `db/seed.sql` |
 | 23 | Offline replay | Hardening | Recorded agent sessions stand in for live model calls, so tests and the demo cost nothing | JSON fixtures |
-| 24 | Migrations | Hardening | Schema changes as numbered SQL files | `db/migrations/` |
+| 24 | Migrations | Hardening | Schema changes as numbered SQL files, each applied once in a transaction; edited history refused | `src/leadgen/migrations/` · `leadgen db migrate` |
 | 25 | Tests and eval regression | Hardening | Every stage tested against a real Postgres; grader and judge fixtures must keep passing | pytest · respx |
 | 26 | Tooling and CI | Hardening | Pinned dependencies, lint, typed config; lint → migrate → test → evals → build on every push | uv · ruff · pre-commit · pydantic-settings · GitHub Actions |
 | 27 | Container and deployment | Hardening | One image; hosted database; weekly scheduled run; keys outside the code | Docker · Supabase (Postgres host) · Cloud Run Jobs · Cloud Scheduler · Secret Manager · Workload Identity Federation |

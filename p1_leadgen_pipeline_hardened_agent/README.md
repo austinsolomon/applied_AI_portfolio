@@ -33,7 +33,8 @@ flowchart LR
 | Lint, format and pre-commit hooks (incl. secret scanning) | done |
 | Tests and continuous integration | done |
 | Container image | planned |
-| Postgres schema, demo data, dashboard | planned |
+| Database plumbing: local Postgres, typed config, migrations | done |
+| CRM schema, demo data, dashboard | planned |
 | Raw agent loop on the Claude API | planned |
 | Sourcing, dedupe, enrichment, qualification, CRM write | planned |
 | Orchestrator agent, approval, budget guard, evals | planned |
@@ -41,12 +42,15 @@ flowchart LR
 
 ## Quickstart
 
-Requires [uv](https://docs.astral.sh/uv/). uv installs the pinned Python version itself.
+Requires [uv](https://docs.astral.sh/uv/) (it installs the pinned Python version itself) and Docker.
 
 ```bash
 cd p1_leadgen_pipeline_hardened_agent
-uv sync           # create .venv from uv.lock
-uv run leadgen    # prints the installed version
+uv sync                       # create .venv from uv.lock
+docker compose up -d --wait db   # local Postgres 16 on 127.0.0.1:5433
+cp .env.example .env          # DATABASE_URL for the local database
+uv run leadgen db migrate     # apply schema migrations
+uv run pytest                 # tests, against throwaway databases on the same server
 ```
 
 ## Development
@@ -65,12 +69,22 @@ ruff lint and format. Ruff runs through `uv run`, so the hook, the editor and CI
 ```bash
 uv run ruff check     # lint
 uv run ruff format    # format
-uv run pytest         # tests
+uv run pytest         # tests (needs the database from the quickstart)
 pre-commit run --all-files
 ```
 
 On GitHub, CI runs on every pull request and every push to `main`: install from the lockfile (failing if
-`uv.lock` is out of date), the same commit checks, a secret scan of the full git history, and the tests.
+`uv.lock` is out of date), the same commit checks, a secret scan of the full git history, migrations
+against a fresh Postgres service container, and the tests.
+
+### Database
+
+Configuration is typed: `DATABASE_URL` must be a Postgres URL, or the command stops at startup with a
+message saying how to fix it. Schema changes are numbered SQL files in `src/leadgen/migrations/`,
+applied in order by `leadgen db migrate`. Each file runs once, in its own transaction, and is recorded
+with a checksum; the runner refuses to continue if an applied file was edited or if the database has
+migrations the code does not know about. Tests create a throwaway database per test and drop it
+afterwards.
 
 ## Design
 

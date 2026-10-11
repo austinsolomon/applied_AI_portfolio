@@ -23,6 +23,21 @@ jobs:
     defaults:
       run:
         working-directory: p1_leadgen_pipeline_hardened_agent
+    # Same Postgres version as compose.yaml. CI-only credentials for a database that lives for one job.
+    services:
+      postgres:
+        image: postgres:16.14
+        env:
+          POSTGRES_USER: leadgen
+          POSTGRES_PASSWORD: leadgen_ci
+          POSTGRES_DB: leadgen
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U leadgen -d leadgen"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DATABASE_URL: postgresql://leadgen:leadgen_ci@localhost:5432/leadgen
     steps:
       # Third-party actions are pinned to commit SHAs (tags can be moved); the comment names the release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,6 +61,9 @@ jobs:
       - name: Secret scan of the full git history
         working-directory: .
         run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.0 git /repo --redact --verbose
+
+      - name: Migrations apply cleanly
+        run: uv run leadgen db migrate
 
       - name: Tests
         run: uv run pytest
