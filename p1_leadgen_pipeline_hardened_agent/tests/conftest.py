@@ -9,6 +9,7 @@ import pytest
 from psycopg import sql
 from pydantic import ValidationError
 
+from leadgen.migrate import apply_migrations, discover_migrations
 from leadgen.settings import Settings
 
 
@@ -41,3 +42,11 @@ def empty_database_url(server_database_url: str) -> Iterator[str]:
             admin_connection.execute(
                 sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(database_name))
             )
+
+
+@pytest.fixture
+def migrated_connection(empty_database_url: str) -> Iterator[psycopg.Connection]:
+    """A connection to a fresh database with every packaged migration applied."""
+    with psycopg.connect(empty_database_url, autocommit=True) as connection:
+        apply_migrations(connection, discover_migrations())
+        yield connection
