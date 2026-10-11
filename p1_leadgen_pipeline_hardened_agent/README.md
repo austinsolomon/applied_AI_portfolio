@@ -41,6 +41,7 @@ flowchart LR
 | Scrape plans, the one approval, run state (nothing runs twice) | done |
 | Category config and dedupe against the CRM | done |
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
+| Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
 | Sourcing, qualification, CRM write | planned |
 | Orchestrator agent, approval, budget guard, evals | planned |
 | Scheduled cloud deployment | planned |
