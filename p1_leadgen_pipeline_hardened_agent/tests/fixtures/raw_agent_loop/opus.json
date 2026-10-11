@@ -1,0 +1,120 @@
+{
+  "model": "claude-opus-5-5",
+  "question": "Which market should we source first, and why?",
+  "exchanges": [
+    {
+      "request_messages": [
+        {
+          "role": "user",
+          "content": "Which market should we source first, and why?"
+        }
+      ],
+      "response": {
+        "id": "msg_011Cfw8KUtSiEmHvtotN6hE1",
+        "container": null,
+        "content": [
+          {
+            "id": "toolu_01JFZnkxB2DrE3NtyTi5rWY4",
+            "caller": {
+              "type": "direct"
+            },
+            "input": {},
+            "name": "read_gaps",
+            "type": "tool_use"
+          }
+        ],
+        "diagnostics": null,
+        "model": "claude-opus-5-5",
+        "role": "assistant",
+        "stop_details": null,
+        "stop_reason": "tool_use",
+        "stop_sequence": null,
+        "type": "message",
+        "usage": {
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "inference_geo": "global",
+          "input_tokens": 823,
+          "output_tokens": 28,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "service_tier": "standard"
+        }
+      }
+    },
+    {
+      "request_messages": [
+        {
+          "role": "user",
+          "content": "Which market should we source first, and why?"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "id": "toolu_01JFZnkxB2DrE3NtyTi5rWY4",
+              "caller": {
+                "type": "direct"
+              },
+              "input": {},
+              "name": "read_gaps",
+              "type": "tool_use"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01JFZnkxB2DrE3NtyTi5rWY4",
+              "content": "[{\"market\": \"Phoenix, AZ\", \"leads_available_pct\": 10, \"still_needed\": 60, \"available\": 6, \"short_by\": 54}, {\"market\": \"Los Angeles, CA\", \"leads_available_pct\": 18, \"still_needed\": 80, \"available\": 14, \"short_by\": 66}, {\"market\": \"San Diego, CA\", \"leads_available_pct\": 30, \"still_needed\": 40, \"available\": 12, \"short_by\": 28}, {\"market\": \"Austin, TX\", \"leads_available_pct\": 50, \"still_needed\": 40, \"available\": 20, \"short_by\": 20}, {\"market\": \"Chicago, IL\", \"leads_available_pct\": 55, \"still_needed\": 60, \"available\": 33, \"short_by\": 27}, {\"market\": \"Denver, CO\", \"leads_available_pct\": 80, \"still_needed\": 25, \"available\": 20, \"short_by\": 5}]"
+            }
+          ]
+        }
+      ],
+      "response": {
+        "id": "msg_011Cfw8Kb2mkLLVZKtPDfahN",
+        "container": null,
+        "content": [
+          {
+            "signature": "CAQStQcKEAgSGAI4AUIIdGhpbmtpbmcSDBkG0+NgqruxJ4bTJhoMMsW9M0rHxV4q+XfBIjBN81NymU2fQ5ju2ysWpvvEBUESBNaKf9S+KCQscEnV5ASQ3d6yMrxqyxUno8L0jG0q0gZwbPdok2vu9Ibt2ZlNW/3O9d+40pGsBvImaE1w6FPa/THwCn4UZagHLLfK2nzGSJxtaLIwrMG7hFi7w7xk3i6DZsotLqqc4kIB50WR5vN1SuZJXFN8Ze1ibidqgisXkZkkUGwX9qAwEwgiFZYzHcbx1kTdE/yAnRD/VMyo4HjKjETsUNnyjEj0JCOfWqzDjomvuRXm05rPztC2+vboZtj9exE2HAoExqYPql037JbHJtODs5T75sUDSHKRAhw8xvkkLraSCbngWfZy+fo0S16O1ARO/36CPZBhxJdPOHpr0TYrVkmPBgfJKWDMV6CsewX0EGExiN3cL9cJBjBmddeq9Wrbd3T9krpuaXCsCeCrjPld/tMT3yTmfZSqhJ0AlGp3kqArGWh08ajEefmdABFM8L4uzq6JSVBL5i1guMOqSw0RVv1Z8zPd1Oj4DIrAB5nIle7CPjz7CvXukzQTILeFHhLjWhjejpjrAorcAhgDOr7CN9dhVVSMNu8DhayVa23A+X3cxaVzgNWgScfi8QKEFM9oAMyQMhBw4ItLZ3APEsmMoeyJm0FtxG2k3Ph6yKOzG8//M4/p18LLgJXANRqAiR0qxAK9LQypsP+9EuJGZQpXbcBhYaMZrBQNxFYXNlAcBURwF6pDWWNvFVHCcKGddOkR2NIiB4bxvFQHEQCvlOIE3hLpDRtHYAu1ErSiCL50HpYtAx6+h7gfVpdyTFaKwjKvpZOyTM8cFD4Wt7UqNHX0uLB+V5Fr76YVmngog9HxRBrQHxDlp8lt0SQravcqizISc+gIOaXaQawd3QqRUdmMwVF7fwkoVApbRK9FRPqgqbGPQ5CeLxCs8ymOZweDXepJkoe8yyBpXRNzHUmSgQHUcmwJ8DBD3Hkko80/waE5nNYkAdoNAlm8qsQmTgNExtCUOjx2GBXoJSEMy7CLNjZTV8/8yH2II4FaKXIF44dBGDXlrr41/89zdTSDnW97pju30iUpfQyc2j3B6YDj4YIyYJl3OW9HD6VzU2Za7e822xnDIiV9FQh4mnVUNUhIRApS8+DpaNMFEFs2x09n8ek2ziqsgYbIObsVDCDs8p+2/NP9MogzPSe4nYwS4iPm85KtrEZYeIW7a9OY8CCOBE2EGAE=",
+            "thinking": "",
+            "type": "thinking"
+          },
+          {
+            "text": "{\"market\":\"Los Angeles, CA\",\"leads_available_pct\":18,\"short_by\":66,\"reason\":\"Source Los Angeles first because it is short by the most leads (66): it needs 80 more and has only 14 available, which is 18% coverage. Phoenix has the lowest coverage at 10% (6 of 60), but it is short by 54, so if you'd rather go by coverage than by how many leads are missing, Phoenix comes first. The tool says its list is sorted by biggest gap, but it's actually sorted by coverage.\"}",
+            "type": "text"
+          }
+        ],
+        "diagnostics": null,
+        "model": "claude-opus-5-5",
+        "role": "assistant",
+        "stop_details": null,
+        "stop_reason": "end_turn",
+        "stop_sequence": null,
+        "type": "message",
+        "usage": {
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "inference_geo": "global",
+          "input_tokens": 1153,
+          "output_tokens": 327,
+          "output_tokens_details": {
+            "thinking_tokens": 149
+          },
+          "service_tier": "standard"
+        }
+      }
+    }
+  ]
+}
