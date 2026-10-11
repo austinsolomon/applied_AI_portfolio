@@ -27,3 +27,8 @@ target-version = "py312"
 # E/W: pycodestyle errors and warnings · F: pyflakes (real bugs) · I: import order
 # B: bugbear (likely bugs) · UP: pyupgrade (modern syntax for the target Python)
 select = ["E", "W", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+xfail_strict = true

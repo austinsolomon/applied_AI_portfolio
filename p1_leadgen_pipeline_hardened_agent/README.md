@@ -1,5 +1,7 @@
 # Lead-gen agent
 
+[![CI](https://github.com/austinsolomon/applied_AI_portfolio/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/austinsolomon/applied_AI_portfolio/actions/workflows/ci.yml)
+
 A Claude Agent SDK agent that does the job of a lead-generation operator. It reads a demand dashboard, finds the
 markets furthest below their lead goal, plans the scrapes, and asks a human to approve the plan and a budget once.
 From there it runs unattended: sources businesses from Google Maps and Exa, drops leads already in the CRM, enriches
@@ -29,7 +31,8 @@ flowchart LR
 |---|---|
 | Python package, pinned toolchain, lockfile | done |
 | Lint, format and pre-commit hooks (incl. secret scanning) | done |
-| Tests, CI, container | planned |
+| Tests and continuous integration | done |
+| Container image | planned |
 | Postgres schema, demo data, dashboard | planned |
 | Raw agent loop on the Claude API | planned |
 | Sourcing, dedupe, enrichment, qualification, CRM write | planned |
@@ -62,8 +65,12 @@ ruff lint and format. Ruff runs through `uv run`, so the hook, the editor and CI
 ```bash
 uv run ruff check     # lint
 uv run ruff format    # format
+uv run pytest         # tests
 pre-commit run --all-files
 ```
+
+On GitHub, CI runs on every pull request and every push to `main`: install from the lockfile (failing if
+`uv.lock` is out of date), the same commit checks, a secret scan of the full git history, and the tests.
 
 ## Design
 
