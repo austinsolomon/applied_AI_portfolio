@@ -42,7 +42,8 @@ flowchart LR
 | Category config and dedupe against the CRM | done |
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
 | Sourcing, qualification, CRM write | planned |
-| Orchestrator agent, approval, budget guard, evals | planned |
+| Eval capture, weekly review page, labels exported as test fixtures | done |
+| Orchestrator agent, approval, budget guard | planned |
 | Scheduled cloud deployment | planned |
 
 ## Quickstart
@@ -58,6 +59,7 @@ uv run leadgen db migrate     # apply schema migrations
 uv run leadgen db seed-demo   # fictional markets and leads, into an empty database
 uv run leadgen db load-places # US Census places (2020), the city list markets expand into
 uv run leadgen dashboard      # demand dashboard at http://localhost:8501
+uv run leadgen evals review   # weekly eval review page: label the pipeline's decisions
 uv run pytest                 # tests, against throwaway databases on the same server
 ```
 
@@ -106,6 +108,19 @@ run 3c4eb590-… on claude-haiku-5-5: $0.00029
 The same question on Claude Opus 5.5 chose Los Angeles (largest absolute shortfall, 66) instead
 of Phoenix (lowest share, 10%). The prompt does not say which measure "first" means; that is the
 kind of ambiguity the eval suite will pin down.
+
+## Eval capture and review
+
+Every automated decision the pipeline makes is a row in `eval_records`: a sample grader's verdict
+on a scrape cell, the judge's decision on one lead, a contradiction found at CRM write. The
+pipeline writes them through `record_eval` ([`eval_review.py`](src/leadgen/eval_review.py)) with
+the evidence behind the decision, enough to replay it. Once a week, `leadgen evals review` opens
+a page that lists them newest first, filtered by kind or to the unlabeled ones; each gets a label,
+correct or incorrect, and a note in `eval_labels`. Relabeling replaces the earlier label; the
+record itself never changes, so a fixture always shows what the pipeline actually decided.
+`leadgen evals export-fixtures` writes the labeled records to `tests/fixtures/evals/<kind>.json`,
+sorted by id and stably formatted, so a reviewed mistake becomes a regression test and a re-export
+is a readable diff.
 
 ## Contact enrichment
 

@@ -23,6 +23,7 @@ from leadgen.contacts import (
 )
 from leadgen.database import connect
 from leadgen.demo_seed import DEMO_MARKETS, DemoSeedRefused, seed_demo_data
+from leadgen.eval_review import DEFAULT_FIXTURES_DIRECTORY, export_fixtures
 from leadgen.migrate import MigrationError, apply_migrations, discover_migrations
 from leadgen.places import SNAPSHOT_CENSUS_YEAR, load_places
 from leadgen.raw_agent_loop import AgentLoopError, AskResult, ask_about_gaps, total_spend_usd
@@ -65,6 +66,19 @@ def build_parser() -> argparse.ArgumentParser:
         "enrich", help="look up phone and email for a business website (paid: calls BlitzAPI)"
     )
     enrich_parser.add_argument("website", help='e.g. "https://www.cedar-massage.example"')
+
+    evals_parser = commands.add_parser("evals", help="review the pipeline's automated decisions")
+    evals_commands = evals_parser.add_subparsers(dest="evals_command", metavar="evals_command")
+    evals_commands.add_parser("review", help="open the weekly eval review page in the browser")
+    export_parser = evals_commands.add_parser(
+        "export-fixtures", help="write labeled eval records to JSON fixtures for the tests"
+    )
+    export_parser.add_argument(
+        "--out",
+        type=Path,
+        default=DEFAULT_FIXTURES_DIRECTORY,
+        help=f"directory for the fixture files (default: {DEFAULT_FIXTURES_DIRECTORY})",
+    )
     return parser
 
 
@@ -243,16 +257,42 @@ def run_enrich(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def run_export_fixtures(arguments: argparse.Namespace) -> int:
+    try:
+        with connect() as connection:
+            written = export_fixtures(connection, arguments.out)
+    except (ValidationError, psycopg.OperationalError) as error:
+        return report_database_error(error)
+    except psycopg.errors.UndefinedTable:
+        print("The schema is missing. Run `leadgen db migrate` first.", file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+
+    if not written:
+        print("No labeled eval records yet. Label some with `leadgen evals review` first.")
+        return 0
+    for fixture_path, record_count in written.items():
+        print(f"Wrote {record_count} labeled records to {fixture_path}")
+    return 0
+
+
 def run_dashboard() -> int:
-    dashboard_script = Path(__file__).with_name("dashboard.py")
-    # Bound to this machine only; the dashboard is not meant to be reachable from the network.
+    return run_streamlit_page("dashboard.py")
+
+
+def run_eval_review() -> int:
+    return run_streamlit_page("eval_review_page.py")
+
+
+def run_streamlit_page(script_name: str) -> int:
+    page_script = Path(__file__).with_name(script_name)
+    # Bound to this machine only; the pages are not meant to be reachable from the network.
     return subprocess.call(
         [
             sys.executable,
             "-m",
             "streamlit",
             "run",
-            str(dashboard_script),
+            str(page_script),
             "--server.address",
             "localhost",
             "--browser.gatherUsageStats",
@@ -276,5 +316,9 @@ def main(argv: list[str] | None = None) -> int:
         return run_ask(arguments)
     if arguments.command == "enrich":
         return run_enrich(arguments)
+    if arguments.command == "evals" and arguments.evals_command == "review":
+        return run_eval_review()
+    if arguments.command == "evals" and arguments.evals_command == "export-fixtures":
+        return run_export_fixtures(arguments)
     parser.print_help()
     return 0
