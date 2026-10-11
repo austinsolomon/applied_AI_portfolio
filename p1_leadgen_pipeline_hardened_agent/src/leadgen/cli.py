@@ -27,6 +27,11 @@ from leadgen.migrate import MigrationError, apply_migrations, discover_migration
 from leadgen.places import SNAPSHOT_CENSUS_YEAR, load_places
 from leadgen.raw_agent_loop import AgentLoopError, AskResult, ask_about_gaps, total_spend_usd
 from leadgen.settings import get_settings
+from leadgen.web_research import (
+    WebBackendMisconfigured,
+    WebResearchError,
+    build_web_researcher,
+)
 
 EXIT_CONFIG_ERROR = 2
 EXIT_RUNTIME_ERROR = 1
@@ -65,6 +70,20 @@ def build_parser() -> argparse.ArgumentParser:
         "enrich", help="look up phone and email for a business website (paid: calls BlitzAPI)"
     )
     enrich_parser.add_argument("website", help='e.g. "https://www.cedar-massage.example"')
+
+    web_parser = commands.add_parser(
+        "web", help="search the web or fetch a page (paid when FIRECRAWL_API_KEY is set)"
+    )
+    web_commands = web_parser.add_subparsers(dest="web_command", metavar="web_command")
+    web_search_parser = web_commands.add_parser("search", help="web search, top results")
+    web_search_parser.add_argument("query")
+    web_search_parser.add_argument("--limit", type=int, default=5, help="results to return")
+    web_fetch_parser = web_commands.add_parser("fetch", help="fetch a page's main text (cached)")
+    web_fetch_parser.add_argument("url")
+    for subparser in (web_search_parser, web_fetch_parser):
+        subparser.add_argument(
+            "--free", action="store_true", help="use the free backend even if a key is set"
+        )
     return parser
 
 
@@ -243,6 +262,38 @@ def run_enrich(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def run_web(arguments: argparse.Namespace) -> int:
+    if arguments.web_command is None:
+        # Same as `leadgen db`: a bare group command shows its usage instead of failing.
+        build_parser().parse_args(["web", "--help"])
+    try:
+        settings = get_settings()
+        with (
+            connect() as connection,
+            build_web_researcher(connection, settings, prefer_free=arguments.free) as researcher,
+        ):
+            if arguments.web_command == "search":
+                for result in researcher.search(arguments.query, limit=arguments.limit):
+                    print(f"{result.url}\n  {result.title}\n  {result.description}")
+            elif arguments.web_command == "fetch":
+                page = researcher.fetch_page(arguments.url)
+                origin = "cache" if page.from_cache else page.backend
+                print(f"# {page.title or page.final_url}  ({origin}, HTTP {page.status_code})")
+                print(page.text)
+    except (ValidationError, psycopg.OperationalError) as error:
+        return report_database_error(error)
+    except psycopg.errors.UndefinedTable:
+        print("The schema is missing. Run `leadgen db migrate` first.", file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+    except (WebBackendMisconfigured, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_CONFIG_ERROR
+    except WebResearchError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+    return 0
+
+
 def run_dashboard() -> int:
     dashboard_script = Path(__file__).with_name("dashboard.py")
     # Bound to this machine only; the dashboard is not meant to be reachable from the network.
@@ -276,5 +327,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_ask(arguments)
     if arguments.command == "enrich":
         return run_enrich(arguments)
+    if arguments.command == "web":
+        return run_web(arguments)
     parser.print_help()
     return 0

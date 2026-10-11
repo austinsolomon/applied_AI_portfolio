@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     blitz_api_key: SecretStr | None = None
     blitz_usd_per_record: Decimal = Decimal(0)
 
+    # Web search and page fetching use Firecrawl when this key is set, otherwise the free backend.
+    firecrawl_api_key: SecretStr | None = None
+    # Dollars per Firecrawl credit, for the cost ledger. Default: the smallest paid plan
+    # (5,000 credits for $16 a month), which errs on the high side for cheaper plans.
+    firecrawl_usd_per_credit: Decimal = Decimal("0.0032")
+
 
 @lru_cache
 def get_settings() -> Settings:

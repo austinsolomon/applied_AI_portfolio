@@ -537,7 +537,7 @@ def test_ledger_accepts_blitz_rows_and_still_requires_a_model_for_claude(
         migrated_connection.execute(
             """
             INSERT INTO cost_ledger (run_id, service, endpoint, call_number, cost_usd)
-            VALUES (%s, 'exa', '/search', 4, 0)
+            VALUES (%s, 'unknown_service', '/search', 4, 0)
             """,
             (run_id,),
         )

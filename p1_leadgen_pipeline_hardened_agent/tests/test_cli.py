@@ -47,6 +47,7 @@ def test_db_migrate_applies_the_schema_to_an_empty_database(
         f"Applied {migration.name}" for migration in discover_migrations()
     ]
     assert "Applied 0001_crm_core.sql" in completed.stdout
+    assert "Applied 0007_page_cache.sql" in completed.stdout
 
 
 def test_db_seed_demo_after_migrate(empty_database_url: str, tmp_path: Path) -> None:
@@ -123,3 +124,11 @@ def test_enrich_without_a_blitz_key_explains_instead_of_calling(
 
     assert completed.returncode == 2
     assert completed.stderr.strip() == "BLITZ_API_KEY is not set. Add it to .env (never commit it)."
+
+
+def test_web_without_a_subcommand_prints_usage() -> None:
+    completed = run_leadgen("web")
+
+    assert completed.returncode == 0
+    assert "web_command" in completed.stdout
+    assert "Traceback" not in completed.stderr
