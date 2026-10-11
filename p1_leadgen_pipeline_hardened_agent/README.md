@@ -34,7 +34,8 @@ flowchart LR
 | Tests and continuous integration | done |
 | Container image | planned |
 | Database plumbing: local Postgres, typed config, migrations | done |
-| CRM schema, demo data, dashboard | planned |
+| CRM schema, demand gaps, demo data | done |
+| Demand dashboard | planned |
 | Raw agent loop on the Claude API | planned |
 | Sourcing, dedupe, enrichment, qualification, CRM write | planned |
 | Orchestrator agent, approval, budget guard, evals | planned |
@@ -50,6 +51,7 @@ uv sync                       # create .venv from uv.lock
 docker compose up -d --wait db   # local Postgres 16 on 127.0.0.1:5433
 cp .env.example .env          # DATABASE_URL for the local database
 uv run leadgen db migrate     # apply schema migrations
+uv run leadgen db seed-demo   # fictional markets and leads, into an empty database
 uv run pytest                 # tests, against throwaway databases on the same server
 ```
 
@@ -85,6 +87,14 @@ applied in order by `leadgen db migrate`. Each file runs once, in its own transa
 with a checksum; the runner refuses to continue if an applied file was edited or if the database has
 migrations the code does not know about. Tests create a throwaway database per test and drop it
 afterwards.
+
+The CRM enforces its own rules: phone, email and website are normalized by Postgres (generated
+columns), so `(310) 555-0142` and `+1 310.555.0142` are the same lead and the second is rejected;
+every lead needs a phone or an email; statuses and sources are fixed lists. `gap_view` computes
+Leads Available % per market, and `read_gaps()` returns the markets below 100%, biggest gap first.
+
+The demo data is fictional and deterministic: eight real US markets, invented massage businesses on
+`.example` domains, and phone numbers in the 555-0100 to 555-0199 range reserved for fiction.
 
 ## Design
 

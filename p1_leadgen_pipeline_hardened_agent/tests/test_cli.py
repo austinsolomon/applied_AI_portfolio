@@ -33,14 +33,36 @@ def test_reported_version_matches_pyproject() -> None:
     assert leadgen.__version__ == project_table["version"]
 
 
-def test_db_migrate_on_an_empty_database(empty_database_url: str, tmp_path: Path) -> None:
+def test_db_migrate_applies_the_schema_to_an_empty_database(
+    empty_database_url: str, tmp_path: Path
+) -> None:
     completed = run_leadgen(
         "db", "migrate", env={"DATABASE_URL": empty_database_url, "PATH": ""}, cwd=tmp_path
     )
 
-    # No migrations ship yet, so a fresh database is already up to date.
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == "Database is up to date.\n"
+    assert completed.stdout == "Applied 0001_crm_core.sql\n"
+
+
+def test_db_seed_demo_after_migrate(empty_database_url: str, tmp_path: Path) -> None:
+    environment = {"DATABASE_URL": empty_database_url, "PATH": ""}
+    run_leadgen("db", "migrate", env=environment, cwd=tmp_path)
+
+    completed = run_leadgen("db", "seed-demo", env=environment, cwd=tmp_path)
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.startswith("Loaded 8 demo markets and ")
+
+
+def test_db_seed_demo_before_migrate_explains_the_fix(
+    empty_database_url: str, tmp_path: Path
+) -> None:
+    completed = run_leadgen(
+        "db", "seed-demo", env={"DATABASE_URL": empty_database_url, "PATH": ""}, cwd=tmp_path
+    )
+
+    assert completed.returncode == 1
+    assert "Run `leadgen db migrate` first" in completed.stderr
 
 
 def test_db_migrate_without_database_url_explains_the_fix(tmp_path: Path) -> None:

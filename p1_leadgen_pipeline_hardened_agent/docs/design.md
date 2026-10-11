@@ -43,7 +43,7 @@ repeatable at scale.
 | 19 | Job queue and worker pool | Hardening | Qualification fans out to concurrent workers with capped concurrency and jittered retries | Postgres `SELECT … FOR UPDATE SKIP LOCKED` · `asyncio` |
 | 20 | Page cache | Hardening | A page is fetched at most once a week | Postgres `page_cache` |
 | 21 | Retrieval and memory | Hardening | Past samples and recorded lessons inform the planner | Postgres full-text search |
-| 22 | Demo dataset | Hardening | Synthetic markets, goals, CRM leads and recorded scrapes | `db/seed.sql` |
+| 22 | Demo dataset | Hardening | Fictional, deterministic markets, goals and CRM leads (recorded scrapes later) | `leadgen db seed-demo` |
 | 23 | Offline replay | Hardening | Recorded agent sessions stand in for live model calls, so tests and the demo cost nothing | JSON fixtures |
 | 24 | Migrations | Hardening | Schema changes as numbered SQL files, each applied once in a transaction; edited history refused | `src/leadgen/migrations/` · `leadgen db migrate` |
 | 25 | Tests and eval regression | Hardening | Every stage tested against a real Postgres; grader and judge fixtures must keep passing | pytest · respx |
@@ -109,7 +109,7 @@ httpx with trafilatura as a free fallback and test backend.
 
 | Role | Postgres feature |
 |---|---|
-| CRM | `crm_leads` with unique keys on normalized place ID, phone, email and domain |
+| CRM | `crm_leads`; Postgres-generated normalized phone, email and domain; unique place ID, phone and email; domain indexed as a match key |
 | Dedupe | `EXISTS` on normalized keys |
 | CRM write | `INSERT … ON CONFLICT DO NOTHING` in a transaction |
 | Dashboard and gaps | view `gap_view` |
