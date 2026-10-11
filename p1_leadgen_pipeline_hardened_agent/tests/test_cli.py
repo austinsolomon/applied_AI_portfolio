@@ -41,7 +41,7 @@ def test_db_migrate_applies_the_schema_to_an_empty_database(
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == "Applied 0001_crm_core.sql\n"
+    assert completed.stdout == "Applied 0001_crm_core.sql\nApplied 0002_gap_view_short_by.sql\n"
 
 
 def test_db_seed_demo_after_migrate(empty_database_url: str, tmp_path: Path) -> None:

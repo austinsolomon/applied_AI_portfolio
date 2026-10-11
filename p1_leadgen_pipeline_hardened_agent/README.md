@@ -35,7 +35,7 @@ flowchart LR
 | Container image | planned |
 | Database plumbing: local Postgres, typed config, migrations | done |
 | CRM schema, demand gaps, demo data | done |
-| Demand dashboard | planned |
+| Demand dashboard | done |
 | Raw agent loop on the Claude API | planned |
 | Sourcing, dedupe, enrichment, qualification, CRM write | planned |
 | Orchestrator agent, approval, budget guard, evals | planned |
@@ -52,8 +52,17 @@ docker compose up -d --wait db   # local Postgres 16 on 127.0.0.1:5433
 cp .env.example .env          # DATABASE_URL for the local database
 uv run leadgen db migrate     # apply schema migrations
 uv run leadgen db seed-demo   # fictional markets and leads, into an empty database
+uv run leadgen dashboard      # demand dashboard at http://localhost:8501
 uv run pytest                 # tests, against throwaway databases on the same server
 ```
+
+## Demand dashboard
+
+Every market's Leads Available %, biggest gap first, read from the same `gap_view` the agent reads.
+Columns go from the answer to how it is made: goal − assigned = still needed; available ÷ still needed
+= Leads Available %; still needed − available = short by, the new leads that market needs.
+
+![Demand dashboard with the demo data](docs/images/demand_dashboard.png)
 
 ## Development
 
