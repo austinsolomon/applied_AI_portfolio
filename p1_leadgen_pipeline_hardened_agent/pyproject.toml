@@ -5,6 +5,7 @@ description = "Lead-gen agent on the Claude Agent SDK: demand gaps → sourcing 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=1.13.0",
     "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.15.0",
     "streamlit>=1.65.0",

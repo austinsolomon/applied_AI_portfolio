@@ -41,7 +41,11 @@ def test_db_migrate_applies_the_schema_to_an_empty_database(
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == "Applied 0001_crm_core.sql\nApplied 0002_gap_view_short_by.sql\n"
+    assert completed.stdout.splitlines() == [
+        "Applied 0001_crm_core.sql",
+        "Applied 0002_gap_view_short_by.sql",
+        "Applied 0003_cost_ledger.sql",
+    ]
 
 
 def test_db_seed_demo_after_migrate(empty_database_url: str, tmp_path: Path) -> None:
@@ -70,3 +74,15 @@ def test_db_migrate_without_database_url_explains_the_fix(tmp_path: Path) -> Non
 
     assert completed.returncode == 2
     assert "DATABASE_URL is missing or malformed" in completed.stderr
+
+
+def test_ask_without_an_api_key_explains_the_fix(empty_database_url: str, tmp_path: Path) -> None:
+    completed = run_leadgen(
+        "ask",
+        "Which market first?",
+        env={"DATABASE_URL": empty_database_url, "PATH": ""},
+        cwd=tmp_path,
+    )
+
+    assert completed.returncode == 2
+    assert "ANTHROPIC_API_KEY is not set" in completed.stderr

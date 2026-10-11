@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import PostgresDsn
+from pydantic import PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     database_url: PostgresDsn
+    # Only `leadgen ask` needs these. The key stays a SecretStr so it is never printed or logged.
+    anthropic_api_key: SecretStr | None = None
+    # Required only when the API key is not scoped to a workspace (the API then asks which one).
+    anthropic_workspace_id: str | None = None
+    leadgen_model: str = "claude-haiku-5-5"
 
 
 @lru_cache
