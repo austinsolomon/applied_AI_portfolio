@@ -235,6 +235,9 @@ class FirecrawlBackend:
             )
         if response.status_code == 402:
             raise WebBackendOutOfCredit("The Firecrawl account is out of credits.")
+        if path == "/scrape" and response.status_code == 403:
+            # Unsupported sites are a completed page failure, with unknown billing.
+            raise PageFetchFailed("Firecrawl does not support this evidence site")
         if response.status_code == 429 or response.status_code >= 500:
             raise WebBackendUnavailable(
                 f"Firecrawl is unavailable right now (HTTP {response.status_code}): "

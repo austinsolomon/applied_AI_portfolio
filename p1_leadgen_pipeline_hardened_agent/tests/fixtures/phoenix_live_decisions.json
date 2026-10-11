@@ -1,0 +1,57 @@
+{
+  "recorded_on": "2026-10-11",
+  "market": "Phoenix, AZ",
+  "model": "claude-haiku-5-5",
+  "provenance": "Observed live decisions, not human-labelled ground truth. Evidence reduced to each cited fragment; no contact fields or full pages.",
+  "cases": [
+    {
+      "business_name": "A Relaxing Touch Massage",
+      "tier": 1,
+      "judgment": {
+        "reason": "The business's own website states it delivers massage to clients' homes and offers on-site event massages, with travel fees, within the greater Phoenix area, meeting the mobile/in-home rubric; this is affirmative service and market evidence from the business's own site.",
+        "verdict": "qualified",
+        "source_url": "https://www.arelaxingtouchmassage.com/",
+        "serves_market": "yes",
+        "evidence_quote": "Mobile massage delivered right to your door",
+        "eligible_services": [
+          "mobile massage",
+          "in-home massage",
+          "on-site chair massage for offices and events"
+        ]
+      },
+      "evidence": {
+        "https://www.arelaxingtouchmassage.com/": "Mobile massage delivered right to your door"
+      }
+    },
+    {
+      "business_name": "Total Medical & Wellness",
+      "tier": 1,
+      "judgment": {
+        "reason": "The business is a medical clinic (hormone therapy, weight loss, primary care) at a fixed Glendale office address, with no evidence of massage services or any mobile, in-home, or on-site massage travel service. The rubric requires affirmative mobile massage evidence, so it does not qualify; it also does not match any qualifying massage business type.",
+        "verdict": "rejected",
+        "source_url": "https://totalmedicalaz.com/",
+        "serves_market": "no",
+        "evidence_quote": "Located at 51st Ave & Union Hills",
+        "eligible_services": []
+      },
+      "evidence": {
+        "https://totalmedicalaz.com/": "Located at 51st Ave & Union Hills"
+      }
+    },
+    {
+      "business_name": "Get Better Faster Injury & Sports recovery",
+      "tier": 2,
+      "judgment": {
+        "reason": "The pages read do not affirmatively state that the business sends a therapist to clients' homes, hotels, offices, or events, and they do not mention mobile, in-home, or outcall service. The site describes a 'Comfortable, Professional Space' but does not explicitly say sessions occur only at its own premises, so the service location is unconfirmed. The Phoenix market is also not affirmatively confirmed as served by mobile service.",
+        "verdict": "review",
+        "source_url": "https://gbfaster.com/",
+        "serves_market": "unclear",
+        "evidence_quote": "Comfortable, Professional Space",
+        "eligible_services": []
+      },
+      "evidence": {
+        "https://gbfaster.com/": "Comfortable, Professional Space"
+      }
+    }
+  ]
+}

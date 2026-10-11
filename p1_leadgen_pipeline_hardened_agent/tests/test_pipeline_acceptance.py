@@ -87,6 +87,34 @@ def test_model_allowance_independent_of_larger_plan_budget(running):
         reserve(connection, run.run_id, "judge:lead", Decimal(".70"))
 
 
+def test_unsupported_site_records_conservative_cost_without_blocking_resume(running):
+    import httpx
+    import respx
+
+    from leadgen.orchestrator import GuardedWeb
+    from leadgen.web_research import FirecrawlBackend, PageFetchFailed, WebResearcher
+
+    connection, _plan, run = running
+    settings = Settings()
+    with respx.mock() as mock, httpx.Client() as http:
+        mock.post("https://api.firecrawl.dev/v2/scrape").respond(403)
+        backend = FirecrawlBackend(
+            api_key="test-only",
+            usd_per_credit=settings.firecrawl_usd_per_credit,
+            http_client=http,
+        )
+        web = GuardedWeb(
+            connection, run.run_id, WebResearcher(connection, backend, run.run_id), settings, "test"
+        )
+        with pytest.raises(PageFetchFailed, match="does not support"):
+            web.fetch_page("https://example.com")
+    assert connection.execute("SELECT status FROM budget_reservations").fetchone() == ("succeeded",)
+    assert connection.execute("SELECT cost_usd,cost_basis FROM cost_ledger").fetchone() == (
+        settings.firecrawl_usd_per_credit,
+        "estimated",
+    )
+
+
 def test_hook_denies_unknown_tool_and_out_of_order_stage(running):
     connection, plan, run = running
     hook = budget_hook(connection, run.run_id, plan.plan_id)
@@ -503,7 +531,8 @@ def test_research_agent_only_runs_for_review(running):
     query.assert_not_called()
 
 
-def test_research_loop_rejudges_bounded_evidence(running, monkeypatch):
+@pytest.mark.parametrize("subtype", ["success", "error_max_turns"])
+def test_research_loop_rejudges_bounded_evidence(running, monkeypatch, subtype):
     import leadgen.research_agent as research
 
     connection, plan, run = running
@@ -528,15 +557,17 @@ def test_research_loop_rejudges_bounded_evidence(running, monkeypatch):
         denied = await fetch.handler({"url": "http://localhost/"})
         assert denied["isError"]
         yield ResultMessage(
-            subtype="success",
+            subtype=subtype,
             duration_ms=1,
             duration_api_ms=1,
-            is_error=False,
+            is_error=subtype != "success",
             num_turns=2,
             session_id="offline",
             total_cost_usd=0.001,
             usage={},
         )
+
+        raise AssertionError("The final result must close the SDK stream")
 
     judge = Mock()
     judge.messages.parse.return_value = SimpleNamespace(

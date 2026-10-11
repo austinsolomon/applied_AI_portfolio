@@ -43,9 +43,9 @@ flowchart LR
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
 | Web search and page fetching with a page cache | done |
 | Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
-| Maps and Exa sourcing, qualification, CRM write | implemented; offline integration verified |
+| Maps and Exa sourcing, qualification, CRM write | done; live Maps-to-CRM sample verified, Exa replay-tested |
 | Eval capture, weekly review page, labels exported as test fixtures | done |
-| SDK orchestrator, terminal approval, budget reservations and traces | implemented; offline integration verified |
+| SDK orchestrator, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
 | Scheduled cloud deployment | planned |
 
 ## Quickstart
@@ -78,8 +78,9 @@ covers all services. `--approve --approved-by NAME` records approval already giv
 The runner exposes only the next pipeline stage to the SDK: Maps, Exa, dedupe, enrichment,
 qualification, research for unresolved leads, and CRM writing.
 
-Apify samples at most ten businesses before grading category purity and market distance; a passing
-sample can be resumed up to its approved target. Every partial dataset is persisted. Exa uses up to
+Apify is polled and aborted after ten unique businesses or the sample ceiling; a poll can return
+more than ten. Category purity and market distance gate continuation to the approved target.
+Every partial dataset is persisted. Exa uses up to
 50 existing qualified own-domain seeds; a market with no eligible seeds skips that stage. Existing
 contact details avoid an unnecessary Blitz lookup. Two workers process enrichment and four process qualification, with one paid attempt per job. Qualified results must cite an exact evidence quote,
 a supplied source URL, an eligible service, and an affirmative service area.
@@ -94,6 +95,11 @@ The SDK session cap is an estimated stop threshold; it is not a provider billing
 Live services require the keys shown in `.env.example`. Tests use fakes and replay, reject external
 socket connections, and create disposable Postgres databases. The live sample and provider
 reconciliation are documented in [sample run](docs/sample_run.md).
+
+The Phoenix sample sourced 50 businesses, qualified 12 and saved 10 with usable contacts. The
+ledger total was 1.385297 USD, including 0.374400 USD of conservative web estimates; Anthropic
+accounted for 0.097097 USD. Twenty-four businesses remain for human review. Exact Firecrawl
+invoice reconciliation and cloud deployment remain open.
 
 ## Demand dashboard
 
@@ -274,7 +280,7 @@ MO are two rows.
 ### Category config and dedupe
 
 [`config/category.yaml`](config/category.yaml) describes the one category a deployment sources:
-search keywords, the expected qualification rate that sizes a plan, the eligibility rubric the
+search keywords, an expected qualification rate for planning estimates, the eligibility rubric the
 grader and judge read, and two host lists. `shared_hosts` are social profiles and link-in-bio
 pages that many businesses share (instagram.com, linktr.ee); `aggregator_hosts` are directories
 and booking marketplaces (yelp.com, vagaro.com). The file is validated on load

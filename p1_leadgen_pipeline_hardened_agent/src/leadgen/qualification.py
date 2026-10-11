@@ -138,6 +138,7 @@ def judge_lead(
                 "claude",
                 call_cost_usd(settings.leadgen_model, tokens),
                 model=settings.leadgen_model,
+                endpoint=f"qualification-tier-{tier}",
                 input_tokens=tokens.input_tokens,
                 output_tokens=tokens.output_tokens,
                 request_id=response.id,
