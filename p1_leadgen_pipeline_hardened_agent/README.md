@@ -37,6 +37,7 @@ flowchart LR
 | CRM schema, demand gaps, demo data | done |
 | Demand dashboard | done |
 | Raw agent loop on the Claude API | done |
+| US Census places and market expansion | done |
 | Sourcing, dedupe, enrichment, qualification, CRM write | planned |
 | Orchestrator agent, approval, budget guard, evals | planned |
 | Scheduled cloud deployment | planned |
@@ -52,6 +53,7 @@ docker compose up -d --wait db   # local Postgres 16 on 127.0.0.1:5433
 cp .env.example .env          # DATABASE_URL for the local database
 uv run leadgen db migrate     # apply schema migrations
 uv run leadgen db seed-demo   # fictional markets and leads, into an empty database
+uv run leadgen db load-places # US Census places (2020), the city list markets expand into
 uv run leadgen dashboard      # demand dashboard at http://localhost:8501
 uv run pytest                 # tests, against throwaway databases on the same server
 ```
@@ -142,6 +144,22 @@ Leads Available % per market, and `read_gaps()` returns the markets below 100%, 
 
 The demo data is fictional and deterministic: eight real US markets, invented massage businesses on
 `.example` domains, and phone numbers in the 555-0100 to 555-0199 range reserved for fiction.
+
+### Census places and market expansion
+
+`leadgen db load-places` loads every US place with at least 5,000 people in the 2020 Census (6,752
+rows) from a snapshot packaged with the code, `src/leadgen/data/us_places_2020.csv`. The snapshot
+joins two public-domain Census Bureau sources by place GEOID: the 2020 Gazetteer (official names,
+states, interior-point coordinates; it carries no population) and the TIGERweb Census 2020 service
+(population per place). `scripts/build_places_snapshot.py` rebuilds it; loading is an upsert, so
+running it again changes nothing.
+
+`expand_market(market_id)` ([`places.py`](src/leadgen/places.py)) returns the places inside a
+market's service radius, largest first, each labelled with its state (`Pasadena, CA`), with the
+distance computed in SQL by a haversine function from the migration. Radius, population floor
+(default 5,000) and count (default 40) are parameters. The city list comes from Census data, not
+from a model, so it never contains invented or ambiguous towns: Kansas City, KS and Kansas City,
+MO are two rows.
 
 ## Design
 

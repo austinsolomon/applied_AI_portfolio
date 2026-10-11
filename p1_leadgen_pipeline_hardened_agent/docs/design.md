@@ -72,10 +72,17 @@ repeatable at scale.
 
 ## 4. Market expansion
 
-A market is a center point and a service radius (default 50 km). `expand_market("Los Angeles")` returns every US
+A market is a center point and a service radius (default 50 km). `expand_market(market_id)` returns every US
 Census place inside the radius above a population floor (default 5,000), largest first, each with its state
 (`Pasadena, CA`), capped at a configurable count (default 40). The city list comes from public data, not from the
 model, so it never contains invented or ambiguous towns.
+
+The `places` table is loaded from a snapshot packaged with the code: every US place with at least 5,000 people in
+the 2020 Census. The snapshot joins two public-domain Census Bureau sources by place GEOID, because neither has
+everything: the 2020 Gazetteer has official names, states and coordinates but no population, and the TIGERweb
+Census 2020 service has population per place. Consolidated city-county governments are stored under their
+everyday name (`Nashville`, not its legal name), since the name becomes a scraper search term. Distance is a
+haversine function in SQL, shared with the grader's in-market check.
 
 Keywords come from the category config, ordered by the purity they produced in past samples. Cities × keywords form
 the coverage matrix. The plan schedules cells from the strongest corner outward until the raw lead target
@@ -113,7 +120,7 @@ httpx with trafilatura as a free fallback and test backend.
 | Dedupe | `EXISTS` on normalized keys |
 | CRM write | `INSERT … ON CONFLICT DO NOTHING` in a transaction |
 | Dashboard and gaps | view `gap_view`: goal, assigned, still needed, available, Leads Available %, goal met, short by |
-| Markets and places | `markets` (center, radius), `places` (US Census Gazetteer) |
+| Markets and places | `markets` (center, radius), `places` (US Census 2020 snapshot), `haversine_km()` |
 | Plans and approval | `scrape_plans`, `scrape_plan_cells`, `approvals` |
 | Run state | `runs`, `ledger`, `seen_leads` with unique constraints |
 | Queue | `cell_jobs` with `FOR UPDATE SKIP LOCKED` |
