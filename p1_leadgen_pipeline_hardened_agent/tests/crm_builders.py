@@ -18,9 +18,9 @@ def add_market(connection: psycopg.Connection, name: str = "Los Angeles", goal: 
 def add_lead(connection: psycopg.Connection, market_id: int, **columns: object) -> int:
     values = {"business_name": "Cedar Mobile Massage", "source": "demo_seed", **columns}
     names = ", ".join(["market_id", *values])
-    placeholders = ", ".join(["%s"] * (len(values) + 1))
+    value_markers = ", ".join(["%s"] * (len(values) + 1))
     row = connection.execute(
-        f"INSERT INTO crm_leads ({names}) VALUES ({placeholders}) RETURNING lead_id",
+        f"INSERT INTO crm_leads ({names}) VALUES ({value_markers}) RETURNING lead_id",
         (market_id, *values.values()),
     ).fetchone()
     assert row is not None

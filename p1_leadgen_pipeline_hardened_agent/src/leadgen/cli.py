@@ -14,6 +14,7 @@ from leadgen import __version__
 from leadgen.database import connect
 from leadgen.demo_seed import DEMO_MARKETS, DemoSeedRefused, seed_demo_data
 from leadgen.migrate import MigrationError, apply_migrations, discover_migrations
+from leadgen.places import SNAPSHOT_CENSUS_YEAR, load_places
 from leadgen.raw_agent_loop import AgentLoopError, AskResult, ask_about_gaps, total_spend_usd
 from leadgen.settings import get_settings
 
@@ -31,6 +32,9 @@ def build_parser() -> argparse.ArgumentParser:
     database_commands.add_parser("migrate", help="apply schema migrations that have not run yet")
     database_commands.add_parser(
         "seed-demo", help="load fictional demo markets and leads into an empty database"
+    )
+    database_commands.add_parser(
+        "load-places", help="load the packaged US Census places snapshot (safe to repeat)"
     )
     commands.add_parser("dashboard", help="open the demand dashboard in the browser")
 
@@ -95,6 +99,20 @@ def run_seed_demo() -> int:
         return EXIT_RUNTIME_ERROR
 
     print(f"Loaded {len(DEMO_MARKETS)} demo markets and {lead_count} demo leads.")
+    return 0
+
+
+def run_load_places() -> int:
+    try:
+        with connect() as connection:
+            place_count = load_places(connection)
+    except (ValidationError, psycopg.OperationalError) as error:
+        return report_database_error(error)
+    except psycopg.errors.UndefinedTable:
+        print("The schema is missing. Run `leadgen db migrate` first.", file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+
+    print(f"Loaded {place_count} US Census places ({SNAPSHOT_CENSUS_YEAR}, population >= 5,000).")
     return 0
 
 
@@ -192,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_migrate()
     if arguments.command == "db" and arguments.db_command == "seed-demo":
         return run_seed_demo()
+    if arguments.command == "db" and arguments.db_command == "load-places":
+        return run_load_places()
     if arguments.command == "dashboard":
         return run_dashboard()
     if arguments.command == "ask":
