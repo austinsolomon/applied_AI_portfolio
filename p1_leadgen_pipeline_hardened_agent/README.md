@@ -27,13 +27,23 @@ flowchart LR
 
 | Milestone | State |
 |---|---|
-| Python package, pinned toolchain, lockfile | planned |
+| Python package, pinned toolchain, lockfile | done |
 | Lint, tests, CI, container | planned |
 | Postgres schema, demo data, dashboard | planned |
 | Raw agent loop on the Claude API | planned |
 | Sourcing, dedupe, enrichment, qualification, CRM write | planned |
 | Orchestrator agent, approval, budget guard, evals | planned |
 | Scheduled cloud deployment | planned |
+
+## Quickstart
+
+Requires [uv](https://docs.astral.sh/uv/). uv installs the pinned Python version itself.
+
+```bash
+cd p1_leadgen_pipeline_hardened_agent
+uv sync           # create .venv from uv.lock
+uv run leadgen    # prints the installed version
+```
 
 ## Design
 
