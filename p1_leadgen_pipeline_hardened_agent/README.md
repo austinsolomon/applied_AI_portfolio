@@ -28,7 +28,8 @@ flowchart LR
 | Milestone | State |
 |---|---|
 | Python package, pinned toolchain, lockfile | done |
-| Lint, tests, CI, container | planned |
+| Lint, format and pre-commit hooks (incl. secret scanning) | done |
+| Tests, CI, container | planned |
 | Postgres schema, demo data, dashboard | planned |
 | Raw agent loop on the Claude API | planned |
 | Sourcing, dedupe, enrichment, qualification, CRM write | planned |
@@ -43,6 +44,25 @@ Requires [uv](https://docs.astral.sh/uv/). uv installs the pinned Python version
 cd p1_leadgen_pipeline_hardened_agent
 uv sync           # create .venv from uv.lock
 uv run leadgen    # prints the installed version
+```
+
+## Development
+
+One-time setup, from the repository root:
+
+```bash
+uv tool install pre-commit   # the hook runner, installed once per machine
+pre-commit install           # run the checks on every git commit
+```
+
+Every commit then runs file hygiene checks, [gitleaks](https://github.com/gitleaks/gitleaks) secret scanning, and
+ruff lint and format. Ruff runs through `uv run`, so the hook, the editor and CI use the version pinned in
+`uv.lock`. To run the checks by hand:
+
+```bash
+uv run ruff check     # lint
+uv run ruff format    # format
+pre-commit run --all-files
 ```
 
 ## Design
