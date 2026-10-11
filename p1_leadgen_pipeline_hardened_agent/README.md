@@ -137,7 +137,8 @@ that behind two calls, `search(query)` and `fetch_page(url)`, with two interchan
 - **Firecrawl** (`FIRECRAWL_API_KEY` set): `/v2/search` and `/v2/scrape`, which cope with
   JavaScript-rendered and bot-protected sites. Every call is written to `cost_ledger` as service
   `firecrawl` at credits × `FIRECRAWL_USD_PER_CREDIT` (one credit per page; two credits per ten
-  search results).
+  search results). A dead or forbidden page is billed like any other, so it is ledgered too, even
+  though the fetch is reported as a failure and nothing is cached.
 - **Free** (no key, and the test backend): httpx plus [trafilatura](https://trafilatura.readthedocs.io/)
   for a page's main text, and DuckDuckGo's HTML results page for search.
 

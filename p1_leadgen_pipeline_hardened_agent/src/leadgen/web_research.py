@@ -5,7 +5,8 @@ call. Two backends implement them:
 
 - `FirecrawlBackend` (paid, `FIRECRAWL_API_KEY`): Firecrawl's `/v2/search` and `/v2/scrape`, which
   handle JavaScript-rendered sites and anti-bot pages. Every call is charged in credits and written
-  to `cost_ledger` as service `firecrawl`.
+  to `cost_ledger` as service `firecrawl`, including a scrape that comes back as an error page
+  (Firecrawl bills a 403 or 404 like any other page), so the ledger matches the provider's usage.
 - `FreeWebBackend` (no key): plain httpx GET with trafilatura main-text extraction, and DuckDuckGo's
   HTML results page for search. It costs nothing and is the backend tests and offline runs use.
 
@@ -14,6 +15,9 @@ Postgres without touching the network or the ledger. When Firecrawl is unavailab
 timed out, server error) the researcher falls back to the free backend for that call; an invalid key
 or an empty credit balance is reported instead, because silently continuing would hide a problem
 the operator must fix.
+
+`build_web_researcher` opens an `httpx.Client` when none is injected; the researcher then owns it,
+so use the researcher as a context manager (or call `close()`) to release the connection pool.
 """
 
 import math
@@ -50,6 +54,17 @@ FIRECRAWL_SEARCH_CREDITS_PER_BLOCK = 2
 FIRECRAWL_SEARCH_RESULTS_PER_BLOCK = 10
 
 
+@dataclass(frozen=True)
+class Charge:
+    """What one paid backend call cost, for the ledger."""
+
+    service: str
+    endpoint: str
+    credits: int
+    cost_usd: Decimal
+    request_id: str | None = None
+
+
 class WebResearchError(Exception):
     """A backend could not answer, with a message fit for the operator."""
 
@@ -67,7 +82,15 @@ class WebBackendUnavailable(WebResearchError):
 
 
 class PageFetchFailed(WebResearchError):
-    """The page itself could not be read (unreachable host, HTTP error, no extractable text)."""
+    """The page itself could not be read (unreachable host, HTTP error, no extractable text).
+
+    A paid backend may still have billed the attempt (Firecrawl charges for an error page), so the
+    charge rides on the exception for the researcher to ledger before it re-raises.
+    """
+
+    def __init__(self, message: str, *, charge: Charge | None = None) -> None:
+        super().__init__(message)
+        self.charge = charge
 
 
 @dataclass(frozen=True)
@@ -87,17 +110,6 @@ class FetchedPage:
     backend: str
     fetched_at: datetime
     from_cache: bool = False
-
-
-@dataclass(frozen=True)
-class Charge:
-    """What one paid backend call cost, for the ledger."""
-
-    service: str
-    endpoint: str
-    credits: int
-    cost_usd: Decimal
-    request_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -174,10 +186,15 @@ class FirecrawlBackend:
         metadata = data.get("metadata", {})
         status_code = int(metadata.get("statusCode") or 200)
         text = (data.get("markdown") or "").strip()
+        # Firecrawl bills an error page (403, 404) the same as a readable one, so the charge is
+        # fixed before the page is judged and travels with the failure when it is unusable.
+        credits = int(body.get("creditsUsed") or FIRECRAWL_CREDITS_PER_SCRAPE)
+        charge = self._charge("/scrape", credits, None)
         if status_code >= 400 or not text:
             raise PageFetchFailed(
                 f"Firecrawl could not read {url}: HTTP {status_code}, "
-                f"{metadata.get('error') or 'no text extracted'}"
+                f"{metadata.get('error') or 'no text extracted'}",
+                charge=charge,
             )
         page = FetchedPage(
             url=url,
@@ -188,8 +205,7 @@ class FirecrawlBackend:
             backend=self.name,
             fetched_at=datetime.now(UTC),
         )
-        credits = int(body.get("creditsUsed") or FIRECRAWL_CREDITS_PER_SCRAPE)
-        return FetchResponse(page, self._charge("/scrape", credits, None))
+        return FetchResponse(page, charge)
 
     def _charge(self, path: str, credits: int, request_id: str | None) -> Charge:
         # The ledger names the endpoint as the API path, e.g. "/v2/scrape", so it can be
@@ -370,6 +386,20 @@ class WebResearcher:
     run_id: uuid.UUID = field(default_factory=uuid.uuid4)
     fallback: WebBackend | None = None
     cache_max_age: timedelta = PAGE_CACHE_MAX_AGE
+    # Set by `build_web_researcher` when it opened the client itself; an injected client stays
+    # the caller's to close.
+    owned_http_client: httpx.Client | None = None
+
+    def __enter__(self) -> "WebResearcher":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Release the HTTP client this researcher owns, if any. Safe to call twice."""
+        if self.owned_http_client is not None:
+            self.owned_http_client.close()
 
     def search(self, query: str, *, limit: int = DEFAULT_SEARCH_LIMIT) -> list[SearchResult]:
         try:
@@ -387,14 +417,23 @@ class WebResearcher:
         if cached is not None:
             return cached
         try:
-            response = self.backend.fetch_page(cache_key)
-        except WebBackendUnavailable:
-            if self.fallback is None:
-                raise
-            response = self.fallback.fetch_page(cache_key)
+            response = self._fetch_uncached(cache_key)
+        except PageFetchFailed as failure:
+            # A dead or forbidden page still cost a credit on the paid backend; ledger it so the
+            # run's spend matches the provider's usage, then report the failure as before.
+            self._record_charge(failure.charge)
+            raise
         self._record_charge(response.charge)
         self._write_cache(response.page)
         return response.page
+
+    def _fetch_uncached(self, cache_key: str) -> FetchResponse:
+        try:
+            return self.backend.fetch_page(cache_key)
+        except WebBackendUnavailable:
+            if self.fallback is None:
+                raise
+            return self.fallback.fetch_page(cache_key)
 
     def _read_cache(self, cache_key: str) -> FetchedPage | None:
         with self.connection.cursor(row_factory=class_row(FetchedPage)) as cursor:
@@ -464,8 +503,14 @@ def build_web_researcher(
     run_id: uuid.UUID | None = None,
     prefer_free: bool = False,
 ) -> WebResearcher:
-    """Firecrawl when a key is configured (free backend as fallback), otherwise the free backend."""
-    http_client = http_client or httpx.Client()
+    """Firecrawl when a key is configured (free backend as fallback), otherwise the free backend.
+
+    Without an injected `http_client` the researcher opens one and owns it: close the researcher
+    (it is a context manager) when done.
+    """
+    owned_http_client: httpx.Client | None = None
+    if http_client is None:
+        owned_http_client = http_client = httpx.Client()
     free_backend = FreeWebBackend(http_client=http_client)
     backend: WebBackend = free_backend
     fallback: WebBackend | None = None
@@ -487,4 +532,5 @@ def build_web_researcher(
         backend=backend,
         fallback=fallback,
         run_id=run_id or uuid.uuid4(),
+        owned_http_client=owned_http_client,
     )

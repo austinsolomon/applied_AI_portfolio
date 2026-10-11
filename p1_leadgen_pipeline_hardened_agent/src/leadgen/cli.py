@@ -265,8 +265,10 @@ def run_enrich(arguments: argparse.Namespace) -> int:
 def run_web(arguments: argparse.Namespace) -> int:
     try:
         settings = get_settings()
-        with connect() as connection:
-            researcher = build_web_researcher(connection, settings, prefer_free=arguments.free)
+        with (
+            connect() as connection,
+            build_web_researcher(connection, settings, prefer_free=arguments.free) as researcher,
+        ):
             if arguments.web_command == "search":
                 for result in researcher.search(arguments.query, limit=arguments.limit):
                     print(f"{result.url}\n  {result.title}\n  {result.description}")

@@ -112,7 +112,8 @@ Most leads finish at Tier 1's cost. Only unclear leads pay for an agent. When ev
 Search and scraping sit behind a small interface (`search`, `fetch_page`), with Firecrawl as the live backend and
 httpx with trafilatura (pages) and DuckDuckGo's HTML results (search) as the free fallback and test backend.
 Fetched pages are cached in Postgres for seven days, keyed by URL without its fragment. Every Firecrawl call is
-written to the cost ledger in credits at a configured price per credit. A transient Firecrawl failure (rate limit,
+written to the cost ledger in credits at a configured price per credit, including a scrape that comes back as an
+error page, which Firecrawl bills like any other and the pipeline reports as a failed fetch. A transient Firecrawl failure (rate limit,
 timeout, server error) falls back to the free backend for that call; a rejected key or an empty credit balance is
 reported, never hidden.
 
