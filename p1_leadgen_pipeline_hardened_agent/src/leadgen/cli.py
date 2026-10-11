@@ -97,6 +97,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_FIXTURES_DIRECTORY,
         help=f"directory for the fixture files (default: {DEFAULT_FIXTURES_DIRECTORY})",
     )
+    plan_parser = commands.add_parser("plan", help="build and approve one priced sourcing plan")
+    plan_parser.add_argument("--max-cities", type=int, default=1)
+    plan_parser.add_argument("--max-keywords", type=int, default=1)
+    plan_parser.add_argument("--target", type=int, default=50)
+    plan_parser.add_argument("--budget-usd", type=Decimal, default=Decimal("5"))
+    plan_parser.add_argument(
+        "--approve", action="store_true", help="record an already authorized approval"
+    )
+    plan_parser.add_argument("--approved-by", default="operator")
+    run_parser = commands.add_parser("run", help="execute one approved plan (paid)")
+    run_parser.add_argument("--plan", default="latest")
+    run_parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="continue a failed run after reconciling provider usage",
+    )
     return parser
 
 
@@ -351,9 +367,99 @@ def run_streamlit_page(script_name: str) -> int:
     )
 
 
+def run_pipeline_command(arguments):
+    import asyncio
+    import json
+
+    from leadgen.budget import BudgetBlocked
+    from leadgen.category_config import load_category_config
+    from leadgen.orchestrator import build_plan, run_plan
+    from leadgen.plans import PlanError, approve_plan, latest_plan, read_plan
+    from leadgen.qualification import QualificationError
+    from leadgen.sourcing_maps import SourcingError
+
+    try:
+        settings = get_settings()
+        with connect() as connection:
+            if arguments.command == "plan":
+                if not arguments.budget_usd.is_finite() or arguments.budget_usd <= 0:
+                    raise ValueError("Budget must be a positive finite dollar amount")
+                category = load_category_config(settings.category_config_path)
+                plan = build_plan(
+                    connection,
+                    category,
+                    max_cities=arguments.max_cities,
+                    max_keywords=arguments.max_keywords,
+                    target=arguments.target,
+                )
+                print(
+                    f"Plan {plan.plan_id}: {len(plan.cells)} cells; "
+                    f"{plan.expected_raw_leads} raw leads; Maps cap ${plan.estimated_cost_usd}; "
+                    f"total budget ${arguments.budget_usd} (all services)"
+                )
+                for cell in plan.cells:
+                    print(f"  {cell.city}: {cell.keyword} ({cell.expected_raw_leads} leads)")
+                if plan.estimated_cost_usd >= arguments.budget_usd:
+                    raise ValueError("Budget must also leave room for enrichment and qualification")
+                approved = (
+                    arguments.approve
+                    or input("Approve this plan and budget? [y/N] ").lower() == "y"
+                )
+                if approved:
+                    approve_plan(
+                        connection, plan.plan_id, arguments.budget_usd, arguments.approved_by
+                    )
+                    print(f"Approved plan {plan.plan_id}")
+                else:
+                    print("Plan saved as draft; no paid calls authorized")
+            else:
+                plan = (
+                    latest_plan(connection)
+                    if arguments.plan == "latest"
+                    else read_plan(connection, int(arguments.plan))
+                )
+                if plan is None:
+                    raise ValueError("No plan exists; run `leadgen plan` first")
+                print(
+                    json.dumps(
+                        asyncio.run(
+                            run_plan(connection, plan.plan_id, settings, resume=arguments.resume)
+                        ),
+                        indent=2,
+                    )
+                )
+        return 0
+    except (ValidationError, psycopg.OperationalError) as error:
+        return report_database_error(error)
+    except psycopg.errors.UndefinedTable:
+        print("The schema is missing. Run `leadgen db migrate` first.", file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+    except (
+        BudgetBlocked,
+        PlanError,
+        QualificationError,
+        SourcingError,
+        WebResearchError,
+        BlitzApiError,
+        ValueError,
+    ) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+    except (EOFError, KeyboardInterrupt):
+        print("Stopped; no further calls will be started.", file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+    except Exception:
+        print(
+            "Pipeline stopped. Inspect traces and provider status before retrying.", file=sys.stderr
+        )
+        return EXIT_RUNTIME_ERROR
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
+    if arguments.command in ("plan", "run"):
+        return run_pipeline_command(arguments)
     if arguments.command == "db" and arguments.db_command == "migrate":
         return run_migrate()
     if arguments.command == "db" and arguments.db_command == "seed-demo":

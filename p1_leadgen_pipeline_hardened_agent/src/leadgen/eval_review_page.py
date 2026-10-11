@@ -106,7 +106,7 @@ def render() -> None:
         horizontal=True,
     )
     note = label_columns[1].text_input(
-        "Note", value=chosen.note, key=f"note_{chosen.eval_record_id}", placeholder="Why?"
+        "Note", value=chosen.note, key=f"note_{chosen.eval_record_id}"
     )
     labeled_by = label_columns[2].text_input("Reviewer", value="reviewer", key="labeled_by")
 

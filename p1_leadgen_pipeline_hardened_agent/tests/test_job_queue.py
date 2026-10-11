@@ -169,16 +169,16 @@ def test_only_a_running_job_can_be_completed_or_released(
     queued = list_jobs(migrated_connection, run.run_id)[0]
 
     with pytest.raises(JobNotRunning):
-        complete_job(migrated_connection, queued.job_id)
+        complete_job(migrated_connection, queued)
     with pytest.raises(JobNotRunning):
         release_job(migrated_connection, queued, "never ran")
 
     claimed = claim_job(migrated_connection, "w")
     assert claimed is not None
-    done = complete_job(migrated_connection, claimed.job_id, {"verdict": "qualified"})
+    done = complete_job(migrated_connection, claimed, {"verdict": "qualified"})
     assert (done.status, done.result) == (JOB_SUCCEEDED, {"verdict": "qualified"})
     with pytest.raises(JobNotRunning):
-        complete_job(migrated_connection, claimed.job_id)
+        complete_job(migrated_connection, claimed)
 
 
 def test_retry_delays_grow_exponentially_with_jitter_and_a_cap():
@@ -340,3 +340,18 @@ def test_a_pool_needs_at_least_one_worker(empty_database_url: str):
 
     with pytest.raises(ValueError):
         asyncio.run(run_worker_pool(empty_database_url, never, concurrency=0))
+
+
+def test_old_worker_cannot_complete_or_release_a_reclaimed_job(migrated_connection):
+    run, _ = running_run(migrated_connection)
+    enqueue_jobs(migrated_connection, run.run_id, KIND, lead_jobs(1))
+    old = claim_job(migrated_connection, "old", run.run_id)
+    migrated_connection.execute("UPDATE cell_jobs SET locked_at=now()-interval '1 hour'")
+    requeue_stale_jobs(migrated_connection, timedelta(minutes=10))
+    current = claim_job(migrated_connection, "new", run.run_id)
+    assert current.attempts == old.attempts + 1
+    with pytest.raises(JobNotRunning):
+        complete_job(migrated_connection, old)
+    with pytest.raises(JobNotRunning):
+        release_job(migrated_connection, old, "late failure")
+    assert complete_job(migrated_connection, current).status == JOB_SUCCEEDED

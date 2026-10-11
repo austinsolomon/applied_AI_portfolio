@@ -24,6 +24,8 @@ from uuid import UUID
 
 import psycopg
 
+from leadgen.eval_review import record_eval
+
 logger = logging.getLogger(__name__)
 
 # Email local parts (before the "@") that nobody reads. Matched as a prefix, case-insensitively.
@@ -230,22 +232,14 @@ def find_contradictions(
 INSERT_LEAD = """
 INSERT INTO crm_leads (
     market_id, business_name, source, phone, email, website, google_place_id,
-    qualification_reason, evidence_quote, evidence_url
+    qualification_reason, evidence_quote, evidence_url, run_id
 )
 VALUES (
     %(market_id)s, %(business_name)s, %(source)s, %(phone)s, %(email)s, %(website)s,
-    %(google_place_id)s, %(qualification_reason)s, %(evidence_quote)s, %(source_url)s
+    %(google_place_id)s, %(qualification_reason)s, %(evidence_quote)s, %(source_url)s, %(run_id)s
 )
 ON CONFLICT DO NOTHING
 RETURNING lead_id
-"""
-
-# Written after the batch commits, so a missing or differently shaped eval table can never undo a
-# CRM write. The eval tables belong to the qualification and eval-review features; this insert
-# names the columns the contradiction scan needs and is the one place to reconcile them.
-INSERT_CONTRADICTION = """
-INSERT INTO eval_records (run_id, record_kind, lead_id, business_name, details)
-VALUES (%(run_id)s, 'contradiction', %(lead_id)s, %(business_name)s, %(details)s)
 """
 
 
@@ -273,6 +267,7 @@ def write_qualified_leads(
             row = connection.execute(
                 INSERT_LEAD,
                 {
+                    "run_id": run_id,
                     "market_id": lead.market_id,
                     "business_name": lead.business_name,
                     "source": lead.source,
@@ -317,14 +312,14 @@ def record_contradictions(
     try:
         with connection.transaction():
             for hit in hits:
-                connection.execute(
-                    INSERT_CONTRADICTION,
-                    {
-                        "run_id": run_id,
-                        "lead_id": hit.lead_id,
-                        "business_name": hit.business_name,
-                        "details": f"reason affirms '{hit.phrase}': {hit.clause}",
-                    },
+                record_eval(
+                    connection,
+                    kind="contradiction",
+                    subject=hit.business_name,
+                    verdict="contradiction",
+                    run_id=run_id,
+                    reason=f"reason affirms '{hit.phrase}': {hit.clause}",
+                    evidence={"lead_id": hit.lead_id},
                 )
     except psycopg.Error as error:
         logger.warning(

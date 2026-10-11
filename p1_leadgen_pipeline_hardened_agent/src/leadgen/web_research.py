@@ -29,13 +29,14 @@ from decimal import Decimal
 from html import unescape
 from html.parser import HTMLParser
 from typing import Protocol
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 import httpx
 import psycopg
 import trafilatura
 from psycopg.rows import class_row
 
+from leadgen.public_urls import validate_public_url
 from leadgen.settings import Settings
 
 FIRECRAWL_BASE_URL = "https://api.firecrawl.dev/v2"
@@ -166,7 +167,7 @@ class FirecrawlBackend:
         self._base_url = base_url.rstrip("/")
 
     def search(self, query: str, *, limit: int) -> SearchResponse:
-        body = self._post("/search", {"query": query, "limit": limit, "sources": ["web"]})
+        body = self._post("/search", {"query": query, "limit": limit, "sources": [{"type": "web"}]})
         web_results = body.get("data", {}).get("web", [])
         results = [
             SearchResult(
@@ -282,18 +283,35 @@ class FreeWebBackend:
         return SearchResponse(parse_duckduckgo_results(response.text)[:limit])
 
     def fetch_page(self, url: str) -> FetchResponse:
+        current_url = url
         try:
-            response = self._http.get(
-                url,
-                headers={"User-Agent": USER_AGENT},
-                follow_redirects=True,
-                timeout=REQUEST_TIMEOUT_SECONDS,
-            )
-        except httpx.HTTPError as error:
+            for _ in range(6):
+                validate_public_url(current_url)
+                with self._http.stream(
+                    "GET",
+                    current_url,
+                    headers={"User-Agent": USER_AGENT},
+                    follow_redirects=False,
+                    timeout=REQUEST_TIMEOUT_SECONDS,
+                ) as response:
+                    if response.is_redirect:
+                        current_url = urljoin(current_url, response.headers.get("location", ""))
+                        continue
+                    if response.status_code >= 400:
+                        raise PageFetchFailed(f"Could not fetch {url}: HTTP {response.status_code}")
+                    chunks, size = [], 0
+                    for chunk in response.iter_bytes():
+                        size += len(chunk)
+                        if size > 2_000_000:
+                            raise PageFetchFailed("Evidence page exceeds the two-megabyte limit")
+                        chunks.append(chunk)
+                    html = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
+                    break
+            else:
+                raise PageFetchFailed("Evidence page redirected too many times")
+        except (httpx.HTTPError, ValueError) as error:
             raise PageFetchFailed(f"Could not fetch {url}: {error}") from error
-        if response.status_code >= 400:
-            raise PageFetchFailed(f"Could not fetch {url}: HTTP {response.status_code}")
-        title, text = extract_main_text(response.text, url=url)
+        title, text = extract_main_text(html, url=url)
         if not text:
             raise PageFetchFailed(f"No readable text found at {url}")
         page = FetchedPage(
@@ -476,23 +494,25 @@ class WebResearcher:
         # A non-Claude ledger row names its endpoint and the provider's own units (credits here)
         # and has no model; the token columns keep their zero defaults. Call numbers are unique
         # per run; the next one is read in the same statement.
-        self.connection.execute(
-            """
-            INSERT INTO cost_ledger
-                (run_id, service, endpoint, call_number, provider_units, cost_usd, request_id)
-            SELECT %(run_id)s, %(service)s, %(endpoint)s, coalesce(max(call_number), 0) + 1,
-                   %(provider_units)s, %(cost_usd)s, %(request_id)s
-            FROM cost_ledger WHERE run_id = %(run_id)s
-            """,
-            {
-                "run_id": self.run_id,
-                "service": charge.service,
-                "endpoint": charge.endpoint,
-                "provider_units": charge.credits,
-                "cost_usd": charge.cost_usd,
-                "request_id": charge.request_id,
-            },
-        )
+        with self.connection.transaction():
+            self.connection.execute("SELECT 1 FROM runs WHERE run_id=%s FOR UPDATE", (self.run_id,))
+            self.connection.execute(
+                """
+                INSERT INTO cost_ledger
+                    (run_id, service, endpoint, call_number, provider_units, cost_usd, request_id)
+                SELECT %(run_id)s, %(service)s, %(endpoint)s, coalesce(max(call_number), 0) + 1,
+                       %(provider_units)s, %(cost_usd)s, %(request_id)s
+                FROM cost_ledger WHERE run_id = %(run_id)s
+                """,
+                {
+                    "run_id": self.run_id,
+                    "service": charge.service,
+                    "endpoint": charge.endpoint,
+                    "provider_units": charge.credits,
+                    "cost_usd": charge.cost_usd,
+                    "request_id": charge.request_id,
+                },
+            )
 
 
 def build_web_researcher(

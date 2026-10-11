@@ -50,3 +50,25 @@ def migrated_connection(empty_database_url: str) -> Iterator[psycopg.Connection]
     with psycopg.connect(empty_database_url, autocommit=True) as connection:
         apply_migrations(connection, discover_migrations())
         yield connection
+
+
+@pytest.fixture(autouse=True)
+def no_external_sockets(monkeypatch):
+    """Fakes may answer HTTP requests; accidental real network calls fail before connecting."""
+    import ipaddress
+    import socket
+
+    original_connect = socket.socket.connect
+
+    def local_only(sock, address):
+        if isinstance(address, tuple):
+            host = address[0]
+            try:
+                allowed = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                allowed = host == "localhost"
+            if not allowed:
+                raise AssertionError("Tests must fake every external network call")
+        return original_connect(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", local_only)

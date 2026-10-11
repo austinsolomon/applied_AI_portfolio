@@ -237,6 +237,7 @@ def test_contradiction_scan_is_negation_aware(reason: str, expected_phrases: lis
 def test_contradictions_are_reported_and_never_block_the_write(
     migrated_connection: psycopg.Connection, caplog: pytest.LogCaptureFixture
 ) -> None:
+    migrated_connection.execute("DROP TABLE eval_records CASCADE")
     market_id = add_market(migrated_connection)
     suspicious = qualified(
         market_id,
@@ -260,20 +261,6 @@ def test_contradictions_are_reported_and_never_block_the_write(
 def test_contradictions_are_recorded_in_eval_records_when_the_table_exists(
     migrated_connection: psycopg.Connection,
 ) -> None:
-    # A stand-in with the columns the scan writes; the eval feature owns the real table.
-    migrated_connection.execute(
-        """
-        CREATE TABLE eval_records (
-            eval_record_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-            run_id         uuid   NOT NULL,
-            record_kind    text   NOT NULL,
-            lead_id        bigint,
-            business_name  text,
-            details        text,
-            created_at     timestamptz NOT NULL DEFAULT now()
-        )
-        """
-    )
     market_id = add_market(migrated_connection)
     suspicious = qualified(
         market_id,
@@ -287,7 +274,7 @@ def test_contradictions_are_recorded_in_eval_records_when_the_table_exists(
 
     assert report.contradictions_recorded is True
     rows = migrated_connection.execute(
-        "SELECT run_id, record_kind, lead_id, business_name, details FROM eval_records"
+        "SELECT run_id, kind, (evidence->>'lead_id')::bigint, subject, reason FROM eval_records"
     ).fetchall()
     assert rows == [
         (

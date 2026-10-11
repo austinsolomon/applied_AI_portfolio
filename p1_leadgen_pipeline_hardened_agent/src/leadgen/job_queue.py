@@ -118,6 +118,7 @@ COMPLETE_JOB_SQL = """
 UPDATE cell_jobs
 SET status = 'succeeded', finished_at = now(), result = %(result)s
 WHERE job_id = %(job_id)s AND status = 'running'
+  AND locked_by = %(locked_by)s AND attempts = %(attempts)s
 RETURNING *
 """
 
@@ -133,6 +134,7 @@ SET status       = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued
     locked_at    = CASE WHEN attempts >= max_attempts THEN locked_at ELSE NULL END,
     last_error   = %(error)s
 WHERE job_id = %(job_id)s AND status = 'running'
+  AND locked_by = %(locked_by)s AND attempts = %(attempts)s
 RETURNING *
 """
 
@@ -156,6 +158,8 @@ def _claim_params(worker_name: str, run_id: UUID | None, kinds: Iterable[str] | 
 def _fail_or_retry_params(job: Job, error: str, retry_policy: RetryPolicy) -> dict:
     return {
         "job_id": job.job_id,
+        "locked_by": job.locked_by,
+        "attempts": job.attempts,
         "error": error,
         # A job that is not running is refused by the SQL; the delay only has to be computable.
         "delay_seconds": retry_policy.delay_seconds(max(job.attempts, 1)),
@@ -196,16 +200,22 @@ def claim_job(
 
 
 def complete_job(
-    connection: psycopg.Connection, job_id: int, result: dict[str, Any] | None = None
+    connection: psycopg.Connection, job: Job, result: dict[str, Any] | None = None
 ) -> Job:
     """Mark a running job succeeded, keeping whatever the handler returned."""
     with connection.cursor(row_factory=class_row(Job)) as cursor:
-        job = cursor.execute(
-            COMPLETE_JOB_SQL, {"job_id": job_id, "result": _jsonb_or_none(result)}
+        completed = cursor.execute(
+            COMPLETE_JOB_SQL,
+            {
+                "job_id": job.job_id,
+                "result": _jsonb_or_none(result),
+                "locked_by": job.locked_by,
+                "attempts": job.attempts,
+            },
         ).fetchone()
-    if job is None:
-        raise JobNotRunning(f"job {job_id} is not running")
-    return job
+    if completed is None:
+        raise JobNotRunning(f"job {job.job_id} is not owned by this attempt")
+    return completed
 
 
 def release_job(
@@ -398,7 +408,13 @@ async def _work_one(
         return
     async with connection.cursor(row_factory=class_row(Job)) as cursor:
         await cursor.execute(
-            COMPLETE_JOB_SQL, {"job_id": job.job_id, "result": _jsonb_or_none(result)}
+            COMPLETE_JOB_SQL,
+            {
+                "job_id": job.job_id,
+                "result": _jsonb_or_none(result),
+                "locked_by": job.locked_by,
+                "attempts": job.attempts,
+            },
         )
         completed = await cursor.fetchone()
     if completed is None:

@@ -30,6 +30,13 @@ from leadgen.web_research import (
     parse_duckduckgo_results,
 )
 
+
+@pytest.fixture(autouse=True)
+def fixture_urls_do_not_need_dns(monkeypatch):
+    # These HTTP tests use reserved .example hosts and respx; URL-policy tests are separate.
+    monkeypatch.setattr("leadgen.web_research.validate_public_url", normalize_page_url)
+
+
 USD_PER_CREDIT = Decimal("0.0032")
 PAGE_URL = "https://serenity-mobile-massage.example/services"
 
@@ -134,7 +141,7 @@ def test_firecrawl_search_sends_the_query_and_parses_web_results(
     sent = search_route.calls.last.request
     assert sent.headers["Authorization"] == "Bearer fc-test-key"
     assert httpx.Request.read(sent) == (
-        b'{"query":"mobile massage Pasadena","limit":2,"sources":["web"]}'
+        b'{"query":"mobile massage Pasadena","limit":2,"sources":[{"type":"web"}]}'
     )
     assert results == [
         SearchResult(

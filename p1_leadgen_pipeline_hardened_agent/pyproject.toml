@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=1.13.0",
+    "apify-client>=2.3,<3",
+    "claude-agent-sdk>=0.2.165",
+    "exa-py>=2.25.0",
     "httpx>=0.28.1",
     "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.15.0",

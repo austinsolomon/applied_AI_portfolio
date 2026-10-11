@@ -43,9 +43,9 @@ flowchart LR
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
 | Web search and page fetching with a page cache | done |
 | Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
-| Sourcing, qualification, CRM write | planned |
+| Maps and Exa sourcing, qualification, CRM write | implemented; offline integration verified |
 | Eval capture, weekly review page, labels exported as test fixtures | done |
-| Orchestrator agent, approval, budget guard | planned |
+| SDK orchestrator, terminal approval, budget reservations and traces | implemented; offline integration verified |
 | Scheduled cloud deployment | planned |
 
 ## Quickstart
@@ -64,6 +64,36 @@ uv run leadgen dashboard      # demand dashboard at http://localhost:8501
 uv run leadgen evals review   # weekly eval review page: label the pipeline's decisions
 uv run pytest                 # tests, against throwaway databases on the same server
 ```
+
+## Approved pipeline runs
+
+```bash
+uv run leadgen plan --target 50 --max-cities 1 --max-keywords 1 --budget-usd 5
+uv run leadgen run --plan latest
+```
+
+The planner selects the market with the lowest available-lead coverage, expands it using Census
+places, and displays its cells and Maps ceiling before asking for one approval. The total budget
+covers all services. `--approve --approved-by NAME` records approval already given by an operator.
+The runner exposes only the next pipeline stage to the SDK: Maps, Exa, dedupe, enrichment,
+qualification, research for unresolved leads, and CRM writing.
+
+Apify samples at most ten businesses before grading category purity and market distance; a passing
+sample can be resumed up to its approved target. Every partial dataset is persisted. Exa uses up to
+50 existing qualified own-domain seeds; a market with no eligible seeds skips that stage. Existing
+contact details avoid an unnecessary Blitz lookup. Two workers process enrichment and four process qualification, with one paid attempt per job. Qualified results must cite an exact evidence quote,
+a supplied source URL, an eligible service, and an affirmative service area.
+
+Budget reservations are serialized in Postgres before paid work starts. Spend is counted across
+all attempts of the same plan. Model operations have a separate 0.75 USD plan allowance, small SDK
+session caps and output/turn limits. An uncertain call retains its reservation after failure.
+A completed plan returns its recorded summary when run again. Failed runs require provider
+reconciliation before `leadgen run --plan ID --resume`; see [operations](docs/operations.md).
+The SDK session cap is an estimated stop threshold; it is not a provider billing guarantee.
+
+Live services require the keys shown in `.env.example`. Tests use fakes and replay, reject external
+socket connections, and create disposable Postgres databases. The live sample and provider
+reconciliation are documented in [sample run](docs/sample_run.md).
 
 ## Demand dashboard
 

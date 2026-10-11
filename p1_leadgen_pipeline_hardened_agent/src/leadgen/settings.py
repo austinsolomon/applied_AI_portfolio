@@ -4,7 +4,7 @@ from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import PostgresDsn, SecretStr
+from pydantic import Field, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,13 +24,17 @@ class Settings(BaseSettings):
     # Contact enrichment (BlitzAPI). The plan is a flat monthly rate, so the per-record price
     # is whatever the operator chooses to amortize into the ledger; records are always counted.
     blitz_api_key: SecretStr | None = None
-    blitz_usd_per_record: Decimal = Decimal(0)
+    blitz_usd_per_record: Decimal = Field(default=Decimal(0), ge=0, allow_inf_nan=False)
+
+    apify_api_key: SecretStr | None = None
+    exa_api_key: SecretStr | None = None
+    leadgen_max_turns: int = Field(default=12, ge=1, le=50)
 
     # Web search and page fetching use Firecrawl when this key is set, otherwise the free backend.
     firecrawl_api_key: SecretStr | None = None
     # Dollars per Firecrawl credit, for the cost ledger. Default: the smallest paid plan
     # (5,000 credits for $16 a month), which errs on the high side for cheaper plans.
-    firecrawl_usd_per_credit: Decimal = Decimal("0.0032")
+    firecrawl_usd_per_credit: Decimal = Field(default=Decimal("0.0032"), gt=0, allow_inf_nan=False)
 
 
 @lru_cache

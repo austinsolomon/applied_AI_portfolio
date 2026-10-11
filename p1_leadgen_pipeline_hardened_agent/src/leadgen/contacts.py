@@ -108,6 +108,15 @@ class BlitzClient:
         self._key_info: KeyInfo | None = None
         self.last_records_remaining: int | str | None = None
 
+    def close(self) -> None:
+        self._http.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
+
     def key_info(self) -> KeyInfo:
         """The key's plan: valid, records left, endpoints allowed. Free; fetched once and kept."""
         if self._key_info is None:
