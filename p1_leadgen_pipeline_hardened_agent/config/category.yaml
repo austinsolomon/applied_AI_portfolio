@@ -1,0 +1,93 @@
+# The one category this deployment sources. Changed by pull request, never at runtime.
+# Demo category: mobile and in-home massage providers in US markets.
+
+name: mobile_massage
+label: Mobile and in-home massage providers
+
+# Google Maps search terms, strongest first. The planner reorders them by the purity each one
+# produced in past samples once that history exists.
+keywords:
+  - mobile massage
+  - in-home massage
+  - massage therapist
+  - sports massage
+  - couples massage
+  - massage therapy
+
+# Share of raw leads expected to qualify. The planner sizes a plan as goal ÷ this rate.
+expected_qualification_rate: 0.40
+
+# The eligibility rubric the sample grader and the qualification judge read.
+rubric:
+  qualified_when: >
+    The business sends a massage therapist to the client's home, hotel, office or event
+    (described as mobile, in-home, on-site, outcall or traveling), or lists in-home sessions
+    as a bookable service.
+  rejected_when: >
+    The business only serves clients at its own premises (studio, spa, clinic, salon, gym),
+    is a massage school, a franchise locator, an equipment or supplies seller, a booking
+    marketplace or directory, or shows adult-service signals.
+  review_when: >
+    The pages read do not say where sessions take place, or the business is a chiropractic,
+    physiotherapy or wellness practice whose massage travel service is not confirmed.
+  eligible_services:
+    - mobile massage
+    - in-home massage
+    - couples massage at home
+    - on-site chair massage for offices and events
+    - traveling sports massage
+    - hotel or vacation-rental massage
+
+# Domains many unrelated businesses share: social profiles, link-in-bio pages and site builders
+# that put every business under one host. Dedupe never treats these as a match key, and
+# lookalike sourcing never uses them as a seed. A host entry also covers its subdomains, so list
+# a host only when its subdomains are not individual businesses either.
+shared_hosts:
+  - facebook.com
+  - fb.com
+  - instagram.com
+  - linktr.ee
+  - linkin.bio
+  - beacons.ai
+  - tiktok.com
+  - youtube.com
+  - twitter.com
+  - x.com
+  - pinterest.com
+  - sites.google.com
+  - google.com
+  - goo.gl
+  - bit.ly
+  - carrd.co
+  - about.me
+  - calendly.com
+
+# Directories, review sites and booking marketplaces. Their pages describe many businesses, so
+# a result on one of these hosts is never a lead and never a lookalike seed. They are also
+# excluded from the domain match key, for the same reason as the shared hosts.
+aggregator_hosts:
+  - yelp.com
+  - yellowpages.com
+  - thumbtack.com
+  - angi.com
+  - bark.com
+  - care.com
+  - groupon.com
+  - nextdoor.com
+  - tripadvisor.com
+  - mapquest.com
+  - bbb.org
+  - manta.com
+  - foursquare.com
+  - massagebook.com
+  - vagaro.com
+  - booksy.com
+  - styleseat.com
+  - schedulicity.com
+  - mindbodyonline.com
+  - fresha.com
+  - zeel.com
+  - soothe.com
+  - psychologytoday.com
+  - healthgrades.com
+  - zocdoc.com

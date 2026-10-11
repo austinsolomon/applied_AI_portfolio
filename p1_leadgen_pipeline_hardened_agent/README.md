@@ -39,7 +39,8 @@ flowchart LR
 | Raw agent loop on the Claude API | done |
 | US Census places and market expansion | done |
 | Scrape plans, the one approval, run state (nothing runs twice) | done |
-| Sourcing, dedupe, enrichment, qualification, CRM write | planned |
+| Category config and dedupe against the CRM | done |
+| Sourcing, enrichment, qualification, CRM write | planned |
 | Orchestrator agent, approval, budget guard, evals | planned |
 | Scheduled cloud deployment | planned |
 
@@ -161,6 +162,24 @@ distance computed in SQL by a haversine function from the migration. Radius, pop
 (default 5,000) and count (default 40) are parameters. The city list comes from Census data, not
 from a model, so it never contains invented or ambiguous towns: Kansas City, KS and Kansas City,
 MO are two rows.
+
+### Category config and dedupe
+
+[`config/category.yaml`](config/category.yaml) describes the one category a deployment sources:
+search keywords, the expected qualification rate that sizes a plan, the eligibility rubric the
+grader and judge read, and two host lists. `shared_hosts` are social profiles and link-in-bio
+pages that many businesses share (instagram.com, linktr.ee); `aggregator_hosts` are directories
+and booking marketplaces (yelp.com, vagaro.com). The file is validated on load
+([`category_config.py`](src/leadgen/category_config.py)): a misspelt key, a duplicate keyword, a
+rate outside (0, 1] or a host written with a scheme or path is refused, naming the field.
+
+[`dedupe.py`](src/leadgen/dedupe.py) decides, for a batch of sourced leads in one query, which
+ones the CRM already holds. Postgres computes each incoming lead's keys with the exact expressions
+that generate `crm_leads`' key columns (a test checks the expressions are copied from the
+migration verbatim), then matches on Google place ID, phone, email and website domain. A domain
+on a shared or aggregator host never counts as a match: two businesses with Instagram pages are
+not the same business. Each decision names the keys that matched, and the new leads go on to
+enrichment; nothing is spent on a duplicate.
 
 ## Design
 

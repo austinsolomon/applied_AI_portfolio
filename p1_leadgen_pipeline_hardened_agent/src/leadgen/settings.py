@@ -1,6 +1,7 @@
 """Typed runtime configuration, read from environment variables or a local `.env` file."""
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,6 +18,8 @@ class Settings(BaseSettings):
     # Required only when the API key is not scoped to a workspace (the API then asks which one).
     anthropic_workspace_id: str | None = None
     leadgen_model: str = "claude-haiku-5-5"
+    # The one category this deployment sources; relative paths resolve from the working directory.
+    category_config_path: Path = Path("config/category.yaml")
 
 
 @lru_cache
