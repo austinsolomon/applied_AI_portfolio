@@ -1,0 +1,21 @@
+# Local development database. The credentials below are local-only defaults, not secrets.
+# Host port 5433, so it never collides with a Postgres already installed on the machine.
+services:
+  db:
+    image: postgres:16.14
+    environment:
+      POSTGRES_USER: leadgen
+      POSTGRES_PASSWORD: leadgen_local
+      POSTGRES_DB: leadgen
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - leadgen_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leadgen -d leadgen"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  leadgen_db_data:
