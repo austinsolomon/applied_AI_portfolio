@@ -16,4 +16,14 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "ruff>=0.17.0",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/W: pycodestyle errors and warnings · F: pyflakes (real bugs) · I: import order
+# B: bugbear (likely bugs) · UP: pyupgrade (modern syntax for the target Python)
+select = ["E", "W", "F", "I", "B", "UP"]

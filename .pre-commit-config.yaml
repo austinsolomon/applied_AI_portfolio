@@ -1,0 +1,34 @@
+# Runs on every `git commit` after a one-time `pre-commit install`.
+# CI runs the same checks, so these hooks are early feedback, not the enforcement point.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  # ruff runs through `uv run`, so the hook uses the exact version pinned in the project's uv.lock.
+  - repo: local
+    hooks:
+      - id: ruff-check-p1
+        name: ruff check (p1)
+        entry: uv run --project p1_leadgen_pipeline_hardened_agent ruff check --fix
+        language: system
+        types: [python]
+        files: ^p1_leadgen_pipeline_hardened_agent/
+      - id: ruff-format-p1
+        name: ruff format (p1)
+        entry: uv run --project p1_leadgen_pipeline_hardened_agent ruff format
+        language: system
+        types: [python]
+        files: ^p1_leadgen_pipeline_hardened_agent/
