@@ -32,7 +32,7 @@ repeatable at scale.
 | 8 | Full scrape | Pipeline | Continues the sampled run, or a fresh sweep after reconfiguring | Apify · pandas · Postgres `raw_leads`, `seen_leads` |
 | 9 | Lookalike sourcing | Pipeline | For markets still under target: finds businesses similar to that market's qualified leads | Exa `find_similar` via `exa-py` |
 | 10 | Dedupe | Pipeline | Drops any lead already in the CRM by Google place ID, phone, email or website domain | Postgres, exact match on normalized keys |
-| 11 | Contact enrichment | Pipeline | Phone and email per lead; a plain API call, cached per domain | BlitzAPI |
+| 11 | Contact enrichment | Pipeline | Phone and email per lead: a fixed chain of API calls (domain → company page → best-placed person → email, phone), cached per domain, every call in the cost ledger | BlitzAPI · httpx · Postgres `contact_cache` |
 | 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Firecrawl |
 | 13 | CRM write | Pipeline | Inserts qualified leads in one transaction; conflicts reported, never lost | Postgres `INSERT … ON CONFLICT DO NOTHING` |
 | 14 | Orchestrator agent | Pipeline | Runs the pipeline in order, retries, reconfigures within the approved budget | Claude Agent SDK · skills in `.claude/skills/` |
@@ -117,8 +117,8 @@ httpx with trafilatura as a free fallback and test backend.
 | Plans and approval | `scrape_plans`, `scrape_plan_cells`, `approvals` |
 | Run state | `runs`, `ledger`, `seen_leads` with unique constraints |
 | Queue | `cell_jobs` with `FOR UPDATE SKIP LOCKED` |
-| Cache | `page_cache` with a freshness check |
-| Ledgers and evals | append-only `cost_ledger`, `traces`, `eval_records`, `eval_labels` |
+| Cache | `page_cache` with a freshness check; `contact_cache` keyed by the CRM's domain normalization |
+| Ledgers and evals | append-only `cost_ledger` (one row per paid call of any service: model and tokens for Claude, endpoint and provider units otherwise), `traces`, `eval_records`, `eval_labels` |
 | Retrieval and memory | full-text search (`tsvector` with a GIN index), `lessons` |
 
 The code targets plain PostgreSQL 16 through `DATABASE_URL`. Local development and CI use a Postgres container;

@@ -1,8 +1,11 @@
 """The `leadgen` command."""
 
 import argparse
+import json
 import subprocess
 import sys
+import uuid
+from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
 
@@ -11,6 +14,13 @@ import psycopg
 from pydantic import ValidationError
 
 from leadgen import __version__
+from leadgen.contacts import (
+    BlitzApiError,
+    BlitzAuthenticationError,
+    BlitzClient,
+    BlitzOutOfRecords,
+    enrich_contact,
+)
 from leadgen.database import connect
 from leadgen.demo_seed import DEMO_MARKETS, DemoSeedRefused, seed_demo_data
 from leadgen.migrate import MigrationError, apply_migrations, discover_migrations
@@ -46,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
     ask_parser.add_argument(
         "--effort", default="low", choices=["low", "medium", "high", "xhigh", "max"]
     )
+
+    enrich_parser = commands.add_parser(
+        "enrich", help="look up phone and email for a business website (paid: calls BlitzAPI)"
+    )
+    enrich_parser.add_argument("website", help='e.g. "https://www.cedar-massage.example"')
     return parser
 
 
@@ -167,6 +182,49 @@ def print_ask_result(result: AskResult, spent_overall: Decimal) -> None:
     print(f"all runs recorded in the ledger: ${spent_overall:.5f}")
 
 
+def run_enrich(arguments: argparse.Namespace) -> int:
+    try:
+        settings = get_settings()
+    except ValidationError as error:
+        return report_database_error(error)
+    if settings.blitz_api_key is None:
+        print("BLITZ_API_KEY is not set. Add it to .env (never commit it).", file=sys.stderr)
+        return EXIT_CONFIG_ERROR
+
+    client = BlitzClient(settings.blitz_api_key.get_secret_value())
+    run_id = uuid.uuid4()
+    try:
+        with connect() as connection:
+            lookup = enrich_contact(
+                arguments.website,
+                connection=connection,
+                client=client,
+                run_id=run_id,
+                usd_per_record=settings.blitz_usd_per_record,
+            )
+    except psycopg.OperationalError as error:
+        return report_database_error(error)
+    except ValueError as error:
+        print(f"Cannot enrich: {error}", file=sys.stderr)
+        return EXIT_CONFIG_ERROR
+    except BlitzAuthenticationError as error:
+        print(error, file=sys.stderr)
+        return EXIT_CONFIG_ERROR
+    except BlitzOutOfRecords as error:
+        print(error, file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+    except BlitzApiError as error:
+        print(f"Enrichment failed: {error}", file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+
+    print(json.dumps(asdict(lookup), indent=2, default=str))
+    source = "cache" if lookup.from_cache else f"BlitzAPI, run {run_id}"
+    print(f"{lookup.records_used} records used ({source})")
+    if client.last_records_remaining is not None:
+        print(f"records remaining on the plan: {client.last_records_remaining}")
+    return 0
+
+
 def run_dashboard() -> int:
     dashboard_script = Path(__file__).with_name("dashboard.py")
     # Bound to this machine only; the dashboard is not meant to be reachable from the network.
@@ -196,5 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_dashboard()
     if arguments.command == "ask":
         return run_ask(arguments)
+    if arguments.command == "enrich":
+        return run_enrich(arguments)
     parser.print_help()
     return 0

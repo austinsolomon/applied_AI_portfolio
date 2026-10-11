@@ -1,5 +1,6 @@
 """Typed runtime configuration, read from environment variables or a local `.env` file."""
 
+from decimal import Decimal
 from functools import lru_cache
 
 from pydantic import PostgresDsn, SecretStr
@@ -17,6 +18,10 @@ class Settings(BaseSettings):
     # Required only when the API key is not scoped to a workspace (the API then asks which one).
     anthropic_workspace_id: str | None = None
     leadgen_model: str = "claude-haiku-5-5"
+    # Contact enrichment (BlitzAPI). The plan is a flat monthly rate, so the per-record price
+    # is whatever the operator chooses to amortize into the ledger; records are always counted.
+    blitz_api_key: SecretStr | None = None
+    blitz_usd_per_record: Decimal = Decimal(0)
 
 
 @lru_cache

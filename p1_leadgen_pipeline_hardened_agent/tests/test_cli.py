@@ -6,6 +6,7 @@ import tomllib
 from pathlib import Path
 
 import leadgen
+from leadgen.migrate import discover_migrations
 
 PYPROJECT_PATH = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
@@ -42,9 +43,7 @@ def test_db_migrate_applies_the_schema_to_an_empty_database(
 
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.splitlines() == [
-        "Applied 0001_crm_core.sql",
-        "Applied 0002_gap_view_short_by.sql",
-        "Applied 0003_cost_ledger.sql",
+        f"Applied {migration.name}" for migration in discover_migrations()
     ]
 
 
@@ -86,3 +85,17 @@ def test_ask_without_an_api_key_explains_the_fix(empty_database_url: str, tmp_pa
 
     assert completed.returncode == 2
     assert "ANTHROPIC_API_KEY is not set" in completed.stderr
+
+
+def test_enrich_without_a_blitz_key_explains_instead_of_calling(
+    empty_database_url: str, tmp_path: Path
+) -> None:
+    completed = run_leadgen(
+        "enrich",
+        "https://www.cedar-massage.example",
+        env={"DATABASE_URL": empty_database_url, "PATH": ""},
+        cwd=tmp_path,
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr.strip() == "BLITZ_API_KEY is not set. Add it to .env (never commit it)."
