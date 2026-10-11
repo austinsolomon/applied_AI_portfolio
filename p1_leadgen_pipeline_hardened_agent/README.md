@@ -32,7 +32,7 @@ flowchart LR
 | Python package, pinned toolchain, lockfile | done |
 | Lint, format and pre-commit hooks (incl. secret scanning) | done |
 | Tests and continuous integration | done |
-| Container image | planned |
+| Container image: python-slim + locked deps + Claude Code CLI, built and run in CI | done |
 | Database plumbing: local Postgres, typed config, migrations | done |
 | CRM schema, demand gaps, demo data | done |
 | Demand dashboard | done |
@@ -42,8 +42,10 @@ flowchart LR
 | Category config and dedupe against the CRM | done |
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
 | Web search and page fetching with a page cache | done |
-| Sourcing, qualification, CRM write | planned |
-| Orchestrator agent, approval, budget guard, evals | planned |
+| Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
+| Maps and Exa sourcing, qualification, CRM write | done; live Maps-to-CRM sample verified, Exa replay-tested |
+| Eval capture, weekly review page, labels exported as test fixtures | done |
+| SDK orchestrator, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
 | Scheduled cloud deployment | planned |
 
 ## Quickstart
@@ -59,8 +61,45 @@ uv run leadgen db migrate     # apply schema migrations
 uv run leadgen db seed-demo   # fictional markets and leads, into an empty database
 uv run leadgen db load-places # US Census places (2020), the city list markets expand into
 uv run leadgen dashboard      # demand dashboard at http://localhost:8501
+uv run leadgen evals review   # weekly eval review page: label the pipeline's decisions
 uv run pytest                 # tests, against throwaway databases on the same server
 ```
+
+## Approved pipeline runs
+
+```bash
+uv run leadgen plan --target 50 --max-cities 1 --max-keywords 1 --budget-usd 5
+uv run leadgen run --plan latest
+```
+
+The planner selects the market with the lowest available-lead coverage, expands it using Census
+places, and displays its cells and Maps ceiling before asking for one approval. The total budget
+covers all services. `--approve --approved-by NAME` records approval already given by an operator.
+The runner exposes only the next pipeline stage to the SDK: Maps, Exa, dedupe, enrichment,
+qualification, research for unresolved leads, and CRM writing.
+
+Apify is polled and aborted after ten unique businesses or the sample ceiling; a poll can return
+more than ten. Category purity and market distance gate continuation to the approved target.
+Every partial dataset is persisted. Exa uses up to
+50 existing qualified own-domain seeds; a market with no eligible seeds skips that stage. Existing
+contact details avoid an unnecessary Blitz lookup. Two workers process enrichment and four process qualification, with one paid attempt per job. Qualified results must cite an exact evidence quote,
+a supplied source URL, an eligible service, and an affirmative service area.
+
+Budget reservations are serialized in Postgres before paid work starts. Spend is counted across
+all attempts of the same plan. Model operations have a separate 0.75 USD plan allowance, small SDK
+session caps and output/turn limits. An uncertain call retains its reservation after failure.
+A completed plan returns its recorded summary when run again. Failed runs require provider
+reconciliation before `leadgen run --plan ID --resume`; see [operations](docs/operations.md).
+The SDK session cap is an estimated stop threshold; it is not a provider billing guarantee.
+
+Live services require the keys shown in `.env.example`. Tests use fakes and replay, reject external
+socket connections, and create disposable Postgres databases. The live sample and provider
+reconciliation are documented in [sample run](docs/sample_run.md).
+
+The Phoenix sample sourced 50 businesses, qualified 12 and saved 10 with usable contacts. The
+ledger total was 1.385297 USD, including 0.374400 USD of conservative web estimates; Anthropic
+accounted for 0.097097 USD. Twenty-four businesses remain for human review. Exact Firecrawl
+invoice reconciliation and cloud deployment remain open.
 
 ## Demand dashboard
 
@@ -107,6 +146,19 @@ run 3c4eb590-… on claude-haiku-5-5: $0.00029
 The same question on Claude Opus 5.5 chose Los Angeles (largest absolute shortfall, 66) instead
 of Phoenix (lowest share, 10%). The prompt does not say which measure "first" means; that is the
 kind of ambiguity the eval suite will pin down.
+
+## Eval capture and review
+
+Every automated decision the pipeline makes is a row in `eval_records`: a sample grader's verdict
+on a scrape cell, the judge's decision on one lead, a contradiction found at CRM write. The
+pipeline writes them through `record_eval` ([`eval_review.py`](src/leadgen/eval_review.py)) with
+the evidence behind the decision, enough to replay it. Once a week, `leadgen evals review` opens
+a page that lists them newest first, filtered by kind or to the unlabeled ones; each gets a label,
+correct or incorrect, and a note in `eval_labels`. Relabeling replaces the earlier label; the
+record itself never changes, so a fixture always shows what the pipeline actually decided.
+`leadgen evals export-fixtures` writes the labeled records to `tests/fixtures/evals/<kind>.json`,
+sorted by id and stably formatted, so a reviewed mistake becomes a regression test and a re-export
+is a readable diff.
 
 ## Contact enrichment
 
@@ -175,7 +227,22 @@ pre-commit run --all-files
 
 On GitHub, CI runs on every pull request and every push to `main`: install from the lockfile (failing if
 `uv.lock` is out of date), the same commit checks, a secret scan of the full git history, migrations
-against a fresh Postgres service container, and the tests.
+against a fresh Postgres service container, the tests, and the container image (built, then run to
+print its version and to migrate a fresh database).
+
+### Container image
+
+`Dockerfile` builds one image for laptop, CI and cloud: `python:3.12-slim`, the package and its
+dependencies installed from `uv.lock` (`uv sync --locked`), and the Claude Code CLI the Agent SDK
+drives, at a pinned version. It runs as a non-root user, with `leadgen` as the entrypoint. The build
+context is an allowlist (`.dockerignore`), so `.env` can never end up in a layer.
+
+```bash
+docker build -t leadgen .
+docker run --rm leadgen --version
+docker run --rm --env-file .env --network host leadgen db migrate   # Linux: reach a host Postgres
+LEADGEN_CONTAINER_TESTS=1 uv run pytest tests/test_container.py       # also build and run the image
+```
 
 ### Database
 
@@ -213,7 +280,7 @@ MO are two rows.
 ### Category config and dedupe
 
 [`config/category.yaml`](config/category.yaml) describes the one category a deployment sources:
-search keywords, the expected qualification rate that sizes a plan, the eligibility rubric the
+search keywords, an expected qualification rate for planning estimates, the eligibility rubric the
 grader and judge read, and two host lists. `shared_hosts` are social profiles and link-in-bio
 pages that many businesses share (instagram.com, linktr.ee); `aggregator_hosts` are directories
 and booking marketplaces (yelp.com, vagaro.com). The file is validated on load

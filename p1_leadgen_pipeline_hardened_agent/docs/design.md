@@ -34,13 +34,13 @@ repeatable at scale.
 | 10 | Dedupe | Pipeline | Drops any lead already in the CRM by Google place ID, phone, email or website domain; a domain on a shared or aggregator host is never a match | Postgres, exact match on normalized keys computed by the CRM's own expressions |
 | 11 | Contact enrichment | Pipeline | Phone and email per lead: a fixed chain of API calls (domain → company page → best-placed person → email, phone), cached per domain, every call in the cost ledger | BlitzAPI · httpx · Postgres `contact_cache` |
 | 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Firecrawl |
-| 13 | CRM write | Pipeline | Inserts qualified leads in one transaction; conflicts reported, never lost | Postgres `INSERT … ON CONFLICT DO NOTHING` |
+| 13 | CRM write | Pipeline | Inserts qualified leads with at least one real phone or email (junk mailboxes blanked) in one transaction; conflicts reported, never lost; a negation-aware contradiction scan of each reason goes to `eval_records` without blocking | Postgres `INSERT … ON CONFLICT DO NOTHING` |
 | 14 | Orchestrator agent | Pipeline | Runs the pipeline in order, retries, reconfigures within the approved budget | Claude Agent SDK · skills in `.claude/skills/` |
 | 15 | Budget guard | Hardening | After approval, blocks any tool call outside the approved plan or budget | Agent SDK pre-tool-use hook |
-| 16 | Run state | Hardening | Nothing runs twice; runs resume where they stopped: a plan has one run in progress, a cell has one success per stage, a business is new once | Postgres `runs`, `run_ledger`, `seen_leads`, enforced by unique indexes |
+| 16 | Run state | Hardening | Nothing runs twice; completed stages are checkpointed; uncertain paid operations require reconciliation: a plan has one run in progress, a cell has one success per stage, a business is new once | Postgres `runs`, `run_ledger`, `seen_leads`, enforced by unique indexes |
 | 17 | Cost ledger and traces | Hardening | Tokens, dollars, latency and outcome of every model and tool call | Postgres `cost_ledger`, `traces` |
 | 18 | Eval capture and review | Hardening | Every sample verdict and qualification decision recorded; reviewed weekly; labels become test fixtures | Postgres `eval_records`, `eval_labels` · Streamlit |
-| 19 | Job queue and worker pool | Hardening | Qualification fans out to concurrent workers with capped concurrency and jittered retries | Postgres `SELECT … FOR UPDATE SKIP LOCKED` · `asyncio` |
+| 19 | Job queue and worker pool | Hardening | Enrichment uses two workers and qualification four; the general queue supports capped concurrency and jittered retries | Postgres `SELECT … FOR UPDATE SKIP LOCKED` · `asyncio` |
 | 20 | Page cache | Hardening | A page is fetched at most once a week | Postgres `page_cache` |
 | 21 | Retrieval and memory | Hardening | Past samples and recorded lessons inform the planner | Postgres full-text search |
 | 22 | Demo dataset | Hardening | Fictional, deterministic markets, goals and CRM leads (recorded scrapes later) | `leadgen db seed-demo` |
@@ -60,7 +60,7 @@ repeatable at scale.
 | 3 | Plan | Each gap market is expanded into cities and keywords; the plan is sized to the goal and priced | |
 | 4 | Approve | The plan, expected leads and total estimated cost are shown; the human approves once and sets a budget | **yes** |
 | 5 | Sample | A small scrape per cell, graded for purity and in-market share | |
-| 6 | Reconfigure or abort | Weak keywords are dropped and re-sampled if the budget allows; otherwise the cell waits for the next plan | |
+| 6 | Reconfigure or abort | Weak cells retain a reconfigure or abort verdict; only already-approved cells may be sourced | |
 | 7 | Full run | Passing cells are scraped in full; the same business is never stored twice | |
 | 8 | Lookalikes | Markets still under target get Exa lookalike sourcing, seeded from that market's qualified leads | |
 | 9 | Dedupe | Leads already in the CRM are dropped before anything is spent on them | |
@@ -84,7 +84,7 @@ Census 2020 service has population per place. Consolidated city-county governmen
 everyday name (`Nashville`, not its legal name), since the name becomes a scraper search term. Distance is a
 haversine function in SQL, shared with the grader's in-market check.
 
-Keywords come from the category config, ordered by the purity they produced in past samples. Cities × keywords form
+Keywords currently follow category-config order; learning keyword order from past samples remains planned. Cities × keywords form
 the coverage matrix. The plan schedules cells from the strongest corner outward until the raw lead target
 (goal ÷ expected qualification rate) is covered.
 
@@ -97,7 +97,8 @@ Qualification follows the shape of a web-research enrichment column: a prompt wi
 a reasoning step, and a fixed JSON answer that later steps can rely on.
 
 1. **Column definition.** A row in `agent_columns` holds the prompt template (with `{{fields}}` from the lead),
-   the rubric, which pages and searches to gather, the output schema, a run-if condition and the model.
+   which pages and searches to gather, and an evidence-size cap. The rubric comes from category config,
+   the schema is a Pydantic model, and the model comes from typed settings.
 2. **Tier 1, fixed gathering.** The lead's website (home, services, about) and one search are fetched through
    Firecrawl and reduced to an evidence block with source URLs.
 3. **Tier 1, judgment.** One Claude call reads the rubric and the evidence and returns schema-validated JSON:
@@ -131,10 +132,10 @@ reported, never hidden.
 | Queue | `cell_jobs` with `FOR UPDATE SKIP LOCKED` |
 | Cache | `page_cache` with a freshness check; `contact_cache` keyed by the CRM's domain normalization |
 | Ledgers and evals | append-only `cost_ledger` (one row per paid call of any service: model and tokens for Claude, endpoint and provider units otherwise), `traces`, `eval_records`, `eval_labels` |
-| Retrieval and memory | full-text search (`tsvector` with a GIN index), `lessons` |
+| Retrieval and memory (planned) | full-text search (`tsvector` with a GIN index), `lessons` |
 
 The code targets plain PostgreSQL 16 through `DATABASE_URL`. Local development and CI use a Postgres container;
-production uses Supabase's hosted Postgres. Any Postgres host works.
+the planned production host is Supabase. Any Postgres host works.
 
 ## 7. Decisions and trade-offs
 
@@ -201,3 +202,26 @@ their subdomains. Fuzzy name matching is left out until data shows it is needed.
 | GitHub Actions, Google Cloud | no | free tiers |
 
 Every paid call is recorded in the cost ledger and counted against the approved budget.
+
+
+## Current execution boundaries
+
+The terminal planner is deterministic. The SDK chooses when to invoke each stage but cannot change
+the approved cells or skip their order. Every paid operation makes a durable reservation under a
+locked approval row. Model reservations also share a separate plan allowance. Hooks and handlers
+both enforce the stage sequence. SDK tools exclude shell, file, browser and arbitrary network access.
+
+The first-tier judge checks a citation mechanically before accepting a qualified decision. This
+checks provenance, not truth: human eval review remains necessary. Unknown market coverage stays
+in review. A sample grader checks Maps categories and coordinates; the final judge applies the
+stricter mobile-service rubric. Weak sample cells do not create unapproved replacement keywords.
+
+SDK costs are captured from final session usage. An interrupted session without final usage remains
+reserved until an operator reconciles it. Apify records its cumulative usage as a delta when a
+sample is resurrected. Exa uses returned cost when available and a conservative recorded ceiling
+otherwise. Firecrawl and Blitz record provider units at configured unit rates; these are accounting
+estimates for subscription services, not invoice totals.
+
+A process crash does not imply a paid operation is safe to retry. Uncertain reservations must be
+reconciled against the provider. Resuming retains the original run ID and skips stored stages.
+Cloud deployment, scheduler, secrets integration, and learned keyword ranking remain planned.

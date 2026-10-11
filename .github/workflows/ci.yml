@@ -19,7 +19,7 @@ jobs:
   p1:
     name: p1 lead-gen agent
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: p1_leadgen_pipeline_hardened_agent
@@ -72,3 +72,20 @@ jobs:
 
       - name: Tests
         run: uv run pytest
+
+      # The same image that runs in the cloud: package from the lockfile plus the Claude Code CLI.
+      - name: Container image builds and runs
+        run: |
+          docker build --tag leadgen:ci .
+          docker run --rm leadgen:ci --version
+          docker run --rm --entrypoint claude leadgen:ci --version
+
+      # Migrations ship inside the package: prove it by migrating a fresh database from the image,
+      # not from the checkout. The service container's port is published on the runner's localhost.
+      - name: Container image applies migrations to a fresh database
+        run: |
+          docker run --rm --network host postgres:16.14 \
+            psql "$DATABASE_URL" -c "CREATE DATABASE leadgen_image"
+          docker run --rm --network host \
+            -e DATABASE_URL="postgresql://leadgen:leadgen_ci@localhost:5432/leadgen_image" \
+            leadgen:ci db migrate
