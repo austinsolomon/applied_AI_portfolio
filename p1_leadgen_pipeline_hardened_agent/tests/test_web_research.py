@@ -89,9 +89,14 @@ def firecrawl_backend(http_client: httpx.Client) -> FirecrawlBackend:
     return FirecrawlBackend("fc-test-key", usd_per_credit=USD_PER_CREDIT, http_client=http_client)
 
 
-def ledger_rows(connection: psycopg.Connection) -> list[tuple[str, str, int, Decimal]]:
+def ledger_rows(
+    connection: psycopg.Connection,
+) -> list[tuple[str, str | None, str, int, int, Decimal]]:
     return connection.execute(
-        "SELECT service, model, call_number, cost_usd FROM cost_ledger ORDER BY call_number"
+        """
+        SELECT service, model, endpoint, provider_units, call_number, cost_usd
+        FROM cost_ledger ORDER BY call_number
+        """
     ).fetchall()
 
 
@@ -154,8 +159,8 @@ def test_firecrawl_search_is_ledgered_at_credits_times_price(
     researcher.search("in-home massage Glendale")
 
     assert ledger_rows(migrated_connection) == [
-        ("firecrawl", "firecrawl/search", 1, Decimal("0.006400")),
-        ("firecrawl", "firecrawl/search", 2, Decimal("0.006400")),
+        ("firecrawl", None, "/v2/search", 2, 1, Decimal("0.006400")),
+        ("firecrawl", None, "/v2/search", 2, 2, Decimal("0.006400")),
     ]
     request_ids = migrated_connection.execute(
         "SELECT DISTINCT request_id, run_id FROM cost_ledger"
@@ -189,7 +194,7 @@ def test_firecrawl_fetch_returns_markdown_and_charges_one_credit(
     assert page.text.startswith("# Mobile massage in Pasadena")
     assert (page.backend, page.status_code, page.from_cache) == ("firecrawl", 200, False)
     assert ledger_rows(migrated_connection) == [
-        ("firecrawl", "firecrawl/scrape", 1, Decimal("0.003200"))
+        ("firecrawl", None, "/v2/scrape", 1, 1, Decimal("0.003200"))
     ]
 
 
@@ -507,20 +512,42 @@ def test_non_http_urls_are_refused_before_any_fetch(
 def test_ledger_accepts_every_planned_service_and_nothing_else(
     migrated_connection: psycopg.Connection,
 ) -> None:
-    def insert(service: str) -> None:
+    def insert(service: str, *, model: str | None = None, endpoint: str | None = None) -> None:
         migrated_connection.execute(
             """
-            INSERT INTO cost_ledger (run_id, service, model, call_number, input_tokens,
-                cache_creation_input_tokens, cache_read_input_tokens, output_tokens, cost_usd)
-            VALUES (%s, %s, 'test', 1, 0, 0, 0, 0, 0)
+            INSERT INTO cost_ledger (run_id, service, model, endpoint, call_number, cost_usd)
+            VALUES (%s, %s, %s, %s, 1, 0)
             """,
-            (uuid.uuid4(), service),
+            (uuid.uuid4(), service, model, endpoint),
         )
 
-    for service in ("claude", "blitz", "apify", "exa", "firecrawl"):
-        insert(service)
+    insert("claude", model="claude-haiku-5-5")
+    for service in ("blitz", "apify", "exa", "firecrawl"):
+        insert(service, endpoint="/v2/test")
     with pytest.raises(psycopg.errors.CheckViolation):
-        insert("unknown_service")
+        insert("unknown_service", endpoint="/v2/test")
+
+
+def test_ledger_still_ties_every_non_claude_row_to_an_endpoint(
+    migrated_connection: psycopg.Connection,
+) -> None:
+    """The page-cache migration widens the service list without loosening the earlier rule."""
+    constraint_names = {
+        name
+        for (name,) in migrated_connection.execute(
+            "SELECT conname FROM pg_constraint WHERE conrelid = 'cost_ledger'::regclass"
+        )
+    }
+    assert {"cost_ledger_service_check", "cost_ledger_call_identity"} <= constraint_names
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        migrated_connection.execute(
+            """
+            INSERT INTO cost_ledger (run_id, service, model, call_number, cost_usd)
+            VALUES (%s, 'firecrawl', '/v2/scrape', 1, 0)
+            """,
+            (uuid.uuid4(),),
+        )
 
 
 def test_page_cache_rejects_non_http_urls_and_unknown_backends(

@@ -12,24 +12,10 @@ CREATE TABLE page_cache (
     fetched_at    timestamptz NOT NULL DEFAULT now()
 );
 
--- The cost ledger gains the Firecrawl service. The allowed-service check is rebuilt from the full
--- list of planned services rather than extended in place, so this migration applies cleanly
--- whichever earlier migration last redefined that constraint and whatever it named it.
-DO $$
-DECLARE
-    service_check_name text;
-BEGIN
-    FOR service_check_name IN
-        SELECT conname
-        FROM pg_constraint
-        WHERE conrelid = 'cost_ledger'::regclass
-          AND contype = 'c'
-          AND pg_get_constraintdef(oid) ILIKE '%service%'
-    LOOP
-        EXECUTE format('ALTER TABLE cost_ledger DROP CONSTRAINT %I', service_check_name);
-    END LOOP;
-END $$;
-
+-- The cost ledger gains the Firecrawl service. Only the allowed-service check is replaced (0003
+-- created it and 0006 last redefined it, both under this name); the other ledger constraints,
+-- such as the one that ties every non-Claude row to an endpoint, stay in place.
 ALTER TABLE cost_ledger
+    DROP CONSTRAINT cost_ledger_service_check,
     ADD CONSTRAINT cost_ledger_service_check
-    CHECK (service IN ('claude', 'blitz', 'apify', 'exa', 'firecrawl'));
+        CHECK (service IN ('claude', 'blitz', 'apify', 'exa', 'firecrawl'));
