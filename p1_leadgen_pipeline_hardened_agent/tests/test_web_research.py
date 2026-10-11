@@ -1,6 +1,7 @@
 """Search and page fetching: both backends faked with respx, the cache against real Postgres."""
 
 import uuid
+from collections.abc import Iterator
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote
@@ -105,8 +106,9 @@ def cache_rows(connection: psycopg.Connection) -> list[tuple[str, str]]:
 
 
 @pytest.fixture
-def http_client() -> httpx.Client:
-    return httpx.Client()
+def http_client() -> Iterator[httpx.Client]:
+    with httpx.Client() as client:
+        yield client
 
 
 @pytest.fixture
@@ -198,21 +200,57 @@ def test_firecrawl_fetch_returns_markdown_and_charges_one_credit(
     ]
 
 
-def test_firecrawl_fetch_of_a_missing_page_fails_and_is_not_cached(
+def test_firecrawl_fetch_of_a_missing_page_fails_uncached_but_is_still_charged(
     migrated_connection: psycopg.Connection, mocked_web: respx.MockRouter, http_client: httpx.Client
 ) -> None:
+    # Firecrawl returns an error page as a result and bills it one credit like any other page.
     mocked_web.post(f"{FIRECRAWL_BASE_URL}/scrape").respond(
         json={
             "success": True,
+            "creditsUsed": 1,
             "data": {"markdown": "", "metadata": {"statusCode": 404, "error": "Not Found"}},
         }
     )
     researcher = WebResearcher(migrated_connection, firecrawl_backend(http_client))
 
-    with pytest.raises(PageFetchFailed, match="HTTP 404"):
+    with pytest.raises(PageFetchFailed, match="HTTP 404") as failure:
         researcher.fetch_page(PAGE_URL)
 
+    assert failure.value.charge is not None and failure.value.charge.credits == 1
     assert cache_rows(migrated_connection) == []
+    assert ledger_rows(migrated_connection) == [
+        ("firecrawl", None, "/v2/scrape", 1, 1, Decimal("0.003200"))
+    ]
+
+
+def test_firecrawl_fetch_with_no_text_is_charged_even_without_credits_used(
+    migrated_connection: psycopg.Connection, mocked_web: respx.MockRouter, http_client: httpx.Client
+) -> None:
+    # A 200 with nothing extractable, and no creditsUsed in the body: the published price applies.
+    mocked_web.post(f"{FIRECRAWL_BASE_URL}/scrape").respond(
+        json={"success": True, "data": {"markdown": "", "metadata": {"statusCode": 200}}}
+    )
+    researcher = WebResearcher(migrated_connection, firecrawl_backend(http_client))
+
+    with pytest.raises(PageFetchFailed, match="no text extracted"):
+        researcher.fetch_page(PAGE_URL)
+
+    assert ledger_rows(migrated_connection) == [
+        ("firecrawl", None, "/v2/scrape", 1, 1, Decimal("0.003200"))
+    ]
+
+
+def test_free_fetch_failure_carries_no_charge(
+    migrated_connection: psycopg.Connection, mocked_web: respx.MockRouter, http_client: httpx.Client
+) -> None:
+    mocked_web.get(PAGE_URL).respond(status_code=404)
+    researcher = WebResearcher(migrated_connection, FreeWebBackend(http_client=http_client))
+
+    with pytest.raises(PageFetchFailed, match="HTTP 404") as failure:
+        researcher.fetch_page(PAGE_URL)
+
+    assert failure.value.charge is None
+    assert ledger_rows(migrated_connection) == []
 
 
 @pytest.mark.parametrize(
@@ -609,6 +647,30 @@ def test_builder_honours_prefer_free_even_with_a_key(
     )
 
     assert isinstance(researcher.backend, FreeWebBackend)
+
+
+def test_builder_owns_and_closes_the_client_it_opened(
+    migrated_connection: psycopg.Connection,
+) -> None:
+    settings = settings_with(firecrawl_api_key=None)
+
+    with build_web_researcher(migrated_connection, settings) as researcher:
+        owned = researcher.owned_http_client
+        assert isinstance(owned, httpx.Client) and not owned.is_closed
+
+    assert owned.is_closed
+    researcher.close()  # closing twice is harmless
+
+
+def test_builder_leaves_an_injected_client_open(
+    migrated_connection: psycopg.Connection, http_client: httpx.Client
+) -> None:
+    settings = settings_with(firecrawl_api_key=None)
+
+    with build_web_researcher(migrated_connection, settings, http_client=http_client) as researcher:
+        assert researcher.owned_http_client is None
+
+    assert not http_client.is_closed
 
 
 def test_settings_read_the_firecrawl_price_from_the_environment(
