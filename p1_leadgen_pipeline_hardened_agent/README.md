@@ -10,6 +10,10 @@ the CRM. Every decision is recorded for a recurring evaluation review.
 
 The demo category is mobile and in-home massage providers in US markets.
 
+Explore the [three connected architecture diagrams](docs/architecture/README.md): the lead
+pipeline, production safeguards, and qualification with human review. Each opens into focused
+chapters, component details and inspectable data flows.
+
 ```mermaid
 flowchart LR
     D[Demand dashboard] --> G[Find gaps]
