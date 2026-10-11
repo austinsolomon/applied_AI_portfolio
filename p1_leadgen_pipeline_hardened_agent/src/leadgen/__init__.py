@@ -1,6 +1,9 @@
 """Lead-gen agent: demand gaps → sourcing → dedupe → enrichment → qualification → CRM."""
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+# Single source of truth for the version is pyproject.toml; read it from the installed package.
+__version__ = version("leadgen")
 
 
 def main() -> None:
