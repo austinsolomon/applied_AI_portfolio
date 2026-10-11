@@ -5,7 +5,10 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+import psycopg
+
 import leadgen
+from leadgen.eval_review import label_eval_record, record_eval
 from leadgen.migrate import discover_migrations
 
 PYPROJECT_PATH = Path(__file__).resolve().parents[1] / "pyproject.toml"
@@ -132,3 +135,34 @@ def test_web_without_a_subcommand_prints_usage() -> None:
     assert completed.returncode == 0
     assert "web_command" in completed.stdout
     assert "Traceback" not in completed.stderr
+
+
+def test_evals_export_fixtures_writes_labeled_records(
+    empty_database_url: str, tmp_path: Path
+) -> None:
+    environment = {"DATABASE_URL": empty_database_url, "PATH": ""}
+    run_leadgen("db", "migrate", env=environment, cwd=tmp_path)
+    with psycopg.connect(empty_database_url, autocommit=True) as connection:
+        record_id = record_eval(
+            connection, kind="judge_decision", subject="Cedar Massage", verdict="qualified"
+        )
+        label_eval_record(connection, record_id, label="correct", labeled_by="austin")
+
+    completed = run_leadgen("evals", "export-fixtures", env=environment, cwd=tmp_path)
+
+    assert completed.returncode == 0, completed.stderr
+    fixture_path = tmp_path / "tests" / "fixtures" / "evals" / "judge_decision.json"
+    assert completed.stdout == f"Wrote 1 labeled records to {fixture_path.relative_to(tmp_path)}\n"
+    assert fixture_path.exists()
+
+
+def test_evals_export_fixtures_with_no_labels_says_so(
+    empty_database_url: str, tmp_path: Path
+) -> None:
+    environment = {"DATABASE_URL": empty_database_url, "PATH": ""}
+    run_leadgen("db", "migrate", env=environment, cwd=tmp_path)
+
+    completed = run_leadgen("evals", "export-fixtures", env=environment, cwd=tmp_path)
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.startswith("No labeled eval records yet.")
