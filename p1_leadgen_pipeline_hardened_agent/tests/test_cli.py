@@ -124,3 +124,11 @@ def test_enrich_without_a_blitz_key_explains_instead_of_calling(
 
     assert completed.returncode == 2
     assert completed.stderr.strip() == "BLITZ_API_KEY is not set. Add it to .env (never commit it)."
+
+
+def test_web_without_a_subcommand_prints_usage() -> None:
+    completed = run_leadgen("web")
+
+    assert completed.returncode == 0
+    assert "web_command" in completed.stdout
+    assert "Traceback" not in completed.stderr

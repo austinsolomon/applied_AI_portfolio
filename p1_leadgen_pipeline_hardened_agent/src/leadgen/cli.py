@@ -263,6 +263,9 @@ def run_enrich(arguments: argparse.Namespace) -> int:
 
 
 def run_web(arguments: argparse.Namespace) -> int:
+    if arguments.web_command is None:
+        # Same as `leadgen db`: a bare group command shows its usage instead of failing.
+        build_parser().parse_args(["web", "--help"])
     try:
         settings = get_settings()
         with (
@@ -277,8 +280,6 @@ def run_web(arguments: argparse.Namespace) -> int:
                 origin = "cache" if page.from_cache else page.backend
                 print(f"# {page.title or page.final_url}  ({origin}, HTTP {page.status_code})")
                 print(page.text)
-            else:
-                build_parser().parse_args(["web", "--help"])
     except (ValidationError, psycopg.OperationalError) as error:
         return report_database_error(error)
     except psycopg.errors.UndefinedTable:
