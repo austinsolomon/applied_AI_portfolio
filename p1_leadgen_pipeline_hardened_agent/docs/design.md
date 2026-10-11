@@ -112,7 +112,7 @@ httpx with trafilatura as a free fallback and test backend.
 | CRM | `crm_leads`; Postgres-generated normalized phone, email and domain; unique place ID, phone and email; domain indexed as a match key |
 | Dedupe | `EXISTS` on normalized keys |
 | CRM write | `INSERT … ON CONFLICT DO NOTHING` in a transaction |
-| Dashboard and gaps | view `gap_view` |
+| Dashboard and gaps | view `gap_view`: goal, assigned, still needed, available, Leads Available %, goal met, short by |
 | Markets and places | `markets` (center, radius), `places` (US Census Gazetteer) |
 | Plans and approval | `scrape_plans`, `scrape_plan_cells`, `approvals` |
 | Run state | `runs`, `ledger`, `seen_leads` with unique constraints |

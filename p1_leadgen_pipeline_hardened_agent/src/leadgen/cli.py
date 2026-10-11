@@ -1,7 +1,9 @@
 """The `leadgen` command."""
 
 import argparse
+import subprocess
 import sys
+from pathlib import Path
 
 import psycopg
 from pydantic import ValidationError
@@ -26,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     database_commands.add_parser(
         "seed-demo", help="load fictional demo markets and leads into an empty database"
     )
+    commands.add_parser("dashboard", help="open the demand dashboard in the browser")
     return parser
 
 
@@ -78,6 +81,24 @@ def run_seed_demo() -> int:
     return 0
 
 
+def run_dashboard() -> int:
+    dashboard_script = Path(__file__).with_name("dashboard.py")
+    # Bound to this machine only; the dashboard is not meant to be reachable from the network.
+    return subprocess.call(
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            str(dashboard_script),
+            "--server.address",
+            "localhost",
+            "--browser.gatherUsageStats",
+            "false",
+        ]
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
@@ -85,5 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_migrate()
     if arguments.command == "db" and arguments.db_command == "seed-demo":
         return run_seed_demo()
+    if arguments.command == "dashboard":
+        return run_dashboard()
     parser.print_help()
     return 0
