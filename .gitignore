@@ -1,0 +1,26 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# data and run outputs (lead data is never committed)
+data/
+out/
+*.csv
+!**/tests/fixtures/**/*.csv
+!**/db/seed/**/*.csv
+
+# os / editors
+.DS_Store
+.idea/
+.vscode/
