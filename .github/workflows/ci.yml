@@ -70,6 +70,9 @@ jobs:
       - name: Migrations apply cleanly
         run: uv run leadgen db migrate
 
+      - name: Architecture maps are valid and up to date
+        run: node docs/architecture/atlas/build.mjs --check
+
       - name: Tests
         run: uv run pytest
 
