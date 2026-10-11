@@ -31,7 +31,7 @@ repeatable at scale.
 | 7 | Sample grader | Pipeline | Purity per keyword and in-market share → proceed, reconfigure or abort | Python · rubric from config |
 | 8 | Full scrape | Pipeline | Continues the sampled run, or a fresh sweep after reconfiguring | Apify · pandas · Postgres `raw_leads`, `seen_leads` |
 | 9 | Lookalike sourcing | Pipeline | For markets still under target: finds businesses similar to that market's qualified leads | Exa `find_similar` via `exa-py` |
-| 10 | Dedupe | Pipeline | Drops any lead already in the CRM by Google place ID, phone, email or website domain | Postgres, exact match on normalized keys |
+| 10 | Dedupe | Pipeline | Drops any lead already in the CRM by Google place ID, phone, email or website domain; a domain on a shared or aggregator host is never a match | Postgres, exact match on normalized keys computed by the CRM's own expressions |
 | 11 | Contact enrichment | Pipeline | Phone and email per lead; a plain API call, cached per domain | BlitzAPI |
 | 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Firecrawl |
 | 13 | CRM write | Pipeline | Inserts qualified leads in one transaction; conflicts reported, never lost | Postgres `INSERT … ON CONFLICT DO NOTHING` |
@@ -157,8 +157,11 @@ Qualification is a single structured-output call by default and an agent only fo
 
 **Public data for geography.** City lists come from the US Census Gazetteer, not from a model.
 
-**Exact-match dedupe.** Normalized keys are deterministic and easy to test. Fuzzy name matching is left out until
-data shows it is needed.
+**Exact-match dedupe.** Normalized keys are deterministic and easy to test. The incoming lead's keys are computed
+by Postgres with the same expressions that generate the CRM's key columns, so there is one definition of "the
+same phone" or "the same domain". Hosts that many businesses share (social profiles, link-in-bio pages,
+directories, booking marketplaces) are listed in the category config and excluded from the domain key, including
+their subdomains. Fuzzy name matching is left out until data shows it is needed.
 
 ## 8. Practices carried over from running the pipeline in production
 
