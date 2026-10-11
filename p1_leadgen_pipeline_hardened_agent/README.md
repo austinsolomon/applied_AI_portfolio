@@ -41,6 +41,7 @@ flowchart LR
 | Scrape plans, the one approval, run state (nothing runs twice) | done |
 | Category config and dedupe against the CRM | done |
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
+| Web search and page fetching with a page cache | done |
 | Sourcing, qualification, CRM write | planned |
 | Orchestrator agent, approval, budget guard, evals | planned |
 | Scheduled cloud deployment | planned |
@@ -127,6 +128,29 @@ as plain messages.
 
 This command is paid and needs `BLITZ_API_KEY` in `.env`. Tests fake every BlitzAPI endpoint
 with [respx](https://github.com/lundberg/respx), so the suite and CI never call it.
+
+## Web search and page fetching
+
+Qualification needs evidence from the web. [`web_research.py`](src/leadgen/web_research.py) puts
+that behind two calls, `search(query)` and `fetch_page(url)`, with two interchangeable backends:
+
+- **Firecrawl** (`FIRECRAWL_API_KEY` set): `/v2/search` and `/v2/scrape`, which cope with
+  JavaScript-rendered and bot-protected sites. Every call is written to `cost_ledger` as service
+  `firecrawl` at credits × `FIRECRAWL_USD_PER_CREDIT` (one credit per page; two credits per ten
+  search results).
+- **Free** (no key, and the test backend): httpx plus [trafilatura](https://trafilatura.readthedocs.io/)
+  for a page's main text, and DuckDuckGo's HTML results page for search.
+
+Fetched pages land in the `page_cache` table; a URL fetched in the last seven days is served from
+Postgres with no network call and no charge. When Firecrawl is rate limited, times out or returns
+a server error, the call falls back to the free backend; a rejected key or an empty credit balance
+is reported as a plain message instead, so a configuration problem is never hidden. Tests fake
+both backends with respx, so neither the test suite nor CI touches the network.
+
+```bash
+uv run leadgen web search "mobile massage Pasadena"          # top results
+uv run leadgen web fetch https://example.com/services --free  # main text, cached
+```
 
 ## Development
 

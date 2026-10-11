@@ -47,6 +47,7 @@ def test_db_migrate_applies_the_schema_to_an_empty_database(
         f"Applied {migration.name}" for migration in discover_migrations()
     ]
     assert "Applied 0001_crm_core.sql" in completed.stdout
+    assert "Applied 0007_page_cache.sql" in completed.stdout
 
 
 def test_db_seed_demo_after_migrate(empty_database_url: str, tmp_path: Path) -> None:
