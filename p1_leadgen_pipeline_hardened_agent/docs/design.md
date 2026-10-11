@@ -37,7 +37,7 @@ repeatable at scale.
 | 13 | CRM write | Pipeline | Inserts qualified leads in one transaction; conflicts reported, never lost | Postgres `INSERT … ON CONFLICT DO NOTHING` |
 | 14 | Orchestrator agent | Pipeline | Runs the pipeline in order, retries, reconfigures within the approved budget | Claude Agent SDK · skills in `.claude/skills/` |
 | 15 | Budget guard | Hardening | After approval, blocks any tool call outside the approved plan or budget | Agent SDK pre-tool-use hook |
-| 16 | Run state | Hardening | Nothing runs twice; runs resume where they stopped | Postgres `runs`, `ledger`, `seen_leads` |
+| 16 | Run state | Hardening | Nothing runs twice; runs resume where they stopped: a plan has one run in progress, a cell has one success per stage, a business is new once | Postgres `runs`, `run_ledger`, `seen_leads`, enforced by unique indexes |
 | 17 | Cost ledger and traces | Hardening | Tokens, dollars, latency and outcome of every model and tool call | Postgres `cost_ledger`, `traces` |
 | 18 | Eval capture and review | Hardening | Every sample verdict and qualification decision recorded; reviewed weekly; labels become test fixtures | Postgres `eval_records`, `eval_labels` · Streamlit |
 | 19 | Job queue and worker pool | Hardening | Qualification fans out to concurrent workers with capped concurrency and jittered retries | Postgres `SELECT … FOR UPDATE SKIP LOCKED` · `asyncio` |
@@ -122,7 +122,7 @@ httpx with trafilatura as a free fallback and test backend.
 | Dashboard and gaps | view `gap_view`: goal, assigned, still needed, available, Leads Available %, goal met, short by |
 | Markets and places | `markets` (center, radius), `places` (US Census 2020 snapshot), `haversine_km()` |
 | Plans and approval | `scrape_plans`, `scrape_plan_cells`, `approvals` |
-| Run state | `runs`, `ledger`, `seen_leads` with unique constraints |
+| Run state | `runs`, `run_ledger`, `seen_leads` with unique constraints |
 | Queue | `cell_jobs` with `FOR UPDATE SKIP LOCKED` |
 | Cache | `page_cache` with a freshness check |
 | Ledgers and evals | append-only `cost_ledger`, `traces`, `eval_records`, `eval_labels` |

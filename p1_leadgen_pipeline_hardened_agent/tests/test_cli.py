@@ -6,6 +6,7 @@ import tomllib
 from pathlib import Path
 
 import leadgen
+from leadgen.migrate import discover_migrations
 
 PYPROJECT_PATH = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
@@ -41,12 +42,11 @@ def test_db_migrate_applies_the_schema_to_an_empty_database(
     )
 
     assert completed.returncode == 0, completed.stderr
+    # Every packaged migration, in version order, and nothing else.
     assert completed.stdout.splitlines() == [
-        "Applied 0001_crm_core.sql",
-        "Applied 0002_gap_view_short_by.sql",
-        "Applied 0003_cost_ledger.sql",
-        "Applied 0004_places.sql",
+        f"Applied {migration.name}" for migration in discover_migrations()
     ]
+    assert "Applied 0001_crm_core.sql" in completed.stdout
 
 
 def test_db_seed_demo_after_migrate(empty_database_url: str, tmp_path: Path) -> None:
