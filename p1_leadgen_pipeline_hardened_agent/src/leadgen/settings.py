@@ -1,5 +1,6 @@
 """Typed runtime configuration, read from environment variables or a local `.env` file."""
 
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -20,6 +21,10 @@ class Settings(BaseSettings):
     leadgen_model: str = "claude-haiku-5-5"
     # The one category this deployment sources; relative paths resolve from the working directory.
     category_config_path: Path = Path("config/category.yaml")
+    # Contact enrichment (BlitzAPI). The plan is a flat monthly rate, so the per-record price
+    # is whatever the operator chooses to amortize into the ledger; records are always counted.
+    blitz_api_key: SecretStr | None = None
+    blitz_usd_per_record: Decimal = Decimal(0)
 
 
 @lru_cache

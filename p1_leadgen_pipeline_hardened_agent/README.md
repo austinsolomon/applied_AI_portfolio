@@ -40,7 +40,8 @@ flowchart LR
 | US Census places and market expansion | done |
 | Scrape plans, the one approval, run state (nothing runs twice) | done |
 | Category config and dedupe against the CRM | done |
-| Sourcing, enrichment, qualification, CRM write | planned |
+| Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
+| Sourcing, qualification, CRM write | planned |
 | Orchestrator agent, approval, budget guard, evals | planned |
 | Scheduled cloud deployment | planned |
 
@@ -105,6 +106,27 @@ run 3c4eb590-… on claude-haiku-5-5: $0.00029
 The same question on Claude Opus 5.5 chose Los Angeles (largest absolute shortfall, 66) instead
 of Phoenix (lowest share, 10%). The prompt does not say which measure "first" means; that is the
 kind of ambiguity the eval suite will pin down.
+
+## Contact enrichment
+
+`leadgen enrich https://www.cedar-massage.example` looks up a phone and an email for the business
+behind a website ([`contacts.py`](src/leadgen/contacts.py)). It is a plain function with a fixed
+input and output, not an agent. BlitzAPI keys its data on LinkedIn, so one lookup is a short
+fixed chain, each step one HTTP call, stopping at the first step that finds nothing: domain →
+company LinkedIn page → the best-placed person (owner or founder first) → verified work email →
+direct phone (skipped when the key's plan has no phone endpoint).
+
+The result, found or not, is cached in `contact_cache` by domain, normalized with the same
+expressions as the CRM's `website_domain` column, so the two keys can never disagree; a domain
+younger than 90 days in the cache costs nothing. Every metered call writes a `cost_ledger` row
+with the records BlitzAPI reports it used, as it happens, so an aborted lookup still has its spend
+recorded and the ledger can be reconciled against the provider's own usage. Rate limits and
+server errors are retried with jittered backoff; timeouts are not retried, because the provider
+may already have billed the request. Bad keys, exhausted plans and rejected requests come back
+as plain messages.
+
+This command is paid and needs `BLITZ_API_KEY` in `.env`. Tests fake every BlitzAPI endpoint
+with [respx](https://github.com/lundberg/respx), so the suite and CI never call it.
 
 ## Development
 
