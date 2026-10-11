@@ -34,7 +34,7 @@ repeatable at scale.
 | 10 | Dedupe | Pipeline | Drops any lead already in the CRM by Google place ID, phone, email or website domain; a domain on a shared or aggregator host is never a match | Postgres, exact match on normalized keys computed by the CRM's own expressions |
 | 11 | Contact enrichment | Pipeline | Phone and email per lead: a fixed chain of API calls (domain → company page → best-placed person → email, phone), cached per domain, every call in the cost ledger | BlitzAPI · httpx · Postgres `contact_cache` |
 | 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Firecrawl |
-| 13 | CRM write | Pipeline | Inserts qualified leads in one transaction; conflicts reported, never lost | Postgres `INSERT … ON CONFLICT DO NOTHING` |
+| 13 | CRM write | Pipeline | Inserts qualified leads with at least one real phone or email (junk mailboxes blanked) in one transaction; conflicts reported, never lost; a negation-aware contradiction scan of each reason goes to `eval_records` without blocking | Postgres `INSERT … ON CONFLICT DO NOTHING` |
 | 14 | Orchestrator agent | Pipeline | Runs the pipeline in order, retries, reconfigures within the approved budget | Claude Agent SDK · skills in `.claude/skills/` |
 | 15 | Budget guard | Hardening | After approval, blocks any tool call outside the approved plan or budget | Agent SDK pre-tool-use hook |
 | 16 | Run state | Hardening | Nothing runs twice; runs resume where they stopped: a plan has one run in progress, a cell has one success per stage, a business is new once | Postgres `runs`, `run_ledger`, `seen_leads`, enforced by unique indexes |
