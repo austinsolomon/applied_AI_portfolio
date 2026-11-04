@@ -1,0 +1,257 @@
+"""Read models for the dashboard: one run's stage-by-stage state, run history, and source yield.
+
+Read-only. Every number comes from the tables the pipeline writes (runs, pipeline_stages,
+cell_jobs, budget_reservations, cost_ledger, traces, raw_leads, crm_leads), so the dashboard shows
+exactly what the runner recorded. No contact details or page evidence are returned.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+import psycopg
+from psycopg.rows import dict_row
+
+from leadgen.orchestrator import STAGES
+
+STAGE_LABELS = {
+    "maps": "Google Maps",
+    "exa": "Exa search",
+    "dedupe": "Dedupe",
+    "enrich": "Enrich contacts",
+    "qualify": "Qualify",
+    "research": "Research",
+    "crm": "Write to CRM",
+}
+STAGE_DONE = "done"
+STAGE_RUNNING = "running"
+STAGE_FAILED = "failed"
+STAGE_BLOCKED = "blocked"
+STAGE_WAITING = "waiting"
+
+
+@dataclass(frozen=True)
+class StageState:
+    stage: str
+    label: str
+    status: str
+    result: dict[str, Any] | None
+    completed_at: datetime | None
+
+
+@dataclass(frozen=True)
+class RunDetail:
+    run_id: UUID
+    plan_id: int
+    market: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None
+    budget_usd: Decimal | None
+    spend_usd: Decimal
+    held_usd: Decimal
+    stages: list[StageState]
+    jobs: dict[str, dict[str, int]] = field(default_factory=dict)
+    spend_by_service: dict[str, Decimal] = field(default_factory=dict)
+    needs_reconciliation: list[str] = field(default_factory=list)
+    recent_events: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def needs_a_human(self) -> bool:
+        return bool(self.needs_reconciliation)
+
+
+def stage_states(status: str, completed: dict[str, tuple], unresolved: bool) -> list[StageState]:
+    """Done stages, then the stage the run is on (running, failed, or blocked when a paid call
+    awaits reconciliation), then the stages still waiting."""
+    states, current_found = [], False
+    for stage in STAGES:
+        if stage in completed:
+            result, completed_at = completed[stage]
+            states.append(StageState(stage, STAGE_LABELS[stage], STAGE_DONE, result, completed_at))
+            continue
+        if current_found or status == "finished":
+            state = STAGE_WAITING
+        elif status == "running":
+            state = STAGE_RUNNING
+        else:
+            state = STAGE_BLOCKED if unresolved else STAGE_FAILED
+        current_found = True
+        states.append(StageState(stage, STAGE_LABELS[stage], state, None, None))
+    return states
+
+
+def list_runs(connection: psycopg.Connection, limit: int = 50) -> list[tuple[UUID, str]]:
+    """(run_id, short label) for a run picker, newest first."""
+    rows = connection.execute(
+        "SELECT run_id, plan_id, status, started_at FROM runs ORDER BY started_at DESC LIMIT %s",
+        (limit,),
+    ).fetchall()
+    return [
+        (run_id, f"{started:%Y-%m-%d %H:%M} · plan {plan_id} · {status} · {str(run_id)[:8]}")
+        for run_id, plan_id, status, started in rows
+    ]
+
+
+def _market_label(connection: psycopg.Connection, plan_id: int) -> str:
+    rows = connection.execute(
+        "SELECT DISTINCT m.name || ', ' || m.state FROM scrape_plan_cells c "
+        "JOIN markets m USING (market_id) WHERE c.plan_id = %s ORDER BY 1",
+        (plan_id,),
+    ).fetchall()
+    return " / ".join(row[0] for row in rows) or "—"
+
+
+def read_run_detail(connection: psycopg.Connection, run_id: UUID) -> RunDetail | None:
+    run = connection.execute(
+        "SELECT r.run_id, r.plan_id, r.status, r.started_at, r.finished_at, a.budget_usd "
+        "FROM runs r LEFT JOIN approvals a USING (plan_id) WHERE r.run_id = %s",
+        (run_id,),
+    ).fetchone()
+    if run is None:
+        return None
+    run_id, plan_id, status, started_at, finished_at, budget = run
+    completed = {
+        stage: (result, completed_at)
+        for stage, result, completed_at in connection.execute(
+            "SELECT stage, result, completed_at FROM pipeline_stages WHERE run_id = %s",
+            (run_id,),
+        ).fetchall()
+    }
+    unresolved = [
+        operation
+        for (operation,) in connection.execute(
+            "SELECT operation FROM budget_reservations WHERE plan_id = %s "
+            "AND status IN ('started','uncertain') ORDER BY reservation_id",
+            (plan_id,),
+        ).fetchall()
+    ]
+    held = connection.execute(
+        "SELECT coalesce(sum(ceiling_usd), 0) FROM budget_reservations WHERE plan_id = %s "
+        "AND status IN ('started','uncertain')",
+        (plan_id,),
+    ).fetchone()[0]
+    jobs: dict[str, dict[str, int]] = {}
+    for kind, job_status, count in connection.execute(
+        "SELECT kind, status, count(*) FROM cell_jobs WHERE run_id = %s GROUP BY 1, 2",
+        (run_id,),
+    ).fetchall():
+        jobs.setdefault(kind, {})[job_status] = count
+    spend_by_service = dict(
+        connection.execute(
+            "SELECT service, sum(cost_usd) FROM cost_ledger WHERE run_id = %s "
+            "GROUP BY 1 ORDER BY 2 DESC",
+            (run_id,),
+        ).fetchall()
+    )
+    with connection.cursor(row_factory=dict_row) as cursor:
+        events = cursor.execute(
+            "SELECT created_at, operation, outcome, latency_ms FROM traces WHERE run_id = %s "
+            "ORDER BY trace_id DESC LIMIT 20",
+            (run_id,),
+        ).fetchall()
+    return RunDetail(
+        run_id=run_id,
+        plan_id=plan_id,
+        market=_market_label(connection, plan_id),
+        status=status,
+        started_at=started_at,
+        finished_at=finished_at,
+        budget_usd=budget,
+        spend_usd=sum(spend_by_service.values(), Decimal(0)),
+        held_usd=held,
+        stages=stage_states(status, completed, bool(unresolved)),
+        jobs=jobs,
+        spend_by_service=spend_by_service,
+        needs_reconciliation=unresolved,
+        recent_events=events,
+    )
+
+
+RUN_HISTORY_SQL = """
+SELECT
+    r.run_id,
+    r.plan_id,
+    r.status,
+    r.started_at,
+    r.finished_at,
+    a.budget_usd,
+    count(l.raw_lead_id) FILTER (WHERE l.source = 'google_maps') AS maps_sourced,
+    count(l.raw_lead_id) FILTER (WHERE l.source = 'exa') AS exa_sourced,
+    count(l.raw_lead_id) FILTER (WHERE NOT l.duplicate) AS new_leads,
+    count(l.raw_lead_id) FILTER (WHERE l.qualification->>'verdict' = 'qualified') AS qualified,
+    count(l.raw_lead_id) FILTER (WHERE l.qualification->>'verdict' = 'review') AS review,
+    count(l.raw_lead_id) FILTER (WHERE l.qualification->>'verdict' = 'rejected') AS rejected,
+    (SELECT count(*) FROM crm_leads c WHERE c.run_id = r.run_id) AS crm_inserted,
+    (SELECT coalesce(sum(cost_usd), 0) FROM cost_ledger k WHERE k.run_id = r.run_id) AS spend_usd
+FROM runs r
+LEFT JOIN approvals a USING (plan_id)
+LEFT JOIN raw_leads l ON l.run_id = r.run_id
+GROUP BY r.run_id, a.budget_usd
+ORDER BY r.started_at DESC
+LIMIT %s
+"""
+
+
+def read_run_history(connection: psycopg.Connection, limit: int = 50) -> list[dict[str, Any]]:
+    """One summary row per run, newest first, with the market and cost per qualified lead."""
+    with connection.cursor(row_factory=dict_row) as cursor:
+        rows = cursor.execute(RUN_HISTORY_SQL, (limit,)).fetchall()
+    for row in rows:
+        row["market"] = _market_label(connection, row["plan_id"])
+        row["cost_per_qualified_usd"] = (
+            row["spend_usd"] / row["qualified"] if row["qualified"] else None
+        )
+    return rows
+
+
+def read_source_yield(connection: psycopg.Connection) -> list[dict[str, Any]]:
+    """Per source across all runs: sourced, new, judged, qualified, and qualified ÷ judged."""
+    with connection.cursor(row_factory=dict_row) as cursor:
+        rows = cursor.execute(
+            """
+            SELECT source,
+                   count(*) AS sourced,
+                   count(*) FILTER (WHERE NOT duplicate) AS new_leads,
+                   count(qualification) AS judged,
+                   count(*) FILTER (WHERE qualification->>'verdict' = 'qualified') AS qualified
+            FROM raw_leads GROUP BY source ORDER BY source
+            """
+        ).fetchall()
+    for row in rows:
+        row["qualified_rate"] = row["qualified"] / row["judged"] if row["judged"] else None
+    return rows
+
+
+def read_consensus_yield(connection: psycopg.Connection) -> list[dict[str, Any]]:
+    """Exa leads by how many query phrasings found them, with qualified ÷ judged for each."""
+    with connection.cursor(row_factory=dict_row) as cursor:
+        rows = cursor.execute(
+            """
+            SELECT query_consensus,
+                   count(*) AS leads,
+                   count(qualification) AS judged,
+                   count(*) FILTER (WHERE qualification->>'verdict' = 'qualified') AS qualified
+            FROM raw_leads WHERE source = 'exa' GROUP BY 1 ORDER BY 1
+            """
+        ).fetchall()
+    for row in rows:
+        row["qualified_rate"] = row["qualified"] / row["judged"] if row["judged"] else None
+    return rows
+
+
+def read_spend_by_service(connection: psycopg.Connection) -> list[dict[str, Any]]:
+    """All-time spend per service, split into provider-reported and estimated amounts."""
+    with connection.cursor(row_factory=dict_row) as cursor:
+        return cursor.execute(
+            """
+            SELECT service,
+                   count(*) AS calls,
+                   sum(cost_usd) FILTER (WHERE cost_basis <> 'estimated') AS reported_usd,
+                   sum(cost_usd) FILTER (WHERE cost_basis = 'estimated') AS estimated_usd,
+                   sum(cost_usd) AS total_usd
+            FROM cost_ledger GROUP BY service ORDER BY total_usd DESC
+            """
+        ).fetchall()
