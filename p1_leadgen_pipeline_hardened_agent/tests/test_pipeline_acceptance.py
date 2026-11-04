@@ -17,6 +17,7 @@ from leadgen.orchestrator import (
     TOOL_NAME,
     Pipeline,
     budget_hook,
+    build_plan,
     exa_calls,
     run_plan,
 )
@@ -759,3 +760,18 @@ def test_research_loop_rejudges_bounded_evidence(running, monkeypatch, subtype):
     assert result.verdict == "qualified"
     web.fetch_page.assert_not_called()
     assert read_raw_leads(connection, run.run_id)[0]["researched"]
+
+
+def test_plan_can_target_a_named_market_below_its_goal(migrated_connection):
+    from leadgen.demo_seed import seed_demo_data
+    from leadgen.places import load_places
+
+    connection = migrated_connection
+    seed_demo_data(connection)
+    load_places(connection)
+    category = load_category_config()
+    assert build_plan(connection, category).cells[0].city == "Phoenix, AZ"
+    plan = build_plan(connection, category, market="los angeles, ca", target=5)
+    assert plan.cells[0].city == "Los Angeles, CA"
+    with pytest.raises(ValueError, match="below its lead goal"):
+        build_plan(connection, category, market="Nowhere, ZZ")

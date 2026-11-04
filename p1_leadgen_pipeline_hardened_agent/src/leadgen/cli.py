@@ -101,6 +101,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan_parser.add_argument("--max-cities", type=int, default=1)
     plan_parser.add_argument("--max-keywords", type=int, default=1)
     plan_parser.add_argument("--target", type=int, default=50)
+    plan_parser.add_argument(
+        "--market", help='plan this market, e.g. "Phoenix, AZ" (default: the biggest gap)'
+    )
     plan_parser.add_argument("--budget-usd", type=Decimal, default=Decimal("5"))
     plan_parser.add_argument(
         "--approve", action="store_true", help="record an already authorized approval"
@@ -391,6 +394,7 @@ def run_pipeline_command(arguments):
                     max_cities=arguments.max_cities,
                     max_keywords=arguments.max_keywords,
                     target=arguments.target,
+                    market=arguments.market,
                 )
                 exa_cap = exa_ceiling(connection, plan, category)
                 print(

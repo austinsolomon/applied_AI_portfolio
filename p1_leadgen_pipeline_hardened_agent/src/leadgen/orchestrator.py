@@ -53,10 +53,19 @@ STAGES = ("maps", "exa", "dedupe", "enrich", "qualify", "research", "crm")
 TOOL_NAME = "mcp__leadgen__run_stage"
 
 
-def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50):
+def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50, market=None):
+    """Plan the biggest gap, or the named market (e.g. "Phoenix, AZ") if it is below its goal."""
     if not 1 <= max_cities <= 40 or not 1 <= max_keywords <= len(category.keywords) or target < 1:
         raise ValueError("Invalid plan size")
     gaps = read_gaps(connection)
+    if market is not None:
+        gaps = [
+            gap
+            for gap in gaps
+            if f"{gap.market_name}, {gap.state}".lower() == market.strip().lower()
+        ]
+        if not gaps:
+            raise ValueError(f"{market} is not a market below its lead goal")
     if not gaps:
         raise ValueError("Every market is at its lead goal")
     market = gaps[0]
