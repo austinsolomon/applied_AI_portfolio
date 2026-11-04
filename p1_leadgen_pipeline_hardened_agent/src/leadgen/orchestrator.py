@@ -297,7 +297,7 @@ class Pipeline:
             client = self.exa or exa_client(self.settings)
             seeds = select_seeds(self.connection, market, self.category)
             if seeds:
-                modes.add("find_similar")
+                modes.add("similar")
                 leads = source_exa(
                     self.connection, self.run.run_id, market, self.category, client, seeds=seeds
                 )

@@ -1,11 +1,11 @@
-"""Record one live Exa response as a redacted test fixture. Paid: one Exa request per mode.
+"""Record live Exa responses as redacted test fixtures. Paid: one Exa request per mode.
 
 Usage, from the project folder (seed URL, optional search query):
     uv run python scripts/record_exa_fixture.py https://www.example-massage.com
     uv run python scripts/record_exa_fixture.py https://www.example-massage.com \
         --query "mobile massage business in Phoenix, AZ"
 
-Writes tests/fixtures/exa/find_similar.json (and search.json with --query). Each result keeps
+Writes tests/fixtures/exa/similar.json (and search.json with --query). Each result keeps
 only its URL (query string and fragment removed), title and domain, plus the request's reported
 cost_dollars total. Text, highlights, authors, dates and any contact details are dropped.
 """
@@ -17,7 +17,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from leadgen.contacts import normalize_domain
 from leadgen.settings import get_settings
-from leadgen.sourcing_exa import SEARCH_RESULTS_PER_QUERY, exa_client
+from leadgen.sourcing_exa import SEARCH_RESULTS_PER_QUERY, exa_client, similar_search
 
 FIXTURES = Path("tests/fixtures/exa")
 
@@ -45,10 +45,8 @@ def main():
     parser.add_argument("--query", help="also record one neural search")
     arguments = parser.parse_args()
     client = exa_client(get_settings())
-    response = client.find_similar(
-        arguments.seed, num_results=10, exclude_source_domain=True, contents=False
-    )
-    write("find_similar", redact(response, {"seed": arguments.seed}))
+    response = similar_search(client, arguments.seed)
+    write("similar", redact(response, {"seed": arguments.seed}))
     if arguments.query:
         response = client.search(
             arguments.query, type="neural", num_results=SEARCH_RESULTS_PER_QUERY, contents=False

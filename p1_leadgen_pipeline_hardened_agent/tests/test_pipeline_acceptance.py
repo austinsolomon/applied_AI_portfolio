@@ -221,7 +221,7 @@ def test_grader_does_not_treat_unknown_coordinates_as_in_market(running):
 def test_exa_drops_shared_domains_and_counts_consensus(running):
     connection, plan, run = running
     client = Mock()
-    client.find_similar.return_value = SimpleNamespace(
+    client.search.return_value = SimpleNamespace(
         cost_dollars=SimpleNamespace(total=0.005),
         results=[
             SimpleNamespace(url="https://cedar-massage.example", title="Cedar Massage"),
@@ -301,7 +301,6 @@ def test_exa_stage_searches_when_market_has_no_seeds(running):
     assert exa_calls(connection, plan, load_category_config()) == 1
     result = asyncio.run(Pipeline(connection, run, Settings(), exa=client).run_exa())
     assert result == {"sourced": 1, "mode": "search"}
-    client.find_similar.assert_not_called()
     client.search.assert_called_once_with(
         "mobile massage business in Los Angeles, CA",
         type="neural",
@@ -323,12 +322,17 @@ def test_exa_stage_uses_lookalikes_when_market_has_seeds(running):
         qualification_reason="mobile massage",
     )
     client = Mock()
-    client.find_similar.return_value = exa_response(("https://pinemassage.com", "Pine Massage"))
+    client.search.return_value = exa_response(("https://pinemassage.com", "Pine Massage"))
     assert exa_calls(connection, plan, load_category_config()) == 1
     result = asyncio.run(Pipeline(connection, run, Settings(), exa=client).run_exa())
-    assert result == {"sourced": 1, "mode": "find_similar"}
-    client.search.assert_not_called()
-    assert client.find_similar.call_args.args == ("https://cedarmassage.com",)
+    assert result == {"sourced": 1, "mode": "similar"}
+    client.search.assert_called_once_with(
+        "pages similar to https://cedarmassage.com",
+        num_results=10,
+        exclude_domains=["cedarmassage.com"],
+        contents=False,
+    )
+    assert connection.execute("SELECT endpoint FROM cost_ledger").fetchone() == ("search-similar",)
 
 
 def test_exa_search_drops_shared_and_aggregator_hosts(running):

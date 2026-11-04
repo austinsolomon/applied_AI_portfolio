@@ -1,6 +1,7 @@
 {
   "request": {
-    "seed": "https://arelaxingtouchmassage.com/"
+    "seed": "https://arelaxingtouchmassage.com/",
+    "recorded_with": "find_similar (deprecated); re-record with scripts/record_exa_fixture.py to capture search(\"pages similar to <seed>\")"
   },
   "cost_dollars": 0.004,
   "results": [

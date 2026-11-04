@@ -46,11 +46,11 @@ def running(migrated_connection):
     return connection, plan, start_run(connection, plan.plan_id)
 
 
-def test_recorded_find_similar_replays_end_to_end(running):
-    fixture, response = load("find_similar")
+def test_recorded_similar_search_replays_end_to_end(running):
+    fixture, response = load("similar")
     connection, plan, run = running
     client = Mock()
-    client.find_similar.return_value = response
+    client.search.return_value = response
     leads = source_exa(
         connection,
         run.run_id,

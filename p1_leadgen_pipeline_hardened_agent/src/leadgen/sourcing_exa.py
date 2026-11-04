@@ -1,5 +1,5 @@
-"""Own-domain lookalikes, unioned across category-qualified seeds, with a neural-search fallback
-for a market that has no seeds yet."""
+"""Own-domain lookalikes, unioned across category-qualified seeds (Exa "pages similar to <seed>"
+search), with a keyword-and-city neural search for a market that has no seeds yet."""
 
 from decimal import Decimal
 
@@ -98,6 +98,17 @@ def _exa_call(call):
         raise SourcingError("Exa lookup failed. Check EXA_API_KEY and account credits.") from error
 
 
+def similar_search(client, seed, *, num_results=10):
+    """Pages like `seed`, excluding the seed's own domain. This is Exa's replacement for the
+    deprecated `find_similar(url)`: `search("pages similar to " + url)`."""
+    return client.search(
+        f"pages similar to {seed}",
+        num_results=num_results,
+        exclude_domains=[normalize_domain(seed)],
+        contents=False,
+    )
+
+
 def source_exa(
     connection,
     run_id,
@@ -113,12 +124,8 @@ def source_exa(
     for seed in seeds:
         seed_domain = normalize_domain(seed)
         with paid_operation(connection, run_id, f"exa:{market_id}:{seed_domain}", ceiling_per_seed):
-            response = _exa_call(
-                lambda seed=seed: client.find_similar(
-                    seed, num_results=10, exclude_source_domain=True, contents=False
-                )
-            )
-            _record_exa_cost(connection, run_id, response, ceiling_per_seed, "findSimilar")
+            response = _exa_call(lambda seed=seed: similar_search(client, seed))
+            _record_exa_cost(connection, run_id, response, ceiling_per_seed, "search-similar")
             _collect(response, candidates, category, skip_domain=seed_domain)
             persist_leads(connection, run_id, market_id, "exa", candidates.values())
     _save_consensus(connection, run_id, candidates)
