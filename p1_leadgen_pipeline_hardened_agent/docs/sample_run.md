@@ -171,9 +171,11 @@ per Exa call; Exa's reported prices were 5× (find_similar) to 200× (contents) 
   businesses: `glossgenius.com`, `qdexx.com`, `excellenttherapists.com`, `carenary.com`,
   `stedi.com`, `linkedin.com`.
 - Raw Exa result counts per call are not persisted, so "returned vs filtered" cannot be reported.
-- `exa-py` 2.25 marks `find_similar` as deprecated in favour of `search`.
+- Done after this run: `exa-py` 2.25 deprecates `find_similar`, so lookalike sourcing now calls its
+  documented replacement, `search("pages similar to <seed>", exclude_domains=[seed])`. The
+  numbers above were produced by `find_similar`.
 - Research tier and CRM write: pending reconciliation of the 16 uncertain reservations.
 
-The redacted fixtures in `tests/fixtures/exa/` (one `find_similar`, one search, recorded the same
-day) keep only URL, title, domain and reported cost. The replay tests run them through the real
+The redacted fixtures in `tests/fixtures/exa/` (`similar.json`, recorded with `find_similar`
+before the migration, and `search.json`, recorded the same day) keep only URL, title, domain and reported cost. The replay tests run them through the real
 sourcing code.

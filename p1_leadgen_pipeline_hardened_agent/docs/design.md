@@ -30,7 +30,7 @@ repeatable at scale.
 | 6 | Sample scrape | Pipeline | Small Google Maps run per cell; aborts at N new unique businesses or $X | Apify Google Maps actor via `apify-client` |
 | 7 | Sample grader | Pipeline | Purity per keyword and in-market share → proceed, reconfigure or abort | Python · rubric from config |
 | 8 | Full scrape | Pipeline | Continues the sampled run, or a fresh sweep after reconfiguring | Apify · pandas · Postgres `raw_leads`, `seen_leads` |
-| 9 | Lookalike sourcing | Pipeline | For markets still under target: finds businesses similar to that market's qualified leads, or searches by keyword and city when it has none | Exa `find_similar` / neural `search` via `exa-py` |
+| 9 | Lookalike sourcing | Pipeline | For markets still under target: finds businesses similar to that market's qualified leads, or searches by keyword and city when it has none | Exa `search` ("pages similar to <seed>", or keyword and city) via `exa-py` |
 | 10 | Dedupe | Pipeline | Drops any lead already in the CRM by Google place ID, phone, email or website domain; a domain on a shared or aggregator host is never a match | Postgres, exact match on normalized keys computed by the CRM's own expressions |
 | 11 | Contact enrichment | Pipeline | Phone and email per lead: a fixed chain of API calls (domain → company page → best-placed person → email, phone), cached per domain, every call in the cost ledger | BlitzAPI · httpx · Postgres `contact_cache` |
 | 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Exa search and contents (Firecrawl only to render JavaScript pages) |

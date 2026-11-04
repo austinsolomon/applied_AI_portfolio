@@ -11,7 +11,7 @@ its own README, design doc, tests and dependencies.
 
 | Exa role | What it does | Live result (Phoenix, 2026-11-04) |
 |---|---|---|
-| Lookalike sourcing | `find_similar` on each qualified lead's own website; a domain found by several seeds ranks first | 6 seeds → 37 new businesses; 31% of those judged qualified, vs 13% from Google Maps in the same run |
+| Lookalike sourcing | Exa `search("pages similar to <seed>")` on each qualified lead's own website; a domain found by several seeds ranks first | 6 seeds → 37 new businesses; 31% of those judged qualified, vs 13% from Google Maps in the same run |
 | Seedless-market search | Neural `search` by keyword and city when a market has no qualified leads yet | Tested with fakes and a recorded live response |
 | Qualification evidence | `search` with page text and `get_contents` for pages; Claude returns schema-checked JSON and must quote this text word for word | Exa cost 0.111 USD for the run; Firecrawl kept only to render JavaScript pages |
 

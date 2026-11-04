@@ -34,11 +34,12 @@ flowchart LR
 
 ## Why Exa
 
-Exa does three jobs in this pipeline. Claude only reasons over what Exa returns.
+Exa does three jobs in this pipeline, all through Exa `search` and `get_contents`. Claude only
+reasons over what Exa returns.
 
 | Exa role | Pipeline stage | Exa call | What it gives the pipeline |
 |---|---|---|---|
-| **1. Find lookalikes** | Sourcing | `find_similar(seed, num_results=10, exclude_source_domain=True, contents=False)` | Businesses that resemble ones already qualified in that market |
+| **1. Find lookalikes** | Sourcing | `search("pages similar to <seed>", num_results=10, exclude_domains=[seed domain], contents=False)` | Businesses that resemble ones already qualified in that market |
 | **2. Search a market with no seeds** | Sourcing (fallback) | `search("<keyword> business in <city>", type="neural", contents=False)` | A starting set for a market with no qualified own-domain leads yet |
 | **3. Gather evidence** | Qualification and research | `search(query, type="auto", contents={"text": ...})` and `get_contents(url, text=...)` | Page text the judge must quote from to qualify a lead |
 
@@ -60,7 +61,7 @@ but they do have their own website, which is what Exa indexes and matches on mea
 - **Firecrawl only renders.** When Exa has no text for a page (typically a JavaScript-built
   site), that one page is fetched with Firecrawl. Exa searches and Exa outages never fall back.
 - **Cost stays visible.** Each Exa request reserves a 0.02 USD ceiling and records Exa's reported
-  `cost_dollars`. Live prices: `find_similar` 0.004 USD, search with text 0.007 USD, page
+  `cost_dollars`. Live prices: similar-pages lookup 0.004 USD, search with text 0.007 USD, page
   contents about 0.0001 USD.
 
 Live Phoenix comparison, same plan and market (run `f2423f88`, 2026-11-04). Details are in
@@ -69,10 +70,12 @@ Live Phoenix comparison, same plan and market (run `f2423f88`, 2026-11-04). Deta
 | Source | Sourced | New after dedupe | Judged | Qualified | Qualified ÷ judged | Sourcing cost (USD) | Sourcing cost per qualified lead |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Google Maps | 18 | 15 | 15 | 2 | 13% | 0.0002* | — |
-| Exa lookalikes (6 seeds) | 37 | 37 | 35 | 11 | 31% | 0.024 | 0.0022 |
+| Exa lookalikes (6 seeds)† | 37 | 37 | 35 | 11 | 31% | 0.024 | 0.0022 |
 
 \* Apify's reported usage had not settled when it was recorded, so the Maps figure is understated.
 The 2026-10-11 Maps run cost 0.2002 USD for 50 businesses.
+† Recorded with Exa's `find_similar` endpoint, which `exa-py` 2.25 deprecates; the code now
+uses its documented replacement, `search("pages similar to <seed>")`.
 
 ## Status
 
