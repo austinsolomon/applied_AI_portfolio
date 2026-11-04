@@ -17,7 +17,7 @@ class RawLead:
     latitude: float | None = None
     longitude: float | None = None
     categories: list[str] = field(default_factory=list)
-    seed_consensus: int = 1
+    query_consensus: int = 1
 
 
 def persist_leads(connection, run_id, market_id, source, leads, *, cell_id=None):
@@ -29,10 +29,11 @@ def persist_leads(connection, run_id, market_id, source, leads, *, cell_id=None)
             values["categories"] = Jsonb(values["categories"])
             inserted += connection.execute(
                 "INSERT INTO raw_leads(run_id,market_id,source,cell_id,source_key,business_name,"
-                "google_place_id,phone,email,website,latitude,longitude,categories,seed_consensus) "
+                "google_place_id,phone,email,website,latitude,longitude,categories,"
+                "query_consensus) "
                 "VALUES (%(run_id)s,%(market_id)s,%(source)s,%(cell_id)s,%(source_key)s,"
                 "%(business_name)s,%(google_place_id)s,%(phone)s,%(email)s,%(website)s,"
-                "%(latitude)s,%(longitude)s,%(categories)s,%(seed_consensus)s) "
+                "%(latitude)s,%(longitude)s,%(categories)s,%(query_consensus)s) "
                 "ON CONFLICT (run_id,source,source_key) DO NOTHING",
                 values,
             ).rowcount
@@ -40,13 +41,13 @@ def persist_leads(connection, run_id, market_id, source, leads, *, cell_id=None)
 
 
 def read_raw_leads(connection, run_id, *, by_consensus=False):
-    """Leads in sourcing order, or, for paid processing, lookalikes found by the most seeds first.
+    """Leads in sourcing order, or, for paid processing, the Exa leads most queries found first.
 
-    Dedupe keeps sourcing order so a Maps record (place ID, phone) wins over an Exa lookalike for
-    the same business. Enrichment and qualification use consensus order so the strongest Exa
-    leads are worked before a budget or target cutoff; ties keep sourcing order.
+    Dedupe keeps sourcing order so a Maps record (place ID, phone) wins over an Exa result for the
+    same business. Enrichment and qualification use consensus order, so Exa leads found by the
+    most queries are worked before a budget or target cutoff; ties keep sourcing order.
     """
-    order = "seed_consensus DESC, raw_lead_id" if by_consensus else "raw_lead_id"
+    order = "query_consensus DESC, raw_lead_id" if by_consensus else "raw_lead_id"
     with connection.cursor(row_factory=dict_row) as cursor:
         return cursor.execute(
             f"SELECT * FROM raw_leads WHERE run_id=%s ORDER BY {order}", (run_id,)

@@ -14,6 +14,14 @@ keywords:
   - couples massage
   - massage therapy
 
+# Exa sourcing: plain-language descriptions of the businesses wanted, as Exa's search guide
+# recommends ("describe the pages you want, not a bag of keywords"). Each is run once per planned
+# city; a business found by several phrasings ranks higher (query_consensus).
+exa_queries:
+  - independent mobile massage therapists who travel to clients' homes in {city}, business homepages
+  - in-home massage therapy services that come to your house in {city}, business homepages
+  - outcall massage therapists offering sessions at homes, hotels and offices in {city}
+
 # Share of raw leads expected to qualify. The planner sizes a plan as goal ÷ this rate.
 expected_qualification_rate: 0.40
 
@@ -40,7 +48,7 @@ rubric:
 
 # Domains many unrelated businesses share: social profiles, link-in-bio pages and site builders
 # that put every business under one host. Dedupe never treats these as a match key, and
-# lookalike sourcing never uses them as a seed. A host entry also covers its subdomains, so list
+# Exa sourcing excludes them in the request itself. A host entry also covers its subdomains, so list
 # a host only when its subdomains are not individual businesses either.
 shared_hosts:
   - facebook.com
@@ -64,7 +72,7 @@ shared_hosts:
   - linkedin.com
 
 # Directories, review sites and booking marketplaces. Their pages describe many businesses, so
-# a result on one of these hosts is never a lead and never a lookalike seed. They are also
+# a result on one of these hosts is never a lead. They are also
 # excluded from the domain match key, for the same reason as the shared hosts.
 aggregator_hosts:
   - yelp.com

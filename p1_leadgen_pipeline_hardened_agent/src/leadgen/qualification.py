@@ -170,7 +170,7 @@ def judge_lead(
                 "judgment": judgment.model_dump(),
                 "tier": tier,
                 "source": lead.get("source"),
-                "seed_consensus": lead.get("seed_consensus"),
+                "query_consensus": lead.get("query_consensus"),
             },
             model=settings.leadgen_model,
             run_id=run_id,

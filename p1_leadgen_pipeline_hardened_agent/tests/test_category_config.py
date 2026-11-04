@@ -61,6 +61,8 @@ def test_an_explicit_path_wins_over_the_setting(tmp_path: Path, demo_category_do
         ("aggregator_hosts", ["Yelp.com"], "aggregator_hosts"),
         ("name", "Mobile Massage", "name"),
         ("rubric", {"qualified_when": "x"}, "rubric"),
+        ("exa_queries", ["mobile massage therapists"], "city"),
+        ("exa_queries", [], "exa_queries"),
     ],
 )
 def test_an_invalid_category_names_the_field(

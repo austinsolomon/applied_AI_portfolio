@@ -396,11 +396,11 @@ def run_pipeline_command(arguments):
                     target=arguments.target,
                     market=arguments.market,
                 )
-                exa_cap = exa_ceiling(connection, plan, category)
+                exa_cap = exa_ceiling(plan, category)
                 print(
                     f"Plan {plan.plan_id}: {len(plan.cells)} cells; "
                     f"{plan.expected_raw_leads} raw leads; Maps cap ${plan.estimated_cost_usd}; "
-                    f"Exa cap ${exa_cap} ({exa_calls(connection, plan, category)} calls); "
+                    f"Exa cap ${exa_cap} ({exa_calls(plan, category)} searches); "
                     f"total budget ${arguments.budget_usd} (all services)"
                 )
                 for cell in plan.cells:

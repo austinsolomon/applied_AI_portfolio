@@ -514,6 +514,31 @@ def _collapse_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def write_cached_page(connection: psycopg.Connection, page: FetchedPage) -> None:
+    """Store a page under its normalized URL. Sourcing uses this too, so text Exa returned with a
+    search result is already cached when qualification asks for that page."""
+    connection.execute(
+        """
+        INSERT INTO page_cache (url, final_url, title, text, status_code, backend, fetched_at)
+        VALUES (%(url)s, %(final_url)s, %(title)s, %(text)s, %(status_code)s, %(backend)s,
+                %(fetched_at)s)
+        ON CONFLICT (url) DO UPDATE SET
+            final_url = EXCLUDED.final_url, title = EXCLUDED.title, text = EXCLUDED.text,
+            status_code = EXCLUDED.status_code, backend = EXCLUDED.backend,
+            fetched_at = EXCLUDED.fetched_at
+        """,
+        {
+            "url": page.url,
+            "final_url": page.final_url,
+            "title": page.title,
+            "text": page.text,
+            "status_code": page.status_code,
+            "backend": page.backend,
+            "fetched_at": page.fetched_at,
+        },
+    )
+
+
 @dataclass
 class WebResearcher:
     """The interface the pipeline uses: cached pages, ledgered spend, free fallback."""
@@ -596,26 +621,7 @@ class WebResearcher:
             return cursor.fetchone()
 
     def _write_cache(self, page: FetchedPage) -> None:
-        self.connection.execute(
-            """
-            INSERT INTO page_cache (url, final_url, title, text, status_code, backend, fetched_at)
-            VALUES (%(url)s, %(final_url)s, %(title)s, %(text)s, %(status_code)s, %(backend)s,
-                    %(fetched_at)s)
-            ON CONFLICT (url) DO UPDATE SET
-                final_url = EXCLUDED.final_url, title = EXCLUDED.title, text = EXCLUDED.text,
-                status_code = EXCLUDED.status_code, backend = EXCLUDED.backend,
-                fetched_at = EXCLUDED.fetched_at
-            """,
-            {
-                "url": page.url,
-                "final_url": page.final_url,
-                "title": page.title,
-                "text": page.text,
-                "status_code": page.status_code,
-                "backend": page.backend,
-                "fetched_at": page.fetched_at,
-            },
-        )
+        write_cached_page(self.connection, page)
 
     def _record_charge(self, charge: Charge | None) -> None:
         if charge is None:

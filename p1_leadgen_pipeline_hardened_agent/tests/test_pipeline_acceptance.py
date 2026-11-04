@@ -3,7 +3,7 @@
 import asyncio
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import psycopg
 import pytest
@@ -25,7 +25,7 @@ from leadgen.plans import PlannedCell, approve_plan, create_plan, start_run
 from leadgen.qualification import Judgment, judge_lead, validate_judgment
 from leadgen.raw_leads import RawLead, persist_leads, read_raw_leads
 from leadgen.settings import Settings
-from leadgen.sourcing_exa import select_seeds, source_exa, source_exa_search
+from leadgen.sourcing_exa import source_exa
 from leadgen.sourcing_maps import grade_sample, source_maps
 from tests.crm_builders import add_lead, add_market
 
@@ -218,30 +218,6 @@ def test_grader_does_not_treat_unknown_coordinates_as_in_market(running):
     assert grade_sample(connection, run.run_id, plan.cells[0], [lead]) == "RECONFIGURE"
 
 
-def test_exa_drops_shared_domains_and_counts_consensus(running):
-    connection, plan, run = running
-    client = Mock()
-    client.search.return_value = SimpleNamespace(
-        cost_dollars=SimpleNamespace(total=0.005),
-        results=[
-            SimpleNamespace(url="https://cedar-massage.example", title="Cedar Massage"),
-            SimpleNamespace(url="https://yelp.com/massage", title="Massage directory"),
-        ],
-    )
-    leads = source_exa(
-        connection,
-        run.run_id,
-        plan.cells[0].market_id,
-        load_category_config(),
-        client,
-        seeds=["https://one.example", "https://two.example"],
-    )
-    assert len(leads) == 1
-    assert leads[0].seed_consensus == 2
-    assert read_raw_leads(connection, run.run_id)[0]["seed_consensus"] == 2
-    assert plan_spend(connection, plan.plan_id) == Decimal(".01")
-
-
 def persist_consensus_mix(connection, run, market_id):
     persist_leads(
         connection,
@@ -262,7 +238,7 @@ def persist_consensus_mix(connection, run, market_id):
     )
     for consensus in (1, 3, 2):
         connection.execute(
-            "UPDATE raw_leads SET seed_consensus=%s WHERE source_key=%s",
+            "UPDATE raw_leads SET query_consensus=%s WHERE source_key=%s",
             (consensus, f"c{consensus}.example"),
         )
 
@@ -285,67 +261,64 @@ def test_paid_stages_work_multi_seed_lookalikes_first(running, empty_database_ur
     assert [keys[lead_id] for (lead_id,) in jobs] == expected
 
 
-def exa_response(*urls_and_titles, cost=0.005):
+def exa_response(*urls_and_titles, cost=0.005, text=None):
     return SimpleNamespace(
         cost_dollars=None if cost is None else SimpleNamespace(total=cost),
-        results=[SimpleNamespace(url=url, title=title) for url, title in urls_and_titles],
+        results=[
+            SimpleNamespace(url=url, title=title, text=text) for url, title in urls_and_titles
+        ],
     )
 
 
-def test_exa_stage_searches_when_market_has_no_seeds(running):
+def test_exa_stage_runs_one_company_search_per_phrasing(running):
     connection, plan, run = running
+    category = load_category_config()
     client = Mock()
-    client.search.return_value = exa_response(
-        ("https://desertmassage.com/", "Desert Mobile Massage")
-    )
-    assert exa_calls(connection, plan, load_category_config()) == 1
+    client.search.return_value = exa_response(("https://desertmassage.com/", "Desert Massage"))
+    assert exa_calls(plan, category) == len(category.exa_queries)
     result = asyncio.run(Pipeline(connection, run, Settings(), exa=client).run_exa())
-    assert result == {"sourced": 1, "mode": "search"}
-    client.search.assert_called_once_with(
-        "mobile massage business in Los Angeles, CA",
-        type="neural",
-        num_results=10,
-        contents=False,
+    assert result == {"sourced": 1, "queries": len(category.exa_queries)}
+    first_query = category.exa_queries[0].format(city="Los Angeles, CA")
+    assert client.search.call_args_list[0] == call(
+        first_query,
+        type="auto",
+        category="company",
+        num_results=25,
+        exclude_domains=sorted(category.hosts_never_identifying_a_business),
+        contents={"text": {"maxCharacters": 6000}},
     )
-    assert read_raw_leads(connection, run.run_id)[0]["source"] == "exa"
-    assert connection.execute("SELECT endpoint FROM cost_ledger").fetchone() == ("search",)
+    assert "Los Angeles, CA" in first_query and "{city}" not in first_query
+    assert connection.execute("SELECT DISTINCT endpoint FROM cost_ledger").fetchall() == [
+        ("search",)
+    ]
 
 
-def test_exa_stage_uses_lookalikes_when_market_has_seeds(running):
+def test_exa_counts_how_many_phrasings_found_a_business(running):
     connection, plan, run = running
-    add_lead(
-        connection,
-        plan.cells[0].market_id,
-        business_name="Cedar Massage",
-        website="https://cedarmassage.com",
-        phone="3105550142",
-        qualification_reason="mobile massage",
-    )
+    category = load_category_config()
     client = Mock()
-    client.search.return_value = exa_response(("https://pinemassage.com", "Pine Massage"))
-    assert exa_calls(connection, plan, load_category_config()) == 1
-    result = asyncio.run(Pipeline(connection, run, Settings(), exa=client).run_exa())
-    assert result == {"sourced": 1, "mode": "similar"}
-    client.search.assert_called_once_with(
-        "pages similar to https://cedarmassage.com",
-        num_results=10,
-        exclude_domains=["cedarmassage.com"],
-        contents=False,
+    client.search.return_value = exa_response(("https://desertmassage.com", "Desert Massage"))
+    leads = source_exa(
+        connection, run.run_id, plan.cells[0].market_id, category, client, cities=["Phoenix, AZ"]
     )
-    assert connection.execute("SELECT endpoint FROM cost_ledger").fetchone() == ("search-similar",)
+    phrasings = len(category.exa_queries)
+    assert [lead.query_consensus for lead in leads] == [phrasings]
+    assert read_raw_leads(connection, run.run_id)[0]["query_consensus"] == phrasings
+    assert plan_spend(connection, plan.plan_id) == Decimal("0.005") * phrasings
 
 
-def test_exa_search_drops_shared_and_aggregator_hosts(running):
+def test_exa_drops_shared_and_aggregator_hosts(running):
     connection, plan, run = running
     client = Mock()
     client.search.return_value = exa_response(
         ("https://www.yelp.com/search?find_desc=massage", "Best Massage in Phoenix"),
         ("https://instagram.com/mobilemassage", "Mobile Massage"),
+        ("https://relax.glossgenius.com", "Relax Massage"),
         ("https://desertmassage.com", "Desert Massage"),
         ("https://desertmassage.com/about", "Desert Massage about"),
         ("https://phoenixplumbing.com", "Phoenix Plumbing"),
     )
-    leads = source_exa_search(
+    leads = source_exa(
         connection,
         run.run_id,
         plan.cells[0].market_id,
@@ -354,16 +327,39 @@ def test_exa_search_drops_shared_and_aggregator_hosts(running):
         cities=["Phoenix, AZ"],
     )
     assert [lead.source_key for lead in leads] == ["desertmassage.com"]
-    assert [lead["source_key"] for lead in read_raw_leads(connection, run.run_id)] == [
-        "desertmassage.com"
-    ]
 
 
-def test_exa_search_records_ceiling_when_cost_is_missing(running):
+def test_exa_page_text_is_cached_for_qualification(running):
+    from leadgen.web_research import WebResearcher
+
+    connection, plan, run = running
+    client = Mock()
+    client.search.return_value = exa_response(
+        ("https://desertmassage.com", "Desert Massage"),
+        text="We travel to homes across Phoenix for mobile massage.",
+    )
+    source_exa(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        load_category_config(),
+        client,
+        cities=["Phoenix, AZ"],
+    )
+    paid_backend = Mock()
+    page = WebResearcher(connection, paid_backend, run_id=run.run_id).fetch_page(
+        "https://desertmassage.com/"
+    )
+    assert (page.from_cache, page.backend) == (True, "exa")
+    assert "mobile massage" in page.text
+    paid_backend.fetch_page.assert_not_called()
+
+
+def test_exa_records_ceiling_when_cost_is_missing(running):
     connection, plan, run = running
     client = Mock()
     client.search.return_value = exa_response(cost=None)
-    source_exa_search(
+    source_exa(
         connection,
         run.run_id,
         plan.cells[0].market_id,
@@ -373,17 +369,16 @@ def test_exa_search_records_ceiling_when_cost_is_missing(running):
         ceiling_per_query=Decimal("0.03"),
     )
     assert connection.execute(
-        "SELECT service,endpoint,cost_usd,cost_basis FROM cost_ledger"
+        "SELECT service,endpoint,cost_usd,cost_basis FROM cost_ledger LIMIT 1"
     ).fetchone() == ("exa", "search", Decimal("0.03"), "estimated")
-    assert plan_spend(connection, plan.plan_id) == Decimal("0.03")
 
 
-def test_exa_search_blocked_when_budget_is_exhausted(running):
+def test_exa_blocked_when_budget_is_exhausted(running):
     connection, plan, run = running
     reserve(connection, run.run_id, "held:elsewhere", Decimal("4.99"))
     client = Mock()
     with pytest.raises(BudgetBlocked, match="exceed"):
-        source_exa_search(
+        source_exa(
             connection,
             run.run_id,
             plan.cells[0].market_id,
@@ -392,20 +387,6 @@ def test_exa_search_blocked_when_budget_is_exhausted(running):
             cities=["Phoenix, AZ"],
         )
     client.search.assert_not_called()
-
-
-def test_seed_selection_excludes_directories_and_demo_domains(running):
-    connection, plan, _run = running
-    market_id = plan.cells[0].market_id
-    add_lead(
-        connection,
-        market_id,
-        business_name="Cedar Massage",
-        website="https://cedar.example",
-        phone="3105550142",
-        qualification_reason="mobile massage",
-    )
-    assert select_seeds(connection, market_id, load_category_config()) == []
 
 
 @pytest.mark.parametrize(
@@ -472,7 +453,7 @@ def test_qualification_records_model_usage_and_evidence(running):
     assert result.verdict == "qualified"
     assert connection.execute("SELECT count(*) FROM eval_records").fetchone()[0] == 1
     evidence = connection.execute("SELECT evidence FROM eval_records").fetchone()[0]
-    assert (evidence["source"], evidence["seed_consensus"]) == ("google_maps", 1)
+    assert (evidence["source"], evidence["query_consensus"]) == ("google_maps", 1)
     assert plan_spend(connection, plan.plan_id) > 0
 
 
@@ -627,7 +608,7 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
         run_plan(connection, plan.plan_id, settings, query_fn=replay, pipeline_factory=pipeline)
     )
     assert result["stages"]["maps"]["sourced"] == 1
-    assert result["stages"]["exa"] == {"sourced": 0, "mode": "search"}
+    assert result["stages"]["exa"]["sourced"] == 0
     assert result["stages"]["enrich"]["processed"] == 1
     assert result["stages"]["qualify"]["judged"] == 1
     assert result["stages"]["crm"]["inserted"] == 1
