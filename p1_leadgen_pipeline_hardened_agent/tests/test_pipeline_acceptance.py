@@ -12,12 +12,19 @@ from pydantic import SecretStr
 
 from leadgen.budget import BudgetBlocked, paid_operation, plan_spend, reserve
 from leadgen.category_config import load_category_config
-from leadgen.orchestrator import STAGES, TOOL_NAME, Pipeline, budget_hook, run_plan
+from leadgen.orchestrator import (
+    STAGES,
+    TOOL_NAME,
+    Pipeline,
+    budget_hook,
+    exa_calls,
+    run_plan,
+)
 from leadgen.plans import PlannedCell, approve_plan, create_plan, start_run
 from leadgen.qualification import Judgment, judge_lead, validate_judgment
 from leadgen.raw_leads import RawLead, persist_leads, read_raw_leads
 from leadgen.settings import Settings
-from leadgen.sourcing_exa import select_seeds, source_exa
+from leadgen.sourcing_exa import select_seeds, source_exa, source_exa_search
 from leadgen.sourcing_maps import grade_sample, source_maps
 from tests.crm_builders import add_lead, add_market
 
@@ -237,6 +244,111 @@ def test_paid_stages_work_multi_seed_lookalikes_first(running, empty_database_ur
     assert [keys[lead_id] for (lead_id,) in jobs] == expected
 
 
+def exa_response(*urls_and_titles, cost=0.005):
+    return SimpleNamespace(
+        cost_dollars=None if cost is None else SimpleNamespace(total=cost),
+        results=[SimpleNamespace(url=url, title=title) for url, title in urls_and_titles],
+    )
+
+
+def test_exa_stage_searches_when_market_has_no_seeds(running):
+    connection, plan, run = running
+    client = Mock()
+    client.search.return_value = exa_response(
+        ("https://desertmassage.com/", "Desert Mobile Massage")
+    )
+    assert exa_calls(connection, plan, load_category_config()) == 1
+    result = asyncio.run(Pipeline(connection, run, Settings(), exa=client).run_exa())
+    assert result == {"sourced": 1, "mode": "search"}
+    client.find_similar.assert_not_called()
+    client.search.assert_called_once_with(
+        "mobile massage business in Los Angeles, CA",
+        type="neural",
+        num_results=10,
+        contents=False,
+    )
+    assert read_raw_leads(connection, run.run_id)[0]["source"] == "exa"
+    assert connection.execute("SELECT endpoint FROM cost_ledger").fetchone() == ("search",)
+
+
+def test_exa_stage_uses_lookalikes_when_market_has_seeds(running):
+    connection, plan, run = running
+    add_lead(
+        connection,
+        plan.cells[0].market_id,
+        business_name="Cedar Massage",
+        website="https://cedarmassage.com",
+        phone="3105550142",
+        qualification_reason="mobile massage",
+    )
+    client = Mock()
+    client.find_similar.return_value = exa_response(("https://pinemassage.com", "Pine Massage"))
+    assert exa_calls(connection, plan, load_category_config()) == 1
+    result = asyncio.run(Pipeline(connection, run, Settings(), exa=client).run_exa())
+    assert result == {"sourced": 1, "mode": "find_similar"}
+    client.search.assert_not_called()
+    assert client.find_similar.call_args.args == ("https://cedarmassage.com",)
+
+
+def test_exa_search_drops_shared_and_aggregator_hosts(running):
+    connection, plan, run = running
+    client = Mock()
+    client.search.return_value = exa_response(
+        ("https://www.yelp.com/search?find_desc=massage", "Best Massage in Phoenix"),
+        ("https://instagram.com/mobilemassage", "Mobile Massage"),
+        ("https://desertmassage.com", "Desert Massage"),
+        ("https://desertmassage.com/about", "Desert Massage about"),
+        ("https://phoenixplumbing.com", "Phoenix Plumbing"),
+    )
+    leads = source_exa_search(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        load_category_config(),
+        client,
+        cities=["Phoenix, AZ"],
+    )
+    assert [lead.source_key for lead in leads] == ["desertmassage.com"]
+    assert [lead["source_key"] for lead in read_raw_leads(connection, run.run_id)] == [
+        "desertmassage.com"
+    ]
+
+
+def test_exa_search_records_ceiling_when_cost_is_missing(running):
+    connection, plan, run = running
+    client = Mock()
+    client.search.return_value = exa_response(cost=None)
+    source_exa_search(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        load_category_config(),
+        client,
+        cities=["Phoenix, AZ"],
+        ceiling_per_query=Decimal("0.03"),
+    )
+    assert connection.execute(
+        "SELECT service,endpoint,cost_usd,cost_basis FROM cost_ledger"
+    ).fetchone() == ("exa", "search", Decimal("0.03"), "estimated")
+    assert plan_spend(connection, plan.plan_id) == Decimal("0.03")
+
+
+def test_exa_search_blocked_when_budget_is_exhausted(running):
+    connection, plan, run = running
+    reserve(connection, run.run_id, "held:elsewhere", Decimal("4.99"))
+    client = Mock()
+    with pytest.raises(BudgetBlocked, match="exceed"):
+        source_exa_search(
+            connection,
+            run.run_id,
+            plan.cells[0].market_id,
+            load_category_config(),
+            client,
+            cities=["Phoenix, AZ"],
+        )
+    client.search.assert_not_called()
+
+
 def test_seed_selection_excludes_directories_and_demo_domains(running):
     connection, plan, _run = running
     market_id = plan.cells[0].market_id
@@ -441,7 +553,9 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
     monkeypatch.setattr(WebResearcher, "fetch_page", page)
     monkeypatch.setattr(WebResearcher, "search", lambda *args, **kwargs: [])
     monkeypatch.setattr(orchestrator, "maps_client", lambda settings: maps)
-    monkeypatch.setattr(orchestrator, "exa_client", lambda settings: Mock())
+    exa = Mock()
+    exa.search.return_value = SimpleNamespace(cost_dollars={"total": 0.005}, results=[])
+    monkeypatch.setattr(orchestrator, "exa_client", lambda settings: exa)
     monkeypatch.setattr(orchestrator, "create_sdk_mcp_server", lambda **kwargs: kwargs)
 
     async def replay(*, prompt, options):
@@ -468,6 +582,7 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
         run_plan(connection, plan.plan_id, settings, query_fn=replay, pipeline_factory=pipeline)
     )
     assert result["stages"]["maps"]["sourced"] == 1
+    assert result["stages"]["exa"] == {"sourced": 0, "mode": "search"}
     assert result["stages"]["enrich"]["processed"] == 1
     assert result["stages"]["qualify"]["judged"] == 1
     assert result["stages"]["crm"]["inserted"] == 1

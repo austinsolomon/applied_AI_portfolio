@@ -77,7 +77,7 @@ uv run leadgen run --plan latest
 ```
 
 The planner selects the market with the lowest available-lead coverage, expands it using Census
-places, and displays its cells and Maps ceiling before asking for one approval. The total budget
+places, and displays its cells and Maps and Exa ceilings before asking for one approval. The total budget
 covers all services. `--approve --approved-by NAME` records approval already given by an operator.
 The runner exposes only the next pipeline stage to the SDK: Maps, Exa, dedupe, enrichment,
 qualification, research for unresolved leads, and CRM writing.
@@ -85,7 +85,9 @@ qualification, research for unresolved leads, and CRM writing.
 Apify is polled and aborted after ten unique businesses or the sample ceiling; a poll can return
 more than ten. Category purity and market distance gate continuation to the approved target.
 Every partial dataset is persisted. Exa uses up to
-50 existing qualified own-domain seeds; a market with no eligible seeds skips that stage. Existing
+50 existing qualified own-domain seeds; a market with no eligible seeds falls back to one Exa
+neural search per planned keyword and city. The plan shows the Exa cap (calls × 0.02 USD) next to
+the Maps cap. Existing
 contact details avoid an unnecessary Blitz lookup. Two workers process enrichment and four process qualification, with one paid attempt per job. Qualified results must cite an exact evidence quote,
 a supplied source URL, an eligible service, and an affirmative service area.
 

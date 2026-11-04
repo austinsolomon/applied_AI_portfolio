@@ -38,7 +38,14 @@ from leadgen.plans import (
 from leadgen.qualification import gather_evidence, judge_lead
 from leadgen.raw_leads import read_raw_leads
 from leadgen.research_agent import research_lead, sdk_environment
-from leadgen.sourcing_exa import exa_client, source_exa
+from leadgen.sourcing_exa import (
+    EXA_CEILING_PER_CALL,
+    exa_client,
+    search_queries,
+    select_seeds,
+    source_exa,
+    source_exa_search,
+)
 from leadgen.sourcing_maps import grade_sample, maps_client, source_maps
 from leadgen.web_research import PageFetchFailed, build_web_researcher
 
@@ -66,6 +73,25 @@ def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50)
             for keyword in category.keywords[:max_keywords]
         ],
     )
+
+
+def exa_calls(connection, plan, category):
+    """Worst-case Exa requests: one per seed, or one per search query in a market with none."""
+    calls = 0
+    for market in {cell.market_id for cell in plan.cells}:
+        market_cells = [cell for cell in plan.cells if cell.market_id == market]
+        calls += len(select_seeds(connection, market, category)) or len(
+            search_queries(
+                category,
+                list(dict.fromkeys(cell.city for cell in market_cells)),
+                list(dict.fromkeys(cell.keyword for cell in market_cells)),
+            )
+        )
+    return calls
+
+
+def exa_ceiling(connection, plan, category):
+    return exa_calls(connection, plan, category) * EXA_CEILING_PER_CALL
 
 
 def completed_stages(connection, run_id):
@@ -246,19 +272,32 @@ class Pipeline:
         return {"sourced": total}
 
     async def run_exa(self):
-        total = 0
-        markets = {cell.market_id for cell in read_plan(self.connection, self.run.plan_id).cells}
-        for market in markets:
-            total += len(
-                source_exa(
+        total, modes = 0, set()
+        cells = read_plan(self.connection, self.run.plan_id).cells
+        for market in sorted({cell.market_id for cell in cells}):
+            client = self.exa or exa_client(self.settings)
+            seeds = select_seeds(self.connection, market, self.category)
+            if seeds:
+                modes.add("find_similar")
+                leads = source_exa(
+                    self.connection, self.run.run_id, market, self.category, client, seeds=seeds
+                )
+            else:
+                # No qualified own-domain seeds yet: search by the plan's keywords and cities.
+                modes.add("search")
+                market_cells = [cell for cell in cells if cell.market_id == market]
+                leads = source_exa_search(
                     self.connection,
                     self.run.run_id,
                     market,
                     self.category,
-                    self.exa or exa_client(self.settings),
+                    client,
+                    cities=list(dict.fromkeys(cell.city for cell in market_cells)),
+                    keywords=list(dict.fromkeys(cell.keyword for cell in market_cells)),
                 )
-            )
-        return {"sourced": total}
+            total += len(leads)
+        mode = modes.pop() if len(modes) == 1 else "mixed"
+        return {"sourced": total, "mode": mode}
 
     async def run_dedupe(self):
         leads = read_raw_leads(self.connection, self.run.run_id)
