@@ -232,7 +232,7 @@ def persist_consensus_mix(connection, run, market_id):
         market_id,
         "exa",
         [
-            RawLead(f"c{consensus}.example", f"Lookalike {consensus}", phone=f"310555011{n}")
+            RawLead(f"c{consensus}.example", f"Exa lead {consensus}", phone=f"310555011{n}")
             for n, consensus in enumerate([1, 3, 2])
         ],
     )
@@ -243,7 +243,7 @@ def persist_consensus_mix(connection, run, market_id):
         )
 
 
-def test_paid_stages_work_multi_seed_lookalikes_first(running, empty_database_url):
+def test_paid_stages_work_highest_query_consensus_first(running, empty_database_url):
     connection, plan, run = running
     persist_consensus_mix(connection, run, plan.cells[0].market_id)
     sourced = [lead["source_key"] for lead in read_raw_leads(connection, run.run_id)]
