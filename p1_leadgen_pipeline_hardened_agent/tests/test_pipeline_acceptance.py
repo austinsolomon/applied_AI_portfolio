@@ -194,6 +194,49 @@ def test_exa_drops_shared_domains_and_counts_consensus(running):
     assert plan_spend(connection, plan.plan_id) == Decimal(".01")
 
 
+def persist_consensus_mix(connection, run, market_id):
+    persist_leads(
+        connection,
+        run.run_id,
+        market_id,
+        "google_maps",
+        [RawLead("maps-1", "Maps Massage", phone="3105550101")],
+    )
+    persist_leads(
+        connection,
+        run.run_id,
+        market_id,
+        "exa",
+        [
+            RawLead(f"c{consensus}.example", f"Lookalike {consensus}", phone=f"310555011{n}")
+            for n, consensus in enumerate([1, 3, 2])
+        ],
+    )
+    for consensus in (1, 3, 2):
+        connection.execute(
+            "UPDATE raw_leads SET seed_consensus=%s WHERE source_key=%s",
+            (consensus, f"c{consensus}.example"),
+        )
+
+
+def test_paid_stages_work_multi_seed_lookalikes_first(running, empty_database_url):
+    connection, plan, run = running
+    persist_consensus_mix(connection, run, plan.cells[0].market_id)
+    sourced = [lead["source_key"] for lead in read_raw_leads(connection, run.run_id)]
+    assert sourced == ["maps-1", "c1.example", "c3.example", "c2.example"]
+    by_consensus = read_raw_leads(connection, run.run_id, by_consensus=True)
+    expected = ["c3.example", "c2.example", "maps-1", "c1.example"]
+    assert [lead["source_key"] for lead in by_consensus] == expected
+    # Jobs are claimed in job_id order, so enqueue order is processing order.
+    settings = Settings(_env_file=None, database_url=empty_database_url)
+    asyncio.run(Pipeline(connection, run, settings).run_enrich())
+    keys = dict(connection.execute("SELECT raw_lead_id,source_key FROM raw_leads").fetchall())
+    jobs = connection.execute(
+        "SELECT (payload->>'lead')::bigint FROM cell_jobs WHERE kind='enrich' ORDER BY job_id"
+    ).fetchall()
+    assert [keys[lead_id] for (lead_id,) in jobs] == expected
+
+
 def test_seed_selection_excludes_directories_and_demo_domains(running):
     connection, plan, _run = running
     market_id = plan.cells[0].market_id
@@ -271,6 +314,8 @@ def test_qualification_records_model_usage_and_evidence(running):
     )
     assert result.verdict == "qualified"
     assert connection.execute("SELECT count(*) FROM eval_records").fetchone()[0] == 1
+    evidence = connection.execute("SELECT evidence FROM eval_records").fetchone()[0]
+    assert (evidence["source"], evidence["seed_consensus"]) == ("google_maps", 1)
     assert plan_spend(connection, plan.plan_id) > 0
 
 

@@ -165,7 +165,13 @@ def judge_lead(
             subject=lead["business_name"],
             verdict=judgment.verdict,
             reason=judgment.reason,
-            evidence={"sources": evidence, "judgment": judgment.model_dump(), "tier": tier},
+            evidence={
+                "sources": evidence,
+                "judgment": judgment.model_dump(),
+                "tier": tier,
+                "source": lead.get("source"),
+                "seed_consensus": lead.get("seed_consensus"),
+            },
             model=settings.leadgen_model,
             run_id=run_id,
         )

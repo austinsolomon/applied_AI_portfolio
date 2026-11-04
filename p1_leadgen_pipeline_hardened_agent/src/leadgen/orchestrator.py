@@ -297,7 +297,7 @@ class Pipeline:
     async def run_enrich(self):
         leads = [
             lead
-            for lead in read_raw_leads(self.connection, self.run.run_id)
+            for lead in read_raw_leads(self.connection, self.run.run_id, by_consensus=True)
             if not lead["duplicate"] and not lead["enriched"]
         ]
         enqueue_jobs(
@@ -364,7 +364,7 @@ class Pipeline:
     async def run_qualify(self):
         leads = [
             lead
-            for lead in read_raw_leads(self.connection, self.run.run_id)
+            for lead in read_raw_leads(self.connection, self.run.run_id, by_consensus=True)
             if not lead["duplicate"] and not lead["qualification"]
         ]
         enqueue_jobs(
@@ -432,7 +432,7 @@ class Pipeline:
 
     async def run_research(self):
         count = 0
-        for lead in read_raw_leads(self.connection, self.run.run_id):
+        for lead in read_raw_leads(self.connection, self.run.run_id, by_consensus=True):
             if (
                 lead["duplicate"]
                 or lead["researched"]
