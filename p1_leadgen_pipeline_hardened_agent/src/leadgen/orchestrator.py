@@ -22,7 +22,7 @@ from leadgen.crm_write import QualifiedLead, write_qualified_leads
 from leadgen.database import connect
 from leadgen.dedupe import IncomingLead, dedupe_against_crm
 from leadgen.gaps import read_gaps
-from leadgen.job_queue import JobSpec, enqueue_jobs, run_worker_pool
+from leadgen.job_queue import JobSpec, enqueue_jobs, requeue_failed_jobs, run_worker_pool
 from leadgen.places import expand_market
 from leadgen.plans import (
     PlannedCell,
@@ -425,6 +425,8 @@ class Pipeline:
             for lead in read_raw_leads(self.connection, self.run.run_id, by_consensus=True)
             if not lead["duplicate"] and not lead["qualification"]
         ]
+        # A resumed run retries leads whose earlier attempt failed (its paid calls are reconciled).
+        requeue_failed_jobs(self.connection, self.run.run_id, "qualify")
         enqueue_jobs(
             self.connection,
             self.run.run_id,
@@ -459,7 +461,9 @@ class Pipeline:
                         self.run.run_id,
                         researcher,
                         self.settings,
-                        f"tier1:{lead['raw_lead_id']}",
+                        # Each attempt gets its own reservation keys; the first keeps the old ones.
+                        f"tier1:{lead['raw_lead_id']}"
+                        + (f":attempt{job.attempts}" if job.attempts > 1 else ""),
                     )
                     evidence = gather_evidence(lead, market, web, config)
                 judgment = judge_lead(

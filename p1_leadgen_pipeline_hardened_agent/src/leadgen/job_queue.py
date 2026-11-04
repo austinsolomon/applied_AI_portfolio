@@ -235,6 +235,20 @@ def release_job(
     return released
 
 
+def requeue_failed_jobs(connection: psycopg.Connection, run_id: UUID, kind: str) -> int:
+    """Give each failed job of a resumed run one more attempt. Only call this once every paid
+    operation the failed attempts started has been reconciled (the runner's resume check)."""
+    return connection.execute(
+        """
+        UPDATE cell_jobs
+        SET status = 'queued', max_attempts = attempts + 1, available_at = now(),
+            locked_by = NULL, locked_at = NULL, finished_at = NULL
+        WHERE run_id = %s AND kind = %s AND status = 'failed'
+        """,
+        (run_id, kind),
+    ).rowcount
+
+
 def requeue_stale_jobs(connection: psycopg.Connection, stale_after: timedelta) -> int:
     """Put jobs back in the queue whose worker went silent (a crashed process never releases).
 
