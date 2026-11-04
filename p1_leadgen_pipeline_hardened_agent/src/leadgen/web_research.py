@@ -1,8 +1,13 @@
 """Web search and page fetching behind one small interface, with a Postgres page cache.
 
 `WebResearcher.search(query)` and `WebResearcher.fetch_page(url)` are what the qualification stages
-call. Two backends implement them:
+call. Three backends implement them:
 
+- `ExaWebBackend` (paid, `EXA_API_KEY`, the default when set): Exa `search` with page text for
+  search results, and Exa `get_contents` for pages. Every call records Exa's reported
+  `cost_dollars` in `cost_ledger` as service `exa`. When Exa returns no text for a page (a
+  JavaScript-rendered site it could not read), and only then, the page is fetched once with
+  Firecrawl if a key is set, or with the free backend otherwise. Searches never fall back.
 - `FirecrawlBackend` (paid, `FIRECRAWL_API_KEY`): Firecrawl's `/v2/search` and `/v2/scrape`, which
   handle JavaScript-rendered sites and anti-bot pages. Every call is charged in credits and written
   to `cost_ledger` as service `firecrawl`, including a scrape that comes back as an error page
@@ -22,6 +27,7 @@ so use the researcher as a context manager (or call `close()`) to release the co
 
 import math
 import re
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -53,6 +59,13 @@ MAX_PAGE_TEXT_CHARACTERS = 100_000
 FIRECRAWL_CREDITS_PER_SCRAPE = 1
 FIRECRAWL_SEARCH_CREDITS_PER_BLOCK = 2
 FIRECRAWL_SEARCH_RESULTS_PER_BLOCK = 10
+# Exa reports cost_dollars per request; this per-call ceiling is reserved before the call and
+# recorded, marked estimated, if Exa omits the figure.
+EXA_WEB_CEILING_PER_CALL = Decimal("0.02")
+EXA_SEARCH_TEXT_CHARACTERS = 1500
+EXA_PAGE_TEXT_CHARACTERS = 6000
+# Pages Exa crawled within the page cache's lifetime are fresh enough; older ones are recrawled.
+EXA_MAX_AGE_HOURS = int(PAGE_CACHE_MAX_AGE.total_seconds() // 3600)
 
 
 @dataclass(frozen=True)
@@ -64,6 +77,7 @@ class Charge:
     credits: int
     cost_usd: Decimal
     request_id: str | None = None
+    cost_basis: str = "provider_reported"
 
 
 class WebResearchError(Exception):
@@ -80,6 +94,15 @@ class WebBackendOutOfCredit(WebResearchError):
 
 class WebBackendUnavailable(WebResearchError):
     """A transient failure (rate limit, timeout, server error); another backend may still work."""
+
+
+class PageNeedsRendering(WebBackendUnavailable):
+    """Exa returned no text for a page, typically one built by JavaScript. A live renderer
+    (Firecrawl) may still read it. Exa's charge for the attempt travels with the exception."""
+
+    def __init__(self, message: str, *, charge: "Charge | None" = None) -> None:
+        super().__init__(message)
+        self.charge = charge
 
 
 class PageFetchFailed(WebResearchError):
@@ -261,6 +284,99 @@ def _error_message(response: httpx.Response) -> str:
         return response.text
 
 
+class ExaWebBackend:
+    """Exa for evidence: `search` with result text, `get_contents` for pages. `client` is an
+    `exa_py.Exa` (or a fake with the same two methods)."""
+
+    name = "exa"
+
+    def __init__(
+        self, client, *, ceiling_usd: Decimal = EXA_WEB_CEILING_PER_CALL, sleep=time.sleep
+    ) -> None:
+        self._client = client
+        self._ceiling = ceiling_usd
+        self._sleep = sleep
+
+    def search(self, query: str, *, limit: int) -> SearchResponse:
+        response = self._call(
+            "search",
+            lambda: self._client.search(
+                query,
+                type="auto",
+                num_results=limit,
+                contents={"text": {"maxCharacters": EXA_SEARCH_TEXT_CHARACTERS}},
+            ),
+        )
+        results = [
+            SearchResult(
+                url=result.url,
+                title=result.title or "",
+                description=_collapse_whitespace(result.text or ""),
+            )
+            for result in response.results
+            if result.url
+        ]
+        return SearchResponse(results, self._charge("search", response))
+
+    def fetch_page(self, url: str) -> FetchResponse:
+        response = self._call(
+            "contents",
+            lambda: self._client.get_contents(
+                [url],
+                text={"maxCharacters": EXA_PAGE_TEXT_CHARACTERS},
+                max_age_hours=EXA_MAX_AGE_HOURS,
+            ),
+        )
+        charge = self._charge("contents", response)
+        result = response.results[0] if response.results else None
+        text = (getattr(result, "text", None) or "").strip()
+        if not text:
+            statuses = getattr(response, "statuses", None) or []
+            detail = ", ".join(str(getattr(item, "status", item)) for item in statuses)
+            raise PageNeedsRendering(
+                f"Exa returned no text for {url} ({detail or 'no result'})", charge=charge
+            )
+        page = FetchedPage(
+            url=url,
+            final_url=result.url or url,
+            title=result.title or None,
+            text=text[:MAX_PAGE_TEXT_CHARACTERS],
+            status_code=200,
+            backend=self.name,
+            fetched_at=datetime.now(UTC),
+        )
+        return FetchResponse(page, charge)
+
+    def _call(self, endpoint: str, request):
+        # A rate-limited request is refused before any work, so it is not billed and is safe to
+        # repeat: two retries with a short backoff.
+        for delay in (1, 3, None):
+            try:
+                return request()
+            except Exception as error:
+                if "status code 429" in str(error) and delay is not None:
+                    self._sleep(delay)
+                    continue
+                self._raise_for(endpoint, error)
+
+    def _raise_for(self, endpoint: str, error: Exception):
+        message = str(error)
+        if "status code 401" in message or "status code 403" in message:
+            raise WebBackendMisconfigured("Exa rejected the API key. Check EXA_API_KEY.") from error
+        if "status code 402" in message:
+            raise WebBackendOutOfCredit("The Exa account is out of credits.") from error
+        raise WebBackendUnavailable(f"Exa {endpoint} failed: {message[:200]}") from error
+
+    def _charge(self, endpoint: str, response) -> Charge:
+        reported = getattr(response, "cost_dollars", None)
+        total = reported.get("total") if isinstance(reported, dict) else None
+        if reported is not None and not isinstance(reported, dict):
+            total = getattr(reported, "total", None)
+        if total is None:
+            return Charge(self.name, endpoint, 1, self._ceiling, cost_basis="estimated")
+        return Charge(self.name, endpoint, 1, Decimal(str(total)))
+
+
 class FreeWebBackend:
     """No key, no cost: httpx + trafilatura for pages, DuckDuckGo's HTML results for search."""
 
@@ -407,6 +523,10 @@ class WebResearcher:
     run_id: uuid.UUID = field(default_factory=uuid.uuid4)
     fallback: WebBackend | None = None
     cache_max_age: timedelta = PAGE_CACHE_MAX_AGE
+    # Which failures send a call to the fallback, and whether searches may fall back at all.
+    # With Exa as the backend only an unreadable page does (PageNeedsRendering).
+    fallback_on: type[WebBackendUnavailable] = WebBackendUnavailable
+    fallback_searches: bool = True
     # Set by `build_web_researcher` when it opened the client itself; an injected client stays
     # the caller's to close.
     owned_http_client: httpx.Client | None = None
@@ -425,8 +545,12 @@ class WebResearcher:
     def search(self, query: str, *, limit: int = DEFAULT_SEARCH_LIMIT) -> list[SearchResult]:
         try:
             response = self.backend.search(query, limit=limit)
-        except WebBackendUnavailable:
-            if self.fallback is None:
+        except WebBackendUnavailable as failure:
+            if (
+                self.fallback is None
+                or not self.fallback_searches
+                or not isinstance(failure, self.fallback_on)
+            ):
                 raise
             response = self.fallback.search(query, limit=limit)
         self._record_charge(response.charge)
@@ -451,9 +575,11 @@ class WebResearcher:
     def _fetch_uncached(self, cache_key: str) -> FetchResponse:
         try:
             return self.backend.fetch_page(cache_key)
-        except WebBackendUnavailable:
-            if self.fallback is None:
+        except WebBackendUnavailable as failure:
+            if self.fallback is None or not isinstance(failure, self.fallback_on):
                 raise
+            # The primary may have billed the attempt (Exa charges for an empty page).
+            self._record_charge(getattr(failure, "charge", None))
             return self.fallback.fetch_page(cache_key)
 
     def _read_cache(self, cache_key: str) -> FetchedPage | None:
@@ -502,9 +628,10 @@ class WebResearcher:
             self.connection.execute(
                 """
                 INSERT INTO cost_ledger
-                    (run_id, service, endpoint, call_number, provider_units, cost_usd, request_id)
+                    (run_id, service, endpoint, call_number, provider_units, cost_usd, request_id,
+                     cost_basis)
                 SELECT %(run_id)s, %(service)s, %(endpoint)s, coalesce(max(call_number), 0) + 1,
-                       %(provider_units)s, %(cost_usd)s, %(request_id)s
+                       %(provider_units)s, %(cost_usd)s, %(request_id)s, %(cost_basis)s
                 FROM cost_ledger WHERE run_id = %(run_id)s
                 """,
                 {
@@ -514,6 +641,7 @@ class WebResearcher:
                     "provider_units": charge.credits,
                     "cost_usd": charge.cost_usd,
                     "request_id": charge.request_id,
+                    "cost_basis": charge.cost_basis,
                 },
             )
 
@@ -525,8 +653,10 @@ def build_web_researcher(
     http_client: httpx.Client | None = None,
     run_id: uuid.UUID | None = None,
     prefer_free: bool = False,
+    exa_client=None,
 ) -> WebResearcher:
-    """Firecrawl when a key is configured (free backend as fallback), otherwise the free backend.
+    """Exa when `EXA_API_KEY` is set, with Firecrawl (or the free backend) only for pages Exa
+    cannot read; otherwise Firecrawl with the free backend as fallback; otherwise free.
 
     Without an injected `http_client` the researcher opens one and owns it: close the researcher
     (it is a context manager) when done.
@@ -537,23 +667,41 @@ def build_web_researcher(
     free_backend = FreeWebBackend(http_client=http_client)
     backend: WebBackend = free_backend
     fallback: WebBackend | None = None
-    # An empty `FIRECRAWL_API_KEY=` line in .env means "not configured", the same as no line.
-    firecrawl_key = (
-        settings.firecrawl_api_key.get_secret_value().strip()
-        if settings.firecrawl_api_key is not None
-        else ""
-    )
-    if firecrawl_key and not prefer_free:
-        backend = FirecrawlBackend(
+    fallback_on: type[WebBackendUnavailable] = WebBackendUnavailable
+    # An empty key line in .env means "not configured", the same as no line.
+    firecrawl_key = _configured(settings.firecrawl_api_key)
+    exa_key = _configured(settings.exa_api_key)
+    firecrawl = (
+        FirecrawlBackend(
             firecrawl_key,
             usd_per_credit=settings.firecrawl_usd_per_credit,
             http_client=http_client,
         )
-        fallback = free_backend
+        if firecrawl_key
+        else None
+    )
+    if prefer_free:
+        pass
+    elif exa_key or exa_client is not None:
+        if exa_client is None:
+            from exa_py import Exa
+
+            exa_client = Exa(exa_key)
+        backend = ExaWebBackend(exa_client)
+        fallback = firecrawl or free_backend
+        fallback_on = PageNeedsRendering
+    elif firecrawl is not None:
+        backend, fallback = firecrawl, free_backend
     return WebResearcher(
         connection=connection,
         backend=backend,
         fallback=fallback,
+        fallback_on=fallback_on,
+        fallback_searches=not isinstance(backend, ExaWebBackend),
         run_id=run_id or uuid.uuid4(),
         owned_http_client=owned_http_client,
     )
+
+
+def _configured(secret) -> str:
+    return secret.get_secret_value().strip() if secret is not None else ""

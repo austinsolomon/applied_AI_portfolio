@@ -47,7 +47,7 @@ from leadgen.sourcing_exa import (
     source_exa_search,
 )
 from leadgen.sourcing_maps import grade_sample, maps_client, source_maps
-from leadgen.web_research import PageFetchFailed, build_web_researcher
+from leadgen.web_research import EXA_WEB_CEILING_PER_CALL, PageFetchFailed, build_web_researcher
 
 STAGES = ("maps", "exa", "dedupe", "enrich", "qualify", "research", "crm")
 TOOL_NAME = "mcp__leadgen__run_stage"
@@ -146,8 +146,17 @@ class GuardedWeb:
 
     def _call(self, method, argument, **kwargs):
         self.count += 1
-        cost = self.settings.firecrawl_usd_per_credit * (2 if method == "search" else 1)
-        if self.researcher.backend.name != "firecrawl":
+        primary = self.researcher.backend.name
+        fallback = self.researcher.fallback.name if self.researcher.fallback else None
+        firecrawl_credit = self.settings.firecrawl_usd_per_credit
+        if primary == "exa":
+            # Exa's own ceiling, plus one Firecrawl scrape if Exa cannot read the page.
+            cost = EXA_WEB_CEILING_PER_CALL
+            if method == "fetch_page" and fallback == "firecrawl":
+                cost += firecrawl_credit
+        elif primary == "firecrawl":
+            cost = firecrawl_credit * (2 if method == "search" else 1)
+        else:
             cost = Decimal(0)
         failure = None
         with paid_operation(
@@ -158,18 +167,19 @@ class GuardedWeb:
             except PageFetchFailed as error:
                 # A failed page is a known result. If billing is unknown, account for its ceiling.
                 failure = error
-                if cost and error.charge is None:
+                # Only a Firecrawl failure can carry an unknown charge; Exa reports its own.
+                if error.charge is None and "firecrawl" in (primary, fallback) and cost:
                     record_cost(
                         self.connection,
                         self.run_id,
                         "firecrawl",
-                        cost,
+                        firecrawl_credit if primary == "exa" else cost,
                         endpoint="uncertain-fetch",
                         cost_basis="estimated",
                     )
             else:
                 if (
-                    cost
+                    primary == "firecrawl"
                     and method == "fetch_page"
                     and result.backend == "free"
                     and not result.from_cache

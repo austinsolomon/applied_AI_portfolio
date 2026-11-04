@@ -123,6 +123,46 @@ def test_unsupported_site_records_conservative_cost_without_blocking_resume(runn
     )
 
 
+def test_exa_page_reserves_exa_ceiling_plus_one_firecrawl_render(running):
+    from leadgen.orchestrator import GuardedWeb
+    from leadgen.web_research import (
+        EXA_WEB_CEILING_PER_CALL,
+        ExaWebBackend,
+        FirecrawlBackend,
+        PageNeedsRendering,
+        WebResearcher,
+    )
+
+    connection, _plan, run = running
+    settings = Settings()
+    exa = Mock()
+    exa.get_contents.return_value = SimpleNamespace(
+        results=[SimpleNamespace(url="https://cedar.example", title="Cedar", text="Mobile")],
+        cost_dollars=SimpleNamespace(total=0.001),
+    )
+    exa.search.return_value = SimpleNamespace(results=[], cost_dollars={"total": 0.005})
+    researcher = WebResearcher(
+        connection,
+        ExaWebBackend(exa),
+        run_id=run.run_id,
+        fallback=FirecrawlBackend(
+            "unused", usd_per_credit=settings.firecrawl_usd_per_credit, http_client=Mock()
+        ),
+        fallback_on=PageNeedsRendering,
+        fallback_searches=False,
+    )
+    web = GuardedWeb(connection, run.run_id, researcher, settings, "test")
+    web.fetch_page("https://cedar.example")
+    web.search("cedar massage")
+    assert connection.execute(
+        "SELECT ceiling_usd FROM budget_reservations ORDER BY reservation_id"
+    ).fetchall() == [
+        (EXA_WEB_CEILING_PER_CALL + settings.firecrawl_usd_per_credit,),
+        (EXA_WEB_CEILING_PER_CALL,),
+    ]
+    assert plan_spend(connection, _plan.plan_id) == Decimal("0.006")
+
+
 def test_hook_denies_unknown_tool_and_out_of_order_stage(running):
     connection, plan, run = running
     hook = budget_hook(connection, run.run_id, plan.plan_id)
