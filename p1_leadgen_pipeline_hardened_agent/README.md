@@ -6,7 +6,10 @@ A Claude Agent SDK agent that does the job of a lead-generation operator. It rea
 markets furthest below their lead goal, plans the scrapes, and asks a human to approve the plan and a budget once.
 From there it runs unattended: sources businesses from Google Maps and Exa, drops leads already in the CRM, enriches
 contact details, qualifies each lead against a category rubric with cited evidence, and writes qualified leads to
-the CRM. Every decision is recorded for a recurring evaluation review.
+the CRM.
+
+**Exa is central to the pipeline:** it finds lookalikes of already-qualified businesses, searches markets
+that have none yet, and supplies the page text Claude must quote to qualify a lead. See [Why Exa](#why-exa). Every decision is recorded for a recurring evaluation review.
 
 The demo category is mobile and in-home massage providers in US markets.
 
@@ -20,39 +23,56 @@ flowchart LR
     G --> P[Plan scrapes]
     P --> A{Human approves<br/>plan + budget}
     A --> S[Sample, grade,<br/>full run: Google Maps]
-    S --> X[Lookalikes: Exa]
+    S --> X[Exa lookalikes<br/>or Exa search]
     X --> DD[Dedupe vs CRM]
     S --> DD
     DD --> E[Enrich phone + email]
-    E --> Q[Qualify with evidence]
+    E --> Q[Qualify: Exa evidence<br/>+ Claude JSON judge]
     Q --> C[(CRM)]
     C --> D
 ```
 
 ## Why Exa
 
-Google Maps finds businesses by keyword and location. That misses part of this category: many
-mobile massage therapists work only from clients' homes, so they have no storefront, and often no
-Maps listing, but they do have their own website.
+Exa does three jobs in this pipeline. Claude only reasons over what Exa returns.
 
-- **Lookalikes from qualified leads.** For each market, up to 50 already-qualified leads with
-  their own domain become seeds for Exa `find_similar` (`contents=False`, 10 results each). A
-  result is kept only if it is on its own domain (no Yelp, Vagaro or Instagram) and its title or
-  domain matches the category.
-- **Search when there are no seeds.** A market with no qualified own-domain leads runs one Exa
-  neural search per planned keyword and city instead (for example, "mobile massage business in
-  Phoenix, AZ"), through the same filters.
+| Exa role | Pipeline stage | Exa call | What it gives the pipeline |
+|---|---|---|---|
+| **1. Find lookalikes** | Sourcing | `find_similar(seed, num_results=10, exclude_source_domain=True, contents=False)` | Businesses that resemble ones already qualified in that market |
+| **2. Search a market with no seeds** | Sourcing (fallback) | `search("<keyword> business in <city>", type="neural", contents=False)` | A starting set for a market with no qualified own-domain leads yet |
+| **3. Gather evidence** | Qualification and research | `search(query, type="auto", contents={"text": ...})` and `get_contents(url, text=...)` | Page text the judge must quote from to qualify a lead |
+
+Why it fits this category: Google Maps finds businesses by keyword and location, but many mobile
+massage therapists work only in clients' homes. They have no storefront and often no Maps listing,
+but they do have their own website, which is what Exa indexes and matches on meaning.
+
+- **Lookalikes from qualified leads.** Up to 50 already-qualified leads with their own domain
+  become seeds. A result is kept only if it is on its own domain (not Yelp, Vagaro, Instagram) and
+  its title or domain matches the category.
 - **Seed consensus as a confidence signal.** A domain returned by several seeds is more likely to
   be a real lookalike. The count is stored on each lead. Enrichment and qualification process
   high-consensus leads first, so they survive a budget or target cutoff, and every judge decision
-  records the count for later evaluation.
-- **Cost stays visible.** Each Exa request reserves a 0.02 USD ceiling before it runs and records
-  Exa's reported `cost_dollars` (or the ceiling, marked estimated, if Exa omits it).
+  records the count.
+- **Evidence the judge can cite.** Search results carry 1,500 characters of page text and pages
+  carry 6,000, so the judge's quote is checked against text Exa returned. Claude returns
+  schema-validated JSON (`messages.parse` with a strict Pydantic model). A qualified verdict must
+  quote that evidence word for word, or it is downgraded to review.
+- **Firecrawl only renders.** When Exa has no text for a page (typically a JavaScript-built
+  site), that one page is fetched with Firecrawl. Exa searches and Exa outages never fall back.
+- **Cost stays visible.** Each Exa request reserves a 0.02 USD ceiling and records Exa's reported
+  `cost_dollars`. Live prices: `find_similar` 0.004 USD, search with text 0.007 USD, page
+  contents about 0.0001 USD.
 
-| Source | Sourced | New after dedupe | Qualified | Qualification rate | Cost (USD) | Cost per qualified lead |
-|---|---:|---:|---:|---:|---:|---:|
-| Google Maps (Phoenix, 2026-10-11) | 50 | 50 | 12 | 24% | TBD | TBD |
-| Exa | TBD | TBD | TBD | TBD | TBD | TBD |
+Live Phoenix comparison, same plan and market (run `f2423f88`, 2026-11-04). Details are in
+[sample run](docs/sample_run.md#exa-live-run--2026-11-04).
+
+| Source | Sourced | New after dedupe | Judged | Qualified | Qualified ÷ judged | Sourcing cost (USD) | Sourcing cost per qualified lead |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Google Maps | 18 | 15 | 15 | 2 | 13% | 0.0002* | — |
+| Exa lookalikes (6 seeds) | 37 | 37 | 35 | 11 | 31% | 0.024 | 0.0022 |
+
+\* Apify's reported usage had not settled when it was recorded, so the Maps figure is understated.
+The 2026-10-11 Maps run cost 0.2002 USD for 50 businesses.
 
 ## Status
 
@@ -70,9 +90,9 @@ Maps listing, but they do have their own website.
 | Scrape plans, the one approval, run state (nothing runs twice) | done |
 | Category config and dedupe against the CRM | done |
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
-| Web search and page fetching with a page cache | done |
+| Web search and page fetching with a page cache (Exa evidence, Firecrawl rendering only) | done |
 | Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
-| Maps and Exa sourcing, qualification, CRM write | done; live Maps-to-CRM sample verified; Exa fake-tested, live run pending |
+| Maps and Exa sourcing, qualification, CRM write | done; live Maps-to-CRM sample verified; Exa live run through qualification (partial: research and CRM write pending) |
 | Eval capture, weekly review page, labels exported as test fixtures | done |
 | SDK orchestrator, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
 | Scheduled cloud deployment | planned |
@@ -215,21 +235,21 @@ with [respx](https://github.com/lundberg/respx), so the suite and CI never call 
 ## Web search and page fetching
 
 Qualification needs evidence from the web. [`web_research.py`](src/leadgen/web_research.py) puts
-that behind two calls, `search(query)` and `fetch_page(url)`, with two interchangeable backends:
+that behind two calls, `search(query)` and `fetch_page(url)`, with three backends:
 
-- **Firecrawl** (`FIRECRAWL_API_KEY` set): `/v2/search` and `/v2/scrape`, which cope with
-  JavaScript-rendered and bot-protected sites. Every call is written to `cost_ledger` as service
-  `firecrawl` at credits × `FIRECRAWL_USD_PER_CREDIT` (one credit per page; two credits per ten
-  search results). A dead or forbidden page is billed like any other, so it is ledgered too, even
-  though the fetch is reported as a failure and nothing is cached.
+- **Exa** (`EXA_API_KEY` set, the default): `search` with page text per result, and
+  `get_contents` for pages. Every call is written to `cost_ledger` as service `exa` with Exa's
+  reported `cost_dollars`. A rate-limited call (HTTP 429, not billed) is retried twice.
+- **Firecrawl** (`FIRECRAWL_API_KEY` set): with Exa, used only for a page Exa returned no text
+  for, since Firecrawl renders JavaScript. Without an Exa key it is the main backend, as before:
+  `/v2/search` and `/v2/scrape`, ledgered at credits × `FIRECRAWL_USD_PER_CREDIT`.
 - **Free** (no key, and the test backend): httpx plus [trafilatura](https://trafilatura.readthedocs.io/)
   for a page's main text, and DuckDuckGo's HTML results page for search.
 
 Fetched pages land in the `page_cache` table; a URL fetched in the last seven days is served from
-Postgres with no network call and no charge. When Firecrawl is rate limited, times out or returns
-a server error, the call falls back to the free backend; a rejected key or an empty credit balance
-is reported as a plain message instead, so a configuration problem is never hidden. Tests fake
-both backends with respx, so neither the test suite nor CI touches the network.
+Postgres with no network call and no charge. A rejected key or an empty credit balance is reported
+as a plain message, so a configuration problem is never hidden. Tests fake every backend, so
+neither the test suite nor CI touches the network.
 
 ```bash
 uv run leadgen web search "mobile massage Pasadena"          # top results
