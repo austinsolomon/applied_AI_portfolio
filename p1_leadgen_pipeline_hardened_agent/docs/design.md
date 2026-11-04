@@ -30,7 +30,7 @@ repeatable at scale.
 | 6 | Sample scrape | Pipeline | Small Google Maps run per cell; aborts at N new unique businesses or $X | Apify Google Maps actor via `apify-client` |
 | 7 | Sample grader | Pipeline | Purity per keyword and in-market share → proceed, reconfigure or abort | Python · rubric from config |
 | 8 | Full scrape | Pipeline | Continues the sampled run, or a fresh sweep after reconfiguring | Apify · pandas · Postgres `raw_leads`, `seen_leads` |
-| 9 | Lookalike sourcing | Pipeline | For markets still under target: finds businesses similar to that market's qualified leads | Exa `find_similar` via `exa-py` |
+| 9 | Lookalike sourcing | Pipeline | For markets still under target: finds businesses similar to that market's qualified leads, or searches by keyword and city when it has none | Exa `find_similar` / neural `search` via `exa-py` |
 | 10 | Dedupe | Pipeline | Drops any lead already in the CRM by Google place ID, phone, email or website domain; a domain on a shared or aggregator host is never a match | Postgres, exact match on normalized keys computed by the CRM's own expressions |
 | 11 | Contact enrichment | Pipeline | Phone and email per lead: a fixed chain of API calls (domain → company page → best-placed person → email, phone), cached per domain, every call in the cost ledger | BlitzAPI · httpx · Postgres `contact_cache` |
 | 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Firecrawl |
@@ -62,7 +62,7 @@ repeatable at scale.
 | 5 | Sample | A small scrape per cell, graded for purity and in-market share | |
 | 6 | Reconfigure or abort | Weak cells retain a reconfigure or abort verdict; only already-approved cells may be sourced | |
 | 7 | Full run | Passing cells are scraped in full; the same business is never stored twice | |
-| 8 | Lookalikes | Markets still under target get Exa lookalike sourcing, seeded from that market's qualified leads | |
+| 8 | Lookalikes | Markets still under target get Exa lookalike sourcing, seeded from that market's qualified leads; a market with no seeds gets an Exa keyword-and-city search | |
 | 9 | Dedupe | Leads already in the CRM are dropped before anything is spent on them | |
 | 10 | Enrich | Phone and email lookup per lead | |
 | 11 | Qualify | Evidence gathered and judged; unclear cases escalate to agentic research | |

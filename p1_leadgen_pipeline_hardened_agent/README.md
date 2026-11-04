@@ -29,6 +29,31 @@ flowchart LR
     C --> D
 ```
 
+## Why Exa
+
+Google Maps finds businesses by keyword and location. That misses part of this category: many
+mobile massage therapists work only from clients' homes, so they have no storefront, and often no
+Maps listing, but they do have their own website.
+
+- **Lookalikes from qualified leads.** For each market, up to 50 already-qualified leads with
+  their own domain become seeds for Exa `find_similar` (`contents=False`, 10 results each). A
+  result is kept only if it is on its own domain (no Yelp, Vagaro or Instagram) and its title or
+  domain matches the category.
+- **Search when there are no seeds.** A market with no qualified own-domain leads runs one Exa
+  neural search per planned keyword and city instead (for example, "mobile massage business in
+  Phoenix, AZ"), through the same filters.
+- **Seed consensus as a confidence signal.** A domain returned by several seeds is more likely to
+  be a real lookalike. The count is stored on each lead. Enrichment and qualification process
+  high-consensus leads first, so they survive a budget or target cutoff, and every judge decision
+  records the count for later evaluation.
+- **Cost stays visible.** Each Exa request reserves a 0.02 USD ceiling before it runs and records
+  Exa's reported `cost_dollars` (or the ceiling, marked estimated, if Exa omits it).
+
+| Source | Sourced | New after dedupe | Qualified | Qualification rate | Cost (USD) | Cost per qualified lead |
+|---|---:|---:|---:|---:|---:|---:|
+| Google Maps (Phoenix, 2026-10-11) | 50 | 50 | 12 | 24% | TBD | TBD |
+| Exa | TBD | TBD | TBD | TBD | TBD | TBD |
+
 ## Status
 
 | Milestone | State |
@@ -47,7 +72,7 @@ flowchart LR
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
 | Web search and page fetching with a page cache | done |
 | Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
-| Maps and Exa sourcing, qualification, CRM write | done; live Maps-to-CRM sample verified, Exa replay-tested |
+| Maps and Exa sourcing, qualification, CRM write | done; live Maps-to-CRM sample verified; Exa fake-tested, live run pending |
 | Eval capture, weekly review page, labels exported as test fixtures | done |
 | SDK orchestrator, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
 | Scheduled cloud deployment | planned |
