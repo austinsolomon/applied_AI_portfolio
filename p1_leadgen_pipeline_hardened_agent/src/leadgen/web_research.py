@@ -64,8 +64,6 @@ FIRECRAWL_SEARCH_RESULTS_PER_BLOCK = 10
 EXA_WEB_CEILING_PER_CALL = Decimal("0.02")
 EXA_SEARCH_TEXT_CHARACTERS = 1500
 EXA_PAGE_TEXT_CHARACTERS = 6000
-# Pages Exa crawled within the page cache's lifetime are fresh enough; older ones are recrawled.
-EXA_MAX_AGE_HOURS = int(PAGE_CACHE_MAX_AGE.total_seconds() // 3600)
 
 
 @dataclass(frozen=True)
@@ -151,7 +149,7 @@ class FetchResponse:
 class WebBackend(Protocol):
     name: str
 
-    def search(self, query: str, *, limit: int) -> SearchResponse: ...
+    def search(self, query: str, *, limit: int, site: str | None = None) -> SearchResponse: ...
 
     def fetch_page(self, url: str) -> FetchResponse: ...
 
@@ -189,7 +187,8 @@ class FirecrawlBackend:
         self._http = http_client
         self._base_url = base_url.rstrip("/")
 
-    def search(self, query: str, *, limit: int) -> SearchResponse:
+    def search(self, query: str, *, limit: int, site: str | None = None) -> SearchResponse:
+        query = f"site:{site} {query}" if site else query
         body = self._post("/search", {"query": query, "limit": limit, "sources": [{"type": "web"}]})
         web_results = body.get("data", {}).get("web", [])
         results = [
@@ -273,6 +272,10 @@ class FirecrawlBackend:
             )
         body = response.json()
         if not body.get("success", True):
+            if path == "/scrape":
+                # A dead domain (DNS failure) or unreachable page: the page is unreadable, and
+                # qualification goes on without it. Billing is unknown, so no charge is attached.
+                raise PageFetchFailed(f"Firecrawl could not read the page: {body.get('error')}")
             raise WebResearchError(f"Firecrawl reported a failure: {body.get('error')}")
         return body
 
@@ -297,7 +300,9 @@ class ExaWebBackend:
         self._ceiling = ceiling_usd
         self._sleep = sleep
 
-    def search(self, query: str, *, limit: int) -> SearchResponse:
+    def search(self, query: str, *, limit: int, site: str | None = None) -> SearchResponse:
+        # Exa restricts a search to one site with include_domains, never a site: operator.
+        options = {"include_domains": [site]} if site else {}
         response = self._call(
             "search",
             lambda: self._client.search(
@@ -305,6 +310,7 @@ class ExaWebBackend:
                 type="auto",
                 num_results=limit,
                 contents={"text": {"maxCharacters": EXA_SEARCH_TEXT_CHARACTERS}},
+                **options,
             ),
         )
         results = [
@@ -323,8 +329,9 @@ class ExaWebBackend:
             "contents",
             lambda: self._client.get_contents(
                 [url],
+                # Exa's stored copy is used when it has one: forcing a live recrawl made most
+                # small sites come back empty in the 2026-11-04 run.
                 text={"maxCharacters": EXA_PAGE_TEXT_CHARACTERS},
-                max_age_hours=EXA_MAX_AGE_HOURS,
             ),
         )
         charge = self._charge("contents", response)
@@ -385,7 +392,8 @@ class FreeWebBackend:
     def __init__(self, *, http_client: httpx.Client) -> None:
         self._http = http_client
 
-    def search(self, query: str, *, limit: int) -> SearchResponse:
+    def search(self, query: str, *, limit: int, site: str | None = None) -> SearchResponse:
+        query = f"site:{site} {query}" if site else query
         try:
             response = self._http.post(
                 DUCKDUCKGO_HTML_URL,
@@ -567,9 +575,12 @@ class WebResearcher:
         if self.owned_http_client is not None:
             self.owned_http_client.close()
 
-    def search(self, query: str, *, limit: int = DEFAULT_SEARCH_LIMIT) -> list[SearchResult]:
+    def search(
+        self, query: str, *, limit: int = DEFAULT_SEARCH_LIMIT, site: str | None = None
+    ) -> list[SearchResult]:
+        """Web results for `query`, or only pages on `site` (a domain) when it is given."""
         try:
-            response = self.backend.search(query, limit=limit)
+            response = self.backend.search(query, limit=limit, site=site)
         except WebBackendUnavailable as failure:
             if (
                 self.fallback is None
@@ -577,7 +588,7 @@ class WebResearcher:
                 or not isinstance(failure, self.fallback_on)
             ):
                 raise
-            response = self.fallback.search(query, limit=limit)
+            response = self.fallback.search(query, limit=limit, site=site)
         self._record_charge(response.charge)
         return response.results
 

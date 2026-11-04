@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from leadgen.budget import paid_operation, record_cost
 from leadgen.claude_pricing import TokenUsage, call_cost_usd
+from leadgen.contacts import normalize_domain
 from leadgen.eval_review import record_eval
 from leadgen.web_research import PageFetchFailed, WebBackendUnavailable
 
@@ -39,6 +40,17 @@ def gather_evidence(lead, market, researcher, config):
                 evidence[page.final_url] = page.text[:6000]
             except (PageFetchFailed, WebBackendUnavailable, ValueError):
                 continue
+        # Search the business's own site instead of guessing paths like /services, which most
+        # small sites do not have.
+        domain = normalize_domain(website)
+        if config.get("site_searches") and domain:
+            for result in researcher.search(
+                f"{lead['business_name']} services, service area and whether they travel to "
+                "clients' homes",
+                limit=3,
+                site=domain,
+            ):
+                evidence.setdefault(result.url, result.description[:3000])
     if config["searches"]:
         for result in researcher.search(f"{lead['business_name']} {market} mobile in-home massage"):
             evidence.setdefault(result.url, result.description[:1500])

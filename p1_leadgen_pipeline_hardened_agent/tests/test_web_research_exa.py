@@ -182,3 +182,45 @@ def test_builder_prefers_exa_and_keeps_firecrawl_for_rendering_only(
     assert isinstance(researcher.fallback, renderer)
     assert researcher.fallback_on is PageNeedsRendering
     assert researcher.fallback_searches is False
+
+
+def test_exa_site_search_uses_include_domains(migrated_connection):
+    client = Mock()
+    client.search.return_value = exa_response(exa_result())
+    researcher_with(migrated_connection, client).search(
+        "services", limit=3, site="serenity-mobile-massage.example"
+    )
+    assert client.search.call_args.kwargs["include_domains"] == ["serenity-mobile-massage.example"]
+    assert "site:" not in client.search.call_args.args[0]
+
+
+def test_exa_page_uses_exas_stored_copy_instead_of_forcing_a_recrawl(migrated_connection):
+    client = Mock()
+    client.get_contents.return_value = exa_response(exa_result())
+    researcher_with(migrated_connection, client).fetch_page(PAGE_URL)
+    assert "max_age_hours" not in client.get_contents.call_args.kwargs
+    assert "livecrawl" not in client.get_contents.call_args.kwargs
+
+
+def test_tier1_evidence_reads_the_homepage_then_searches_the_site():
+    from leadgen.qualification import gather_evidence
+
+    web = Mock()
+    web.fetch_page.return_value = SimpleNamespace(
+        final_url="https://desertmassage.com/", text="Desert Massage home page"
+    )
+    web.search.side_effect = [
+        [SimpleNamespace(url="https://desertmassage.com/areas", description="We travel to Mesa.")],
+        [],
+    ]
+    lead = {"website": "https://desertmassage.com", "business_name": "Desert Massage"}
+    config = {"pages": [""], "site_searches": 1, "searches": 1, "max_evidence_characters": 18000}
+
+    evidence = gather_evidence(lead, "Phoenix, AZ", web, config)
+
+    web.fetch_page.assert_called_once_with("https://desertmassage.com/")
+    assert web.search.call_args_list[0].kwargs == {"limit": 3, "site": "desertmassage.com"}
+    assert evidence == {
+        "https://desertmassage.com/": "Desert Massage home page",
+        "https://desertmassage.com/areas": "We travel to Mesa.",
+    }

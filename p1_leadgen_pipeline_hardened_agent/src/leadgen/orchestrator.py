@@ -183,8 +183,8 @@ class GuardedWeb:
     def fetch_page(self, url):
         return self._call("fetch_page", url)
 
-    def search(self, query, *, limit=5):
-        return self._call("search", query, limit=limit)
+    def search(self, query, *, limit=5, site=None):
+        return self._call("search", query, limit=limit, site=site)
 
 
 class Pipeline:
