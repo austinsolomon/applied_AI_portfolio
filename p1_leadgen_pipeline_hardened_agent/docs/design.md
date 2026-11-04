@@ -30,10 +30,10 @@ repeatable at scale.
 | 6 | Sample scrape | Pipeline | Small Google Maps run per cell; aborts at N new unique businesses or $X | Apify Google Maps actor via `apify-client` |
 | 7 | Sample grader | Pipeline | Purity per keyword and in-market share → proceed, reconfigure or abort | Python · rubric from config |
 | 8 | Full scrape | Pipeline | Continues the sampled run, or a fresh sweep after reconfiguring | Apify · pandas · Postgres `raw_leads`, `seen_leads` |
-| 9 | Lookalike sourcing | Pipeline | For markets still under target: finds businesses similar to that market's qualified leads | Exa `find_similar` via `exa-py` |
+| 9 | Lookalike sourcing | Pipeline | For markets still under target: finds businesses similar to that market's qualified leads, or searches by keyword and city when it has none | Exa `search` ("pages similar to <seed>", or keyword and city) via `exa-py` |
 | 10 | Dedupe | Pipeline | Drops any lead already in the CRM by Google place ID, phone, email or website domain; a domain on a shared or aggregator host is never a match | Postgres, exact match on normalized keys computed by the CRM's own expressions |
 | 11 | Contact enrichment | Pipeline | Phone and email per lead: a fixed chain of API calls (domain → company page → best-placed person → email, phone), cached per domain, every call in the cost ledger | BlitzAPI · httpx · Postgres `contact_cache` |
-| 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Firecrawl |
+| 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Exa search and contents (Firecrawl only to render JavaScript pages) |
 | 13 | CRM write | Pipeline | Inserts qualified leads with at least one real phone or email (junk mailboxes blanked) in one transaction; conflicts reported, never lost; a negation-aware contradiction scan of each reason goes to `eval_records` without blocking | Postgres `INSERT … ON CONFLICT DO NOTHING` |
 | 14 | Orchestrator agent | Pipeline | Runs the pipeline in order, retries, reconfigures within the approved budget | Claude Agent SDK · skills in `.claude/skills/` |
 | 15 | Budget guard | Hardening | After approval, blocks any tool call outside the approved plan or budget | Agent SDK pre-tool-use hook |
@@ -62,7 +62,7 @@ repeatable at scale.
 | 5 | Sample | A small scrape per cell, graded for purity and in-market share | |
 | 6 | Reconfigure or abort | Weak cells retain a reconfigure or abort verdict; only already-approved cells may be sourced | |
 | 7 | Full run | Passing cells are scraped in full; the same business is never stored twice | |
-| 8 | Lookalikes | Markets still under target get Exa lookalike sourcing, seeded from that market's qualified leads | |
+| 8 | Lookalikes | Markets still under target get Exa lookalike sourcing, seeded from that market's qualified leads; a market with no seeds gets an Exa keyword-and-city search | |
 | 9 | Dedupe | Leads already in the CRM are dropped before anything is spent on them | |
 | 10 | Enrich | Phone and email lookup per lead | |
 | 11 | Qualify | Evidence gathered and judged; unclear cases escalate to agentic research | |
@@ -100,7 +100,8 @@ a reasoning step, and a fixed JSON answer that later steps can rely on.
    which pages and searches to gather, and an evidence-size cap. The rubric comes from category config,
    the schema is a Pydantic model, and the model comes from typed settings.
 2. **Tier 1, fixed gathering.** The lead's website (home, services, about) and one search are fetched through
-   Firecrawl and reduced to an evidence block with source URLs.
+   Exa (search with page text, `get_contents` for pages) and reduced to an evidence block with source URLs.
+   Firecrawl is used only for a page Exa returned no text for.
 3. **Tier 1, judgment.** One Claude call reads the rubric and the evidence and returns schema-validated JSON:
    verdict (`qualified`, `rejected` or `review`), reason, evidence quote, source URL, eligible services found, and
    whether the business serves the market.
@@ -110,8 +111,9 @@ a reasoning step, and a fixed JSON answer that later steps can rely on.
 Most leads finish at Tier 1's cost. Only unclear leads pay for an agent. When evidence stays unclear, the answer is
 `review`, never a guess.
 
-Search and scraping sit behind a small interface (`search`, `fetch_page`), with Firecrawl as the live backend and
-httpx with trafilatura (pages) and DuckDuckGo's HTML results (search) as the free fallback and test backend.
+Search and scraping sit behind a small interface (`search`, `fetch_page`). Exa is the live backend when its key is
+set, with Firecrawl only as a renderer for pages Exa cannot read. Without an Exa key, Firecrawl is the live backend,
+and httpx with trafilatura (pages) and DuckDuckGo's HTML results (search) is the free fallback and test backend.
 Fetched pages are cached in Postgres for seven days, keyed by URL without its fragment. Every Firecrawl call is
 written to the cost ledger in credits at a configured price per credit, including a scrape that comes back as an
 error page, which Firecrawl bills like any other and the pipeline reports as a failed fetch. A transient Firecrawl failure (rate limit,

@@ -39,8 +39,15 @@ def persist_leads(connection, run_id, market_id, source, leads, *, cell_id=None)
     return inserted
 
 
-def read_raw_leads(connection, run_id):
+def read_raw_leads(connection, run_id, *, by_consensus=False):
+    """Leads in sourcing order, or, for paid processing, lookalikes found by the most seeds first.
+
+    Dedupe keeps sourcing order so a Maps record (place ID, phone) wins over an Exa lookalike for
+    the same business. Enrichment and qualification use consensus order so the strongest Exa
+    leads are worked before a budget or target cutoff; ties keep sourcing order.
+    """
+    order = "seed_consensus DESC, raw_lead_id" if by_consensus else "raw_lead_id"
     with connection.cursor(row_factory=dict_row) as cursor:
         return cursor.execute(
-            "SELECT * FROM raw_leads WHERE run_id=%s ORDER BY raw_lead_id", (run_id,)
+            f"SELECT * FROM raw_leads WHERE run_id=%s ORDER BY {order}", (run_id,)
         ).fetchall()

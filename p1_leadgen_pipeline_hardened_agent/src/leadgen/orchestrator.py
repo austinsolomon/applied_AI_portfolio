@@ -22,7 +22,7 @@ from leadgen.crm_write import QualifiedLead, write_qualified_leads
 from leadgen.database import connect
 from leadgen.dedupe import IncomingLead, dedupe_against_crm
 from leadgen.gaps import read_gaps
-from leadgen.job_queue import JobSpec, enqueue_jobs, run_worker_pool
+from leadgen.job_queue import JobSpec, enqueue_jobs, requeue_failed_jobs, run_worker_pool
 from leadgen.places import expand_market
 from leadgen.plans import (
     PlannedCell,
@@ -38,18 +38,34 @@ from leadgen.plans import (
 from leadgen.qualification import gather_evidence, judge_lead
 from leadgen.raw_leads import read_raw_leads
 from leadgen.research_agent import research_lead, sdk_environment
-from leadgen.sourcing_exa import exa_client, source_exa
+from leadgen.sourcing_exa import (
+    EXA_CEILING_PER_CALL,
+    exa_client,
+    search_queries,
+    select_seeds,
+    source_exa,
+    source_exa_search,
+)
 from leadgen.sourcing_maps import grade_sample, maps_client, source_maps
-from leadgen.web_research import PageFetchFailed, build_web_researcher
+from leadgen.web_research import EXA_WEB_CEILING_PER_CALL, PageFetchFailed, build_web_researcher
 
 STAGES = ("maps", "exa", "dedupe", "enrich", "qualify", "research", "crm")
 TOOL_NAME = "mcp__leadgen__run_stage"
 
 
-def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50):
+def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50, market=None):
+    """Plan the biggest gap, or the named market (e.g. "Phoenix, AZ") if it is below its goal."""
     if not 1 <= max_cities <= 40 or not 1 <= max_keywords <= len(category.keywords) or target < 1:
         raise ValueError("Invalid plan size")
     gaps = read_gaps(connection)
+    if market is not None:
+        gaps = [
+            gap
+            for gap in gaps
+            if f"{gap.market_name}, {gap.state}".lower() == market.strip().lower()
+        ]
+        if not gaps:
+            raise ValueError(f"{market} is not a market below its lead goal")
     if not gaps:
         raise ValueError("Every market is at its lead goal")
     market = gaps[0]
@@ -66,6 +82,25 @@ def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50)
             for keyword in category.keywords[:max_keywords]
         ],
     )
+
+
+def exa_calls(connection, plan, category):
+    """Worst-case Exa requests: one per seed, or one per search query in a market with none."""
+    calls = 0
+    for market in {cell.market_id for cell in plan.cells}:
+        market_cells = [cell for cell in plan.cells if cell.market_id == market]
+        calls += len(select_seeds(connection, market, category)) or len(
+            search_queries(
+                category,
+                list(dict.fromkeys(cell.city for cell in market_cells)),
+                list(dict.fromkeys(cell.keyword for cell in market_cells)),
+            )
+        )
+    return calls
+
+
+def exa_ceiling(connection, plan, category):
+    return exa_calls(connection, plan, category) * EXA_CEILING_PER_CALL
 
 
 def completed_stages(connection, run_id):
@@ -111,8 +146,17 @@ class GuardedWeb:
 
     def _call(self, method, argument, **kwargs):
         self.count += 1
-        cost = self.settings.firecrawl_usd_per_credit * (2 if method == "search" else 1)
-        if self.researcher.backend.name != "firecrawl":
+        primary = self.researcher.backend.name
+        fallback = self.researcher.fallback.name if self.researcher.fallback else None
+        firecrawl_credit = self.settings.firecrawl_usd_per_credit
+        if primary == "exa":
+            # Exa's own ceiling, plus one Firecrawl scrape if Exa cannot read the page.
+            cost = EXA_WEB_CEILING_PER_CALL
+            if method == "fetch_page" and fallback == "firecrawl":
+                cost += firecrawl_credit
+        elif primary == "firecrawl":
+            cost = firecrawl_credit * (2 if method == "search" else 1)
+        else:
             cost = Decimal(0)
         failure = None
         with paid_operation(
@@ -123,18 +167,19 @@ class GuardedWeb:
             except PageFetchFailed as error:
                 # A failed page is a known result. If billing is unknown, account for its ceiling.
                 failure = error
-                if cost and error.charge is None:
+                # Only a Firecrawl failure can carry an unknown charge; Exa reports its own.
+                if error.charge is None and "firecrawl" in (primary, fallback) and cost:
                     record_cost(
                         self.connection,
                         self.run_id,
                         "firecrawl",
-                        cost,
+                        firecrawl_credit if primary == "exa" else cost,
                         endpoint="uncertain-fetch",
                         cost_basis="estimated",
                     )
             else:
                 if (
-                    cost
+                    primary == "firecrawl"
                     and method == "fetch_page"
                     and result.backend == "free"
                     and not result.from_cache
@@ -246,19 +291,32 @@ class Pipeline:
         return {"sourced": total}
 
     async def run_exa(self):
-        total = 0
-        markets = {cell.market_id for cell in read_plan(self.connection, self.run.plan_id).cells}
-        for market in markets:
-            total += len(
-                source_exa(
+        total, modes = 0, set()
+        cells = read_plan(self.connection, self.run.plan_id).cells
+        for market in sorted({cell.market_id for cell in cells}):
+            client = self.exa or exa_client(self.settings)
+            seeds = select_seeds(self.connection, market, self.category)
+            if seeds:
+                modes.add("similar")
+                leads = source_exa(
+                    self.connection, self.run.run_id, market, self.category, client, seeds=seeds
+                )
+            else:
+                # No qualified own-domain seeds yet: search by the plan's keywords and cities.
+                modes.add("search")
+                market_cells = [cell for cell in cells if cell.market_id == market]
+                leads = source_exa_search(
                     self.connection,
                     self.run.run_id,
                     market,
                     self.category,
-                    self.exa or exa_client(self.settings),
+                    client,
+                    cities=list(dict.fromkeys(cell.city for cell in market_cells)),
+                    keywords=list(dict.fromkeys(cell.keyword for cell in market_cells)),
                 )
-            )
-        return {"sourced": total}
+            total += len(leads)
+        mode = modes.pop() if len(modes) == 1 else "mixed"
+        return {"sourced": total, "mode": mode}
 
     async def run_dedupe(self):
         leads = read_raw_leads(self.connection, self.run.run_id)
@@ -297,7 +355,7 @@ class Pipeline:
     async def run_enrich(self):
         leads = [
             lead
-            for lead in read_raw_leads(self.connection, self.run.run_id)
+            for lead in read_raw_leads(self.connection, self.run.run_id, by_consensus=True)
             if not lead["duplicate"] and not lead["enriched"]
         ]
         enqueue_jobs(
@@ -364,9 +422,11 @@ class Pipeline:
     async def run_qualify(self):
         leads = [
             lead
-            for lead in read_raw_leads(self.connection, self.run.run_id)
+            for lead in read_raw_leads(self.connection, self.run.run_id, by_consensus=True)
             if not lead["duplicate"] and not lead["qualification"]
         ]
+        # A resumed run retries leads whose earlier attempt failed (its paid calls are reconciled).
+        requeue_failed_jobs(self.connection, self.run.run_id, "qualify")
         enqueue_jobs(
             self.connection,
             self.run.run_id,
@@ -401,7 +461,9 @@ class Pipeline:
                         self.run.run_id,
                         researcher,
                         self.settings,
-                        f"tier1:{lead['raw_lead_id']}",
+                        # Each attempt gets its own reservation keys; the first keeps the old ones.
+                        f"tier1:{lead['raw_lead_id']}"
+                        + (f":attempt{job.attempts}" if job.attempts > 1 else ""),
                     )
                     evidence = gather_evidence(lead, market, web, config)
                 judgment = judge_lead(
@@ -432,7 +494,7 @@ class Pipeline:
 
     async def run_research(self):
         count = 0
-        for lead in read_raw_leads(self.connection, self.run.run_id):
+        for lead in read_raw_leads(self.connection, self.run.run_id, by_consensus=True):
             if (
                 lead["duplicate"]
                 or lead["researched"]

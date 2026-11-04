@@ -24,6 +24,7 @@ from leadgen.job_queue import (
     queue_counts,
     read_job,
     release_job,
+    requeue_failed_jobs,
     requeue_stale_jobs,
     run_worker_pool,
 )
@@ -355,3 +356,17 @@ def test_old_worker_cannot_complete_or_release_a_reclaimed_job(migrated_connecti
     with pytest.raises(JobNotRunning):
         release_job(migrated_connection, old, "late failure")
     assert complete_job(migrated_connection, current).status == JOB_SUCCEEDED
+
+
+def test_resume_gives_failed_jobs_exactly_one_more_attempt(migrated_connection):
+    run, _cell = running_run(migrated_connection)
+    enqueue_jobs(migrated_connection, run.run_id, KIND, lead_jobs(1, max_attempts=1))
+    first = claim_job(migrated_connection, "worker-a", run.run_id)
+    release_job(migrated_connection, first, "search unavailable")
+    assert read_job(migrated_connection, first.job_id).status == JOB_FAILED
+
+    assert requeue_failed_jobs(migrated_connection, run.run_id, KIND) == 1
+    retried = claim_job(migrated_connection, "worker-b", run.run_id)
+    assert (retried.job_id, retried.attempts, retried.max_attempts) == (first.job_id, 2, 2)
+    release_job(migrated_connection, retried, "still unavailable")
+    assert read_job(migrated_connection, first.job_id).status == JOB_FAILED

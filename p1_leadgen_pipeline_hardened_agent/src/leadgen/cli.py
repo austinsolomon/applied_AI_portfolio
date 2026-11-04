@@ -101,6 +101,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan_parser.add_argument("--max-cities", type=int, default=1)
     plan_parser.add_argument("--max-keywords", type=int, default=1)
     plan_parser.add_argument("--target", type=int, default=50)
+    plan_parser.add_argument(
+        "--market", help='plan this market, e.g. "Phoenix, AZ" (default: the biggest gap)'
+    )
     plan_parser.add_argument("--budget-usd", type=Decimal, default=Decimal("5"))
     plan_parser.add_argument(
         "--approve", action="store_true", help="record an already authorized approval"
@@ -373,7 +376,7 @@ def run_pipeline_command(arguments):
 
     from leadgen.budget import BudgetBlocked
     from leadgen.category_config import load_category_config
-    from leadgen.orchestrator import build_plan, run_plan
+    from leadgen.orchestrator import build_plan, exa_calls, exa_ceiling, run_plan
     from leadgen.plans import PlanError, approve_plan, latest_plan, read_plan
     from leadgen.qualification import QualificationError
     from leadgen.sourcing_maps import SourcingError
@@ -391,15 +394,18 @@ def run_pipeline_command(arguments):
                     max_cities=arguments.max_cities,
                     max_keywords=arguments.max_keywords,
                     target=arguments.target,
+                    market=arguments.market,
                 )
+                exa_cap = exa_ceiling(connection, plan, category)
                 print(
                     f"Plan {plan.plan_id}: {len(plan.cells)} cells; "
                     f"{plan.expected_raw_leads} raw leads; Maps cap ${plan.estimated_cost_usd}; "
+                    f"Exa cap ${exa_cap} ({exa_calls(connection, plan, category)} calls); "
                     f"total budget ${arguments.budget_usd} (all services)"
                 )
                 for cell in plan.cells:
                     print(f"  {cell.city}: {cell.keyword} ({cell.expected_raw_leads} leads)")
-                if plan.estimated_cost_usd >= arguments.budget_usd:
+                if plan.estimated_cost_usd + exa_cap >= arguments.budget_usd:
                     raise ValueError("Budget must also leave room for enrichment and qualification")
                 approved = (
                     arguments.approve

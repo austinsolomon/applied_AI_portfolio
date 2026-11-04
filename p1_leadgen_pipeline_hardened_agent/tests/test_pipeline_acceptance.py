@@ -12,12 +12,20 @@ from pydantic import SecretStr
 
 from leadgen.budget import BudgetBlocked, paid_operation, plan_spend, reserve
 from leadgen.category_config import load_category_config
-from leadgen.orchestrator import STAGES, TOOL_NAME, Pipeline, budget_hook, run_plan
+from leadgen.orchestrator import (
+    STAGES,
+    TOOL_NAME,
+    Pipeline,
+    budget_hook,
+    build_plan,
+    exa_calls,
+    run_plan,
+)
 from leadgen.plans import PlannedCell, approve_plan, create_plan, start_run
 from leadgen.qualification import Judgment, judge_lead, validate_judgment
 from leadgen.raw_leads import RawLead, persist_leads, read_raw_leads
 from leadgen.settings import Settings
-from leadgen.sourcing_exa import select_seeds, source_exa
+from leadgen.sourcing_exa import select_seeds, source_exa, source_exa_search
 from leadgen.sourcing_maps import grade_sample, source_maps
 from tests.crm_builders import add_lead, add_market
 
@@ -115,6 +123,46 @@ def test_unsupported_site_records_conservative_cost_without_blocking_resume(runn
     )
 
 
+def test_exa_page_reserves_exa_ceiling_plus_one_firecrawl_render(running):
+    from leadgen.orchestrator import GuardedWeb
+    from leadgen.web_research import (
+        EXA_WEB_CEILING_PER_CALL,
+        ExaWebBackend,
+        FirecrawlBackend,
+        PageNeedsRendering,
+        WebResearcher,
+    )
+
+    connection, _plan, run = running
+    settings = Settings()
+    exa = Mock()
+    exa.get_contents.return_value = SimpleNamespace(
+        results=[SimpleNamespace(url="https://cedar.example", title="Cedar", text="Mobile")],
+        cost_dollars=SimpleNamespace(total=0.001),
+    )
+    exa.search.return_value = SimpleNamespace(results=[], cost_dollars={"total": 0.005})
+    researcher = WebResearcher(
+        connection,
+        ExaWebBackend(exa),
+        run_id=run.run_id,
+        fallback=FirecrawlBackend(
+            "unused", usd_per_credit=settings.firecrawl_usd_per_credit, http_client=Mock()
+        ),
+        fallback_on=PageNeedsRendering,
+        fallback_searches=False,
+    )
+    web = GuardedWeb(connection, run.run_id, researcher, settings, "test")
+    web.fetch_page("https://cedar.example")
+    web.search("cedar massage")
+    assert connection.execute(
+        "SELECT ceiling_usd FROM budget_reservations ORDER BY reservation_id"
+    ).fetchall() == [
+        (EXA_WEB_CEILING_PER_CALL + settings.firecrawl_usd_per_credit,),
+        (EXA_WEB_CEILING_PER_CALL,),
+    ]
+    assert plan_spend(connection, _plan.plan_id) == Decimal("0.006")
+
+
 def test_hook_denies_unknown_tool_and_out_of_order_stage(running):
     connection, plan, run = running
     hook = budget_hook(connection, run.run_id, plan.plan_id)
@@ -173,7 +221,7 @@ def test_grader_does_not_treat_unknown_coordinates_as_in_market(running):
 def test_exa_drops_shared_domains_and_counts_consensus(running):
     connection, plan, run = running
     client = Mock()
-    client.find_similar.return_value = SimpleNamespace(
+    client.search.return_value = SimpleNamespace(
         cost_dollars=SimpleNamespace(total=0.005),
         results=[
             SimpleNamespace(url="https://cedar-massage.example", title="Cedar Massage"),
@@ -192,6 +240,158 @@ def test_exa_drops_shared_domains_and_counts_consensus(running):
     assert leads[0].seed_consensus == 2
     assert read_raw_leads(connection, run.run_id)[0]["seed_consensus"] == 2
     assert plan_spend(connection, plan.plan_id) == Decimal(".01")
+
+
+def persist_consensus_mix(connection, run, market_id):
+    persist_leads(
+        connection,
+        run.run_id,
+        market_id,
+        "google_maps",
+        [RawLead("maps-1", "Maps Massage", phone="3105550101")],
+    )
+    persist_leads(
+        connection,
+        run.run_id,
+        market_id,
+        "exa",
+        [
+            RawLead(f"c{consensus}.example", f"Lookalike {consensus}", phone=f"310555011{n}")
+            for n, consensus in enumerate([1, 3, 2])
+        ],
+    )
+    for consensus in (1, 3, 2):
+        connection.execute(
+            "UPDATE raw_leads SET seed_consensus=%s WHERE source_key=%s",
+            (consensus, f"c{consensus}.example"),
+        )
+
+
+def test_paid_stages_work_multi_seed_lookalikes_first(running, empty_database_url):
+    connection, plan, run = running
+    persist_consensus_mix(connection, run, plan.cells[0].market_id)
+    sourced = [lead["source_key"] for lead in read_raw_leads(connection, run.run_id)]
+    assert sourced == ["maps-1", "c1.example", "c3.example", "c2.example"]
+    by_consensus = read_raw_leads(connection, run.run_id, by_consensus=True)
+    expected = ["c3.example", "c2.example", "maps-1", "c1.example"]
+    assert [lead["source_key"] for lead in by_consensus] == expected
+    # Jobs are claimed in job_id order, so enqueue order is processing order.
+    settings = Settings(_env_file=None, database_url=empty_database_url)
+    asyncio.run(Pipeline(connection, run, settings).run_enrich())
+    keys = dict(connection.execute("SELECT raw_lead_id,source_key FROM raw_leads").fetchall())
+    jobs = connection.execute(
+        "SELECT (payload->>'lead')::bigint FROM cell_jobs WHERE kind='enrich' ORDER BY job_id"
+    ).fetchall()
+    assert [keys[lead_id] for (lead_id,) in jobs] == expected
+
+
+def exa_response(*urls_and_titles, cost=0.005):
+    return SimpleNamespace(
+        cost_dollars=None if cost is None else SimpleNamespace(total=cost),
+        results=[SimpleNamespace(url=url, title=title) for url, title in urls_and_titles],
+    )
+
+
+def test_exa_stage_searches_when_market_has_no_seeds(running):
+    connection, plan, run = running
+    client = Mock()
+    client.search.return_value = exa_response(
+        ("https://desertmassage.com/", "Desert Mobile Massage")
+    )
+    assert exa_calls(connection, plan, load_category_config()) == 1
+    result = asyncio.run(Pipeline(connection, run, Settings(), exa=client).run_exa())
+    assert result == {"sourced": 1, "mode": "search"}
+    client.search.assert_called_once_with(
+        "mobile massage business in Los Angeles, CA",
+        type="neural",
+        num_results=10,
+        contents=False,
+    )
+    assert read_raw_leads(connection, run.run_id)[0]["source"] == "exa"
+    assert connection.execute("SELECT endpoint FROM cost_ledger").fetchone() == ("search",)
+
+
+def test_exa_stage_uses_lookalikes_when_market_has_seeds(running):
+    connection, plan, run = running
+    add_lead(
+        connection,
+        plan.cells[0].market_id,
+        business_name="Cedar Massage",
+        website="https://cedarmassage.com",
+        phone="3105550142",
+        qualification_reason="mobile massage",
+    )
+    client = Mock()
+    client.search.return_value = exa_response(("https://pinemassage.com", "Pine Massage"))
+    assert exa_calls(connection, plan, load_category_config()) == 1
+    result = asyncio.run(Pipeline(connection, run, Settings(), exa=client).run_exa())
+    assert result == {"sourced": 1, "mode": "similar"}
+    client.search.assert_called_once_with(
+        "pages similar to https://cedarmassage.com",
+        num_results=10,
+        exclude_domains=["cedarmassage.com"],
+        contents=False,
+    )
+    assert connection.execute("SELECT endpoint FROM cost_ledger").fetchone() == ("search-similar",)
+
+
+def test_exa_search_drops_shared_and_aggregator_hosts(running):
+    connection, plan, run = running
+    client = Mock()
+    client.search.return_value = exa_response(
+        ("https://www.yelp.com/search?find_desc=massage", "Best Massage in Phoenix"),
+        ("https://instagram.com/mobilemassage", "Mobile Massage"),
+        ("https://desertmassage.com", "Desert Massage"),
+        ("https://desertmassage.com/about", "Desert Massage about"),
+        ("https://phoenixplumbing.com", "Phoenix Plumbing"),
+    )
+    leads = source_exa_search(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        load_category_config(),
+        client,
+        cities=["Phoenix, AZ"],
+    )
+    assert [lead.source_key for lead in leads] == ["desertmassage.com"]
+    assert [lead["source_key"] for lead in read_raw_leads(connection, run.run_id)] == [
+        "desertmassage.com"
+    ]
+
+
+def test_exa_search_records_ceiling_when_cost_is_missing(running):
+    connection, plan, run = running
+    client = Mock()
+    client.search.return_value = exa_response(cost=None)
+    source_exa_search(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        load_category_config(),
+        client,
+        cities=["Phoenix, AZ"],
+        ceiling_per_query=Decimal("0.03"),
+    )
+    assert connection.execute(
+        "SELECT service,endpoint,cost_usd,cost_basis FROM cost_ledger"
+    ).fetchone() == ("exa", "search", Decimal("0.03"), "estimated")
+    assert plan_spend(connection, plan.plan_id) == Decimal("0.03")
+
+
+def test_exa_search_blocked_when_budget_is_exhausted(running):
+    connection, plan, run = running
+    reserve(connection, run.run_id, "held:elsewhere", Decimal("4.99"))
+    client = Mock()
+    with pytest.raises(BudgetBlocked, match="exceed"):
+        source_exa_search(
+            connection,
+            run.run_id,
+            plan.cells[0].market_id,
+            load_category_config(),
+            client,
+            cities=["Phoenix, AZ"],
+        )
+    client.search.assert_not_called()
 
 
 def test_seed_selection_excludes_directories_and_demo_domains(running):
@@ -271,6 +471,8 @@ def test_qualification_records_model_usage_and_evidence(running):
     )
     assert result.verdict == "qualified"
     assert connection.execute("SELECT count(*) FROM eval_records").fetchone()[0] == 1
+    evidence = connection.execute("SELECT evidence FROM eval_records").fetchone()[0]
+    assert (evidence["source"], evidence["seed_consensus"]) == ("google_maps", 1)
     assert plan_spend(connection, plan.plan_id) > 0
 
 
@@ -396,7 +598,9 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
     monkeypatch.setattr(WebResearcher, "fetch_page", page)
     monkeypatch.setattr(WebResearcher, "search", lambda *args, **kwargs: [])
     monkeypatch.setattr(orchestrator, "maps_client", lambda settings: maps)
-    monkeypatch.setattr(orchestrator, "exa_client", lambda settings: Mock())
+    exa = Mock()
+    exa.search.return_value = SimpleNamespace(cost_dollars={"total": 0.005}, results=[])
+    monkeypatch.setattr(orchestrator, "exa_client", lambda settings: exa)
     monkeypatch.setattr(orchestrator, "create_sdk_mcp_server", lambda **kwargs: kwargs)
 
     async def replay(*, prompt, options):
@@ -423,6 +627,7 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
         run_plan(connection, plan.plan_id, settings, query_fn=replay, pipeline_factory=pipeline)
     )
     assert result["stages"]["maps"]["sourced"] == 1
+    assert result["stages"]["exa"] == {"sourced": 0, "mode": "search"}
     assert result["stages"]["enrich"]["processed"] == 1
     assert result["stages"]["qualify"]["judged"] == 1
     assert result["stages"]["crm"]["inserted"] == 1
@@ -599,3 +804,18 @@ def test_research_loop_rejudges_bounded_evidence(running, monkeypatch, subtype):
     assert result.verdict == "qualified"
     web.fetch_page.assert_not_called()
     assert read_raw_leads(connection, run.run_id)[0]["researched"]
+
+
+def test_plan_can_target_a_named_market_below_its_goal(migrated_connection):
+    from leadgen.demo_seed import seed_demo_data
+    from leadgen.places import load_places
+
+    connection = migrated_connection
+    seed_demo_data(connection)
+    load_places(connection)
+    category = load_category_config()
+    assert build_plan(connection, category).cells[0].city == "Phoenix, AZ"
+    plan = build_plan(connection, category, market="los angeles, ca", target=5)
+    assert plan.cells[0].city == "Los Angeles, CA"
+    with pytest.raises(ValueError, match="below its lead goal"):
+        build_plan(connection, category, market="Nowhere, ZZ")

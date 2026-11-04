@@ -89,5 +89,93 @@ contacts and pages remain in Postgres; no business phone numbers or emails are i
 | Key/credit failures give plain messages | Mocked invalid-key, empty-balance and CLI failure tests |
 
 Cloud deployment, scheduling and secret management remain out of scope. The Exa network path was
-covered by fakes but was not exercised by this live sample. This run validates the pipeline and
+covered by fakes but was not exercised by this live sample; see the Exa live run below. This run validates the pipeline and
 recovery mechanisms; it is not a claim of unattended cloud production readiness.
+
+## Exa live run — 2026-11-04
+
+A second approved plan targeted Phoenix again, so Exa could use the ten real qualified leads from
+the first run as seeds: `leadgen plan --market "Phoenix, AZ" --target 30 --max-cities 1
+--max-keywords 1 --budget-usd 3`. Plan 2, run `f2423f88-f23e-4b4e-90c8-4342201d4d0c`. Real Apify,
+Exa, Firecrawl and Anthropic calls; no demo data and no fakes.
+
+Exa had three roles in this run: lookalike sourcing (`find_similar`), and, once the evidence
+backend was switched to Exa during recovery, search with page text and page contents for
+qualification.
+
+### Sourcing
+
+| Step | Result |
+|---|---|
+| Eligible seeds (`select_seeds`) | 6 of 10 qualified leads; 4 excluded (one Instagram page, three names or domains without a category keyword) |
+| Exa mode | `find_similar`, 10 results per seed, `contents=False` |
+| Exa candidates kept | 37 own-domain, on-category businesses (raw result counts per call were not recorded) |
+| Google Maps | 18 businesses |
+| Dedupe | 52 new, 3 duplicates (all Maps); no Exa lead was already in the CRM |
+| Seed consensus | 30 leads found by 1 seed, 4 by 2 seeds, 3 by 3 seeds |
+
+### Qualification
+
+| | Maps | Exa |
+|---|---:|---:|
+| Judged | 15 of 15 | 35 of 37 |
+| Qualified / rejected / review | 2 / 3 / 10 | 11 / 4 / 20 |
+| Qualified ÷ judged | 13% | 31% |
+
+| Exa seed consensus | Judged | Qualified | Rate |
+|---|---:|---:|---:|
+| 2 or 3 seeds | 7 | 3 | 43% |
+| 1 seed | 28 | 8 | 29% |
+
+Consensus ordering did its job: every lead found by two or more seeds was judged before the first
+failure stopped qualification. The two unjudged Exa leads were both consensus 1. The samples
+are small; the consensus split is a signal to keep measuring, not a result.
+
+### Cost
+
+| Service | Ledger USD | Notes |
+|---|---:|---|
+| Exa | 0.111000 | 6 `find_similar` at 0.004; 12 searches with text at 0.007; 27 page-contents calls, 0.003 total |
+| Firecrawl | 0.608000 | 0.211200 provider-reported; 0.396800 conservative estimates from the first invocation's failed fallbacks |
+| Anthropic | 0.031350 | `claude-haiku-5-5` judging and orchestration |
+| Apify | 0.000200 | Understated: usage had not settled when recorded |
+| BlitzAPI | 0.000000 | |
+| **Total** | **0.750550** | Approved budget 3 USD |
+
+Exa sourcing cost 0.024 USD for 11 qualified leads: **0.0022 USD per qualified lead**. The whole
+run, all services, cost 0.058 USD per qualified lead (13 qualified). The code reserves 0.02 USD
+per Exa call; Exa's reported prices were 5× (find_similar) to 200× (contents) below that.
+
+### What stopped the run, and what changed
+
+1. **First invocation.** Qualification used Firecrawl for evidence. Firecrawl `/v2/search`
+   failed in about 300 ms for 14 leads (rate limited), and the free DuckDuckGo fallback returned
+   HTTP 202. Firecrawl's usage history showed fewer credits than were already ledgered, so the 14
+   reservations were reconciled as not billed.
+2. **Code changes before resuming.** Exa became the evidence backend: search with page text, and
+   `get_contents` for pages. Firecrawl is kept only for pages Exa has no text for. Failed qualify
+   jobs are now retried on resume, with their own reservation keys.
+3. **Second invocation.** 12 of the 14 leads were judged on Exa evidence. Two failed: Exa still
+   indexes two dead domains, and Firecrawl's DNS-failure response surfaced as a generic error
+   instead of an unreadable page. 16 Firecrawl fallback scrapes ended `uncertain` and need
+   reconciliation before the research tier and CRM write can resume.
+
+### Open items from this run
+
+- Exa returned no text for 24 of 27 pages. Qualification guesses subpages (`/services`,
+  `/about`) that often do not exist, and `max_age_hours=168` forces live recrawls that small sites
+  fail. Using Exa search hits and highlights as evidence should replace most page fetches.
+- Firecrawl `success:false` on a scrape should be an unreadable page (`PageFetchFailed`), not a
+  job failure.
+- The host lists need booking platforms, directories and registries that came through as
+  businesses: `glossgenius.com`, `qdexx.com`, `excellenttherapists.com`, `carenary.com`,
+  `stedi.com`, `linkedin.com`.
+- Raw Exa result counts per call are not persisted, so "returned vs filtered" cannot be reported.
+- Done after this run: `exa-py` 2.25 deprecates `find_similar`, so lookalike sourcing now calls its
+  documented replacement, `search("pages similar to <seed>", exclude_domains=[seed])`. The
+  numbers above were produced by `find_similar`.
+- Research tier and CRM write: pending reconciliation of the 16 uncertain reservations.
+
+The redacted fixtures in `tests/fixtures/exa/` (`similar.json`, recorded with `find_similar`
+before the migration, and `search.json`, recorded the same day) keep only URL, title, domain and reported cost. The replay tests run them through the real
+sourcing code.

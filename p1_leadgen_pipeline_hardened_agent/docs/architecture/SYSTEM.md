@@ -31,7 +31,7 @@ How does a market gap become usable leads?
 |---|---|
 | Scope | One category and one approval; configured keyword order. |
 | Identity | Exact normalized keys, including CRM constraints. |
-| Observed result | 2026-10-11: 50 raw → 12 qualified → 10 saved. |
+| Observed result | 2026-10-11: 50 raw → 12 qualified → 10 saved. 2026-11-04 Exa: 37 lookalikes, 31% of judged qualified. |
 
 ### Flow: Phoenix campaign
 
@@ -200,17 +200,18 @@ Steps:
 
 Use eligible CRM websites as seeds for similar businesses.
 
-At most 50 qualified own-domain seeds produce ten results each. Results are combined by domain and seed consensus; shared hosts and directories are excluded. Phoenix had no eligible real-domain seeds, so this stage made no live requests.
+Up to 50 qualified own-domain seeds each run an Exa search for "pages similar to <seed>" (ten results, seed domain excluded). Results are combined by domain and seed consensus; shared hosts and directories are excluded, and higher-consensus leads are processed first. A market with no seeds runs a keyword-and-city Exa search instead. The 2026-11-04 Phoenix run used 6 seeds and kept 37 new businesses.
 
 Source: [src/leadgen/sourcing_exa.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/sourcing_exa.py).
 
 Steps:
 
 1. **Select seeds** — Qualified CRM domains with category signal.
-2. **Find similar** — Exclude each source domain.
+2. **Search similar** — Exa search "pages similar to <seed>", seed domain excluded.
 3. **Combine** — Count consensus and filter directories.
+4. **No seeds** — Exa search by keyword and city.
 
-- **Q-EX1:** Was Exa exercised live? — No eligible seeds in the 2026-10-11 sample; network behavior is covered by fakes.
+- **Q-EX1:** Was Exa exercised live? — Yes: 2026-11-04 Phoenix, 6 seeds → 37 businesses; 11 of 35 judged qualified (31%, vs 13% from Maps in the same run).
 
 ### DD · Dedupe
 
@@ -335,7 +336,7 @@ Steps:
 
 Reuse a fetched page for seven days before paying to fetch again.
 
-Pages are stored by normalized URL in the same Postgres database. Search, scraping and the free fallback share a web interface. Local free fetching rejects internal destinations, checks redirects and caps response size. The cache is not a distributed single-flight lock.
+Pages are stored by normalized URL in the same Postgres database. Exa search and contents, Firecrawl (only for pages Exa cannot read) and the free fallback share a web interface. Local free fetching rejects internal destinations, checks redirects and caps response size. The cache is not a distributed single-flight lock.
 
 Source: [src/leadgen/web_research.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/web_research.py).
 
@@ -394,7 +395,7 @@ Steps:
 
 Collect bounded evidence from business pages and one search.
 
-Tier 1 reads the home, services and about pages plus a search through the shared web interface. It limits the evidence block to 18,000 characters. Web text is untrusted data, not instructions for the agent.
+Tier 1 reads the home, services and about pages (Exa contents) plus one Exa search with page text, through the shared web interface. Firecrawl renders only pages Exa returns no text for. It limits the evidence block to 18,000 characters. Web text is untrusted data, not instructions for the agent.
 
 Source: [src/leadgen/qualification.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/qualification.py).
 
