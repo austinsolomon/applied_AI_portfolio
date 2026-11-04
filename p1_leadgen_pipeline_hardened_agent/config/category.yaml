@@ -61,6 +61,7 @@ shared_hosts:
   - carrd.co
   - about.me
   - calendly.com
+  - linkedin.com
 
 # Directories, review sites and booking marketplaces. Their pages describe many businesses, so
 # a result on one of these hosts is never a lead and never a lookalike seed. They are also
@@ -91,3 +92,10 @@ aggregator_hosts:
   - psychologytoday.com
   - healthgrades.com
   - zocdoc.com
+  # Found in the 2026-11-04 Phoenix Exa results: a booking platform, therapist directories and an
+  # NPI provider registry.
+  - glossgenius.com
+  - qdexx.com
+  - excellenttherapists.com
+  - carenary.com
+  - stedi.com
