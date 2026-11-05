@@ -852,7 +852,6 @@ def test_audit_trail_records_one_execution_as_who_does_what_to_whom(
         "Postgres (State machine) | run ",
         "Claude Agent SDK (Tool call) | calls run_stage('maps')",
         "Postgres (State machine) | stage maps started",
-        "Postgres (Budget reservation) | reserves $1.0000 ceiling for maps",
         "Apify API (Google Maps) | starts the Google Maps scraper",
         "Python (Sample grader) | grades",
         "Postgres (State machine) | stage maps finished",
@@ -860,7 +859,6 @@ def test_audit_trail_records_one_execution_as_who_does_what_to_whom(
         "Python (Contact extraction) | reads",
         "Postgres (Dedupe) | keeps",
         "Claude API (LLM call) | returns verdict",
-        "Python (Citation check)",
         "Postgres (CRM upload) | inserts 1",
         "Postgres (State machine) | run finished",
     ]
@@ -875,6 +873,13 @@ def test_audit_trail_records_one_execution_as_who_does_what_to_whom(
     hook_rows = [row for row in rows if row[0] == "Claude Agent SDK (PreToolUse hook)"]
     tool_calls = [row for row in rows if row[0] == "Claude Agent SDK (Tool call)"]
     assert len(hook_rows) == len(tool_calls) == len(STAGES)
+    # Granted reservations and accepted citations are not rows of their own.
+    assert not any(actor == "Postgres (Budget reservation)" for actor, *_ in rows)
+    assert not any(actor == "Python (Citation check)" for actor, *_ in rows)
+    assert any(
+        actor == "Claude API (LLM call)" and detail.get("citation") == "accepted"
+        for actor, *_, detail in rows
+    )
     # Spend is a detail on the API rows, not a row of its own.
     assert any(actor == "Exa API (Search)" and "cost_usd" in detail for actor, *_, detail in rows)
     assert "cost_usd" in rows[-1][-1], "the run's closing row carries the session's cost"
