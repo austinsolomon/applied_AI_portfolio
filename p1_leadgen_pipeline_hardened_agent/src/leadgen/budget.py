@@ -210,7 +210,12 @@ def trace(connection, run_id, operation, outcome, details=None):
             f"writes trace: {operation} {outcome}",
             "Postgres traces",
             run_id=run_id,
-            **(details or {}),
+            # A detail named run_id or plan_id would collide with audit's own arguments.
+            **{
+                key: value
+                for key, value in (details or {}).items()
+                if key not in ("run_id", "plan_id")
+            },
         )
 
 

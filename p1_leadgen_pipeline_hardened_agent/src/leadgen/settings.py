@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # (5,000 credits for $16 a month), which errs on the high side for cheaper plans.
     firecrawl_usd_per_credit: Decimal = Field(default=Decimal("0.0032"), gt=0, allow_inf_nan=False)
 
+    # Optional: `leadgen weekly` posts its summary here. A failed post never fails the run.
+    slack_webhook_url: SecretStr | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
