@@ -225,6 +225,8 @@ def judge_lead(
                     )
                 else:
                     proposed = response.parsed_output
+                    judgment = validate_judgment(proposed, evidence, category)
+                    downgraded = judgment.verdict != proposed.verdict
                     audit(
                         connection,
                         CLAUDE_LLM_CALL,
@@ -234,22 +236,20 @@ def judge_lead(
                         quote=proposed.evidence_quote,
                         source_url=proposed.source_url,
                         serves_market=proposed.serves_market,
+                        citation=f"downgraded to {judgment.verdict}" if downgraded else "accepted",
                         **call,
                     )
-                    judgment = validate_judgment(proposed, evidence, category)
-                    audit(
-                        connection,
-                        CITATION_CHECK,
-                        (
-                            f"accepts {judgment.verdict}: quote found in the cited source"
-                            if judgment.verdict == proposed.verdict
-                            else f"downgrades {proposed.verdict} to {judgment.verdict}: quote, "
-                            "source, service or market could not be verified"
-                        ),
-                        lead["business_name"],
-                        run_id=run_id,
-                        source_url=proposed.source_url,
-                    )
+                    # The citation check is its own row only when it overrules the model.
+                    if downgraded:
+                        audit(
+                            connection,
+                            CITATION_CHECK,
+                            f"downgrades {proposed.verdict} to {judgment.verdict}: quote, "
+                            "source, service or market could not be verified",
+                            lead["business_name"],
+                            run_id=run_id,
+                            source_url=proposed.source_url,
+                        )
     with connection.transaction():
         connection.execute(
             "UPDATE raw_leads SET qualification=%s WHERE raw_lead_id=%s",

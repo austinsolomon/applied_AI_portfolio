@@ -449,8 +449,9 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                     {
                         "audit_event_id": 203,
                         "actor": "Postgres (Budget reservation)",
-                        "action": "reserves $0.03 ceiling for exa:7:independent private chefs…",
-                        "target": "Exa API (Search)",
+                        "action": "blocks judge:1:41: Anthropic allowance exhausted (0.75 USD "
+                        "per plan)",
+                        "target": "Claude API (LLM call)",
                     },
                     {
                         "audit_event_id": 204,

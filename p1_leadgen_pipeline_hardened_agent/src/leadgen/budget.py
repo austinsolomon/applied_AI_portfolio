@@ -6,7 +6,7 @@ from time import monotonic
 
 from psycopg.types.json import Jsonb
 
-from leadgen.audit import BUDGET_RESERVATION, audit, audit_enabled, component_for_operation
+from leadgen.audit import BUDGET_RESERVATION, audit, component_for_operation
 
 
 class BudgetBlocked(Exception):
@@ -35,24 +35,8 @@ def reserve(connection, run_id, operation, ceiling, *, cell_id=None):
             ceiling_usd=ceiling,
         )
         raise
-    if Decimal(str(ceiling)) == 0:
-        # A free call (cached or the free web backend) holds no money: not an audit row.
-        return reservation_id
-    audit(
-        connection,
-        BUDGET_RESERVATION,
-        f"reserves ${Decimal(str(ceiling))} ceiling for {operation}",
-        component,
-        run_id=run_id,
-        reservation_id=reservation_id,
-        plan_spend_usd=connection.execute(
-            "SELECT coalesce(sum(cost_usd),0) FROM cost_ledger JOIN runs USING(run_id) "
-            "WHERE plan_id=(SELECT plan_id FROM runs WHERE run_id=%s)",
-            (run_id,),
-        ).fetchone()[0]
-        if audit_enabled()
-        else None,
-    )
+    # Only a block is an audit row. A granted reservation is routine (one per paid call) and is
+    # kept in budget_reservations; the call's own row carries what it cost.
     return reservation_id
 
 
