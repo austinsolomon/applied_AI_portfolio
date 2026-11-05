@@ -65,7 +65,7 @@ def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50,
     places = expand_market(connection, market.market_id, max_places=max_cities)
     if not places:
         raise ValueError("No Census places loaded for the market; run `leadgen db load-places`")
-    desired = min(target, math.ceil(market.short_by_leads / category.expected_qualification_rate))
+    desired = min(target, math.ceil(market.leads_needed / category.expected_qualification_rate))
     per_cell = math.ceil(desired / (len(places) * max_keywords))
     return create_plan(
         connection,

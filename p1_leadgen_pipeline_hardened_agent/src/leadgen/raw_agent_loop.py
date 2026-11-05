@@ -40,8 +40,8 @@ tool. Recommend one market and explain the choice in one or two sentences."""
 READ_GAPS_TOOL: dict[str, Any] = {
     "name": "read_gaps",
     "description": (
-        "Markets whose available leads cover less than the leads they still need, biggest gap "
-        "first. Each market has: market, leads_available_pct, still_needed, available, short_by."
+        "Markets below their lead goal, furthest from it first. Each market has: market, "
+        "lead_goal, available, leads_needed (goal minus available) and leads_available_pct."
     ),
     "strict": True,
     "input_schema": {
@@ -217,10 +217,10 @@ def _run_tool(connection: psycopg.Connection, block: ToolUseBlock) -> dict[str, 
         gaps = [
             {
                 "market": f"{market.market_name}, {market.state}",
-                "leads_available_pct": market.leads_available_pct,
-                "still_needed": market.remaining_goal,
+                "lead_goal": market.lead_goal,
                 "available": market.available_leads,
-                "short_by": market.short_by_leads,
+                "leads_needed": market.leads_needed,
+                "leads_available_pct": market.leads_available_pct,
             }
             for market in read_gaps(connection)
         ]

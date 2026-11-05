@@ -93,10 +93,10 @@ def test_tool_result_goes_back_matched_to_its_request(demo_connection: psycopg.C
     gaps = json.loads(tool_result["content"])
     assert gaps[0] == {
         "market": "Phoenix, AZ",
+        "lead_goal": 100,
+        "available": 10,
+        "leads_needed": 90,
         "leads_available_pct": 10,
-        "still_needed": 60,
-        "available": 6,
-        "short_by": 54,
     }
 
 

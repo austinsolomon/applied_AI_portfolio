@@ -150,7 +150,7 @@ Source: [src/leadgen/gaps.py](https://github.com/austinsolomon/applied_AI_portfo
 
 Steps:
 
-1. **Read goals** — Compare available leads with the remaining goal.
+1. **Read goals** — Compare available leads with each market’s lead goal.
 2. **Choose market** — Select the market with the lowest coverage.
 
 ### PL · Scrape plan

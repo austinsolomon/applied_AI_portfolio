@@ -55,7 +55,7 @@ repeatable at scale.
 | # | Step | What happens | Human |
 |---|---|---|---|
 | 0 | Trigger | Cloud Scheduler starts the job weekly, or someone runs `leadgen plan` | |
-| 1 | Read demand | `gap_view` computes, per market, Leads Available % = available ÷ (goal − already assigned). The dashboard and the agent read the same view, so the agent never scrapes a screen | |
+| 1 | Read demand | `gap_view` computes, per market, Leads Available % = available ÷ lead goal and Leads Needed = goal − available. The dashboard and the agent read the same view, so the agent never scrapes a screen | |
 | 2 | Find gaps | Markets under 100%, biggest gap first; cells already run are skipped | |
 | 3 | Plan | Each gap market is expanded into cities and keywords; the plan is sized to the goal and priced | |
 | 4 | Approve | The plan, expected leads and total estimated cost are shown; the human approves once and sets a budget | **yes** |
@@ -127,7 +127,7 @@ reported, never hidden.
 | CRM | `crm_leads`; Postgres-generated normalized phone, email and domain; unique place ID, phone and email; domain indexed as a match key |
 | Dedupe | `EXISTS` on normalized keys |
 | CRM write | `INSERT … ON CONFLICT DO NOTHING` in a transaction |
-| Dashboard and gaps | view `gap_view`: goal, assigned, still needed, available, Leads Available %, goal met, short by |
+| Dashboard and gaps | view `gap_view`: lead goal, leads available, leads needed, Leads Available %, goal met |
 | Markets and places | `markets` (center, radius), `places` (US Census 2020 snapshot), `haversine_km()` |
 | Plans and approval | `scrape_plans`, `scrape_plan_cells`, `approvals` |
 | Run state | `runs`, `run_ledger`, `seen_leads` with unique constraints |

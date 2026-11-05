@@ -36,42 +36,47 @@ def render_dashboard() -> AppTest:
 
 
 @pytest.mark.usefixtures("dashboard_database")
-def test_columns_are_in_reading_order() -> None:
+def test_demand_columns_are_goal_available_needed_and_percent() -> None:
     table = render_dashboard().dataframe[0].value
 
     assert list(table.columns) == [
         "Market",
+        "Lead Goal",
+        "Leads Available",
+        "Leads Needed",
         "Leads Available %",
-        "Status",
-        "Lead goal",
-        "Assigned",
-        "Still needed",
-        "Available",
-        "Short by",
     ]
 
 
 @pytest.mark.usefixtures("dashboard_database")
-def test_markets_are_listed_biggest_gap_first_with_their_status() -> None:
+def test_markets_are_listed_furthest_from_goal_first() -> None:
     table = render_dashboard().dataframe[0].value
 
-    rows = table[["Market", "Leads Available %", "Status", "Short by"]].values.tolist()
-    assert rows[:2] == [
-        ["Phoenix, AZ", "10%", "Below goal", 54],
-        ["Los Angeles, CA", "18%", "Below goal", 66],
-    ]
-    assert rows[-2:] == [["Seattle, WA", "125%", "Covered", 0], ["Miami, FL", "—", "Goal met", 0]]
+    rows = table.values.tolist()
+    assert rows[:2] == [["Phoenix, AZ", 100, 10, 90, 10], ["Los Angeles, CA", 100, 18, 82, 18]]
+    assert rows[-1] == ["Seattle, WA", 100, 100, 0, 100]
 
 
 @pytest.mark.usefixtures("dashboard_database")
-def test_summary_names_the_biggest_gap_and_the_leads_to_find() -> None:
+def test_summary_names_the_furthest_market_and_the_leads_needed() -> None:
     metrics = {metric.label: metric.value for metric in render_dashboard().metric}
 
-    assert {key: metrics[key] for key in ("Markets below goal", "Biggest gap")} == {
-        "Markets below goal": "6 of 8",
-        "Biggest gap": "Phoenix, AZ · 10%",
-    }
-    assert metrics["New leads to find"] == "200"
+    assert metrics["Markets below goal"] == "7 of 8"
+    assert metrics["Furthest from goal"] == "Phoenix, AZ · 10%"
+    assert metrics["Leads needed"] == "365"
+
+
+def test_distance_bands_split_far_halfway_close_and_met() -> None:
+    assert [dashboard_module.distance_band(pct) for pct in (0, 39, 40, 74, 75, 99, 100, 250)] == [
+        "Far (under 40%)",
+        "Far (under 40%)",
+        "Halfway (40–74%)",
+        "Halfway (40–74%)",
+        "Close (75–99%)",
+        "Close (75–99%)",
+        "Goal met",
+        "Goal met",
+    ]
 
 
 def test_missing_database_url_shows_how_to_fix_it(

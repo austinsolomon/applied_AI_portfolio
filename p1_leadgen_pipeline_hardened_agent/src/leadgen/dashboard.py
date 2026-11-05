@@ -17,16 +17,15 @@ from leadgen.database import connect
 from leadgen.eval_review_view import render_eval_review
 from leadgen.gaps import STATUS_BELOW_GOAL, MarketDemand, read_market_demand
 
-# Answer first, then how the number is made, in calculation order, then the actionable shortfall.
-COLUMN_ORDER = [
-    "Market",
-    "Leads Available %",
-    "Status",
-    "Lead goal",
-    "Assigned",
-    "Still needed",
-    "Available",
-    "Short by",
+# Market, then the goal, what is in hand, what is missing, and the share of the goal in hand.
+COLUMN_ORDER = ["Market", "Lead Goal", "Leads Available", "Leads Needed", "Leads Available %"]
+
+# How far a market is from its goal, for the progress chart: the band and its colour.
+DISTANCE_BANDS = [
+    (100, "Goal met", "#2e7d5b"),
+    (75, "Close (75–99%)", "#7cb342"),
+    (40, "Halfway (40–74%)", "#f2a541"),
+    (0, "Far (under 40%)", "#d1495b"),
 ]
 
 STAGE_BADGES = {
@@ -50,52 +49,71 @@ def percent(value) -> str:
     return "—" if value is None else f"{value:.0%}"
 
 
+def distance_band(available_pct: int) -> str:
+    return next(label for floor, label, _ in DISTANCE_BANDS if available_pct >= floor)
+
+
 def demand_table(markets: list[MarketDemand]) -> pandas.DataFrame:
     rows = [
         {
             "Market": f"{market.market_name}, {market.state}",
-            "Leads Available %": (
-                "—" if market.leads_available_pct is None else f"{market.leads_available_pct}%"
-            ),
-            "Status": market.status,
-            "Lead goal": market.lead_goal,
-            "Assigned": market.assigned_leads,
-            "Still needed": market.remaining_goal,
-            "Available": market.available_leads,
-            "Short by": market.short_by_leads,
+            "Lead Goal": market.lead_goal,
+            "Leads Available": market.available_leads,
+            "Leads Needed": market.leads_needed,
+            "Leads Available %": market.leads_available_pct,
         }
         for market in markets
     ]
     return pandas.DataFrame(rows, columns=COLUMN_ORDER)
 
 
-def coverage_chart(table: pandas.DataFrame) -> altair.LayerChart:
-    """Bars for Leads Available %, with a rule at 100% where a market is covered."""
-    chartable = table[table["Leads Available %"] != "—"].assign(
-        coverage_pct=lambda frame: frame["Leads Available %"].str.rstrip("%").astype(int)
+def progress_chart(table: pandas.DataFrame) -> altair.LayerChart:
+    """One track per market from 0 to 100% of its goal, filled to Leads Available % and coloured
+    by how far the market still is from its goal; furthest first."""
+    chartable = table.assign(
+        filled=lambda frame: frame["Leads Available %"].clip(upper=100),
+        band=lambda frame: frame["Leads Available %"].map(distance_band),
+        label=lambda frame: (
+            frame["Leads Available"].astype(str) + " / " + frame["Lead Goal"].astype(str)
+        ),
+        goal=100,
     )
-    bars = (
+    market_axis = altair.Y("Market:N", sort=None, title=None)
+    track = (
         altair.Chart(chartable)
-        .mark_bar()
+        .mark_bar(color="#8a8f98", opacity=0.18, cornerRadius=3)
+        .encode(x=altair.X("goal:Q", scale=altair.Scale(domain=[0, 100])), y=market_axis)
+    )
+    filled = (
+        altair.Chart(chartable)
+        .mark_bar(cornerRadius=3)
         .encode(
-            x=altair.X("coverage_pct:Q", title="Leads Available %"),
-            y=altair.Y("Market:N", sort=None, title=None),
-            tooltip=["Market", "Leads Available %", "Still needed", "Available", "Short by"],
+            x=altair.X(
+                "filled:Q", title="Leads Available % of goal", scale=altair.Scale(domain=[0, 100])
+            ),
+            y=market_axis,
+            color=altair.Color(
+                "band:N",
+                title=None,
+                # Legend reads far → met, the order a reader scans for problems.
+                scale=altair.Scale(
+                    domain=[label for _, label, _ in reversed(DISTANCE_BANDS)],
+                    range=[colour for _, _, colour in reversed(DISTANCE_BANDS)],
+                ),
+                legend=altair.Legend(orient="top"),
+            ),
+            tooltip=["Market", "Lead Goal", "Leads Available", "Leads Needed", "Leads Available %"],
         )
     )
-    full_coverage = (
-        altair.Chart(pandas.DataFrame({"covered": [100]}))
-        .mark_rule(strokeDash=[4, 4])
-        .encode(x="covered:Q")
+    labels = (
+        altair.Chart(chartable)
+        .mark_text(align="left", dx=6)
+        .encode(x="filled:Q", y=market_axis, text="label:N")
     )
-    return bars + full_coverage
+    return (track + filled + labels).properties(height=altair.Step(30))
 
 
 def render_demand(connection: psycopg.Connection) -> None:
-    streamlit.caption(
-        "Leads Available % = available leads ÷ (lead goal − assigned). Below 100%, the market "
-        "needs new leads; Short by is how many."
-    )
     markets = read_market_demand(connection)
     if not markets:
         streamlit.info("No markets yet. Load the demo data with `leadgen db seed-demo`.")
@@ -104,16 +122,27 @@ def render_demand(connection: psycopg.Connection) -> None:
     summary_columns = streamlit.columns(3)
     summary_columns[0].metric("Markets below goal", f"{len(below_goal)} of {len(markets)}")
     if below_goal:
-        biggest_gap = below_goal[0]
+        furthest = below_goal[0]
         summary_columns[1].metric(
-            "Biggest gap",
-            f"{biggest_gap.market_name}, {biggest_gap.state} · {biggest_gap.leads_available_pct}%",
+            "Furthest from goal",
+            f"{furthest.market_name}, {furthest.state} · {furthest.leads_available_pct}%",
         )
-    summary_columns[2].metric("New leads to find", sum(market.short_by_leads for market in markets))
+    summary_columns[2].metric("Leads needed", sum(market.leads_needed for market in markets))
     table = demand_table(markets)
-    streamlit.dataframe(table, hide_index=True)
-    streamlit.altair_chart(coverage_chart(table))
-    streamlit.caption("Markets that have met their goal have no percentage and are not charted.")
+    streamlit.altair_chart(progress_chart(table), use_container_width=True)
+    streamlit.dataframe(
+        table,
+        hide_index=True,
+        column_config={
+            "Leads Available %": streamlit.column_config.ProgressColumn(
+                "Leads Available %", format="%d%%", min_value=0, max_value=100
+            )
+        },
+    )
+    streamlit.caption(
+        "Leads Available % = Leads Available ÷ Lead Goal. Leads Needed = Lead Goal − Leads "
+        "Available: the new qualified leads the market still needs."
+    )
 
 
 def stage_result_text(result: dict | None) -> str:

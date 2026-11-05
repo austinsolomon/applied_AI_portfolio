@@ -174,10 +174,11 @@ invoice reconciliation and cloud deployment remain open.
 Only the Eval review tab writes, and only labels. The page shows contact details and evidence, so
 it is for local use.
 
-The Demand gaps tab lists every market's Leads Available %, biggest gap first, read from the same
-`gap_view` the agent reads.
-Columns go from the answer to how it is made: goal − assigned = still needed; available ÷ still needed
-= Leads Available %; still needed − available = short by, the new leads that market needs.
+The Demand gaps tab reads the same `gap_view` the agent reads. Every demo market has a goal of
+100 leads. A progress bar per market shows how close it is, coloured far (under 40%), halfway
+(40–74%), close (75–99%) or goal met, furthest first. The table has four numbers: Lead Goal,
+Leads Available, Leads Needed (goal − available) and Leads Available % (available ÷ goal).
+Assigned and converted leads do not count toward the goal.
 
 ![Demand dashboard with the demo data](docs/images/demand_dashboard.png)
 
