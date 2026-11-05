@@ -18,7 +18,7 @@ from exa_py import Exa
 from leadgen.audit import EXA_SEARCH, audit
 from leadgen.budget import paid_operation, record_cost
 from leadgen.category_config import is_on_host
-from leadgen.contacts import normalize_domain
+from leadgen.contacts import is_public_domain, normalize_domain
 from leadgen.raw_leads import RawLead, persist_leads
 from leadgen.sourcing_maps import SourcingError
 from leadgen.web_research import FetchedPage, normalize_page_url, write_cached_page
@@ -82,7 +82,7 @@ def _collect(connection, response, candidates, category):
         domain = normalize_domain(result.url)
         title = result.title or domain or ""
         if (
-            not domain
+            not is_public_domain(domain)
             or domain in seen
             or is_on_host(domain, category.hosts_never_identifying_a_business)
             or not category_signal(title + " " + domain, category)

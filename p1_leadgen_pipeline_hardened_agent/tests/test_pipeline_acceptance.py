@@ -1010,3 +1010,71 @@ def test_unconfident_verdict_escalates_to_research_inside_qualification(
         "SELECT evidence->>'tier', subject FROM eval_records ORDER BY eval_record_id"
     ).fetchall()
     assert sorted(tiers) == [("1", "Clear Chef"), ("1", "Unclear Chef"), ("2", "Unclear Chef")]
+
+
+@pytest.mark.parametrize(
+    "domain,public",
+    [
+        ("chefanthonyserrano.", False),
+        ("chefanthonyserrano", False),
+        ("", False),
+        ("chef-anna.com", True),
+        ("anna.square.site", True),
+    ],
+)
+def test_only_public_domains_count_as_businesses(domain, public):
+    from leadgen.contacts import is_public_domain
+
+    assert is_public_domain(domain) is public
+
+
+def test_exa_skips_a_result_whose_host_has_no_top_level_domain(running):
+    connection, plan, run = running
+    client = Mock()
+    client.search.return_value = SimpleNamespace(
+        cost_dollars=SimpleNamespace(total=0.007),
+        results=[
+            SimpleNamespace(url="https://chefanthonyserrano./", title="Chef Anthony", text=""),
+            SimpleNamespace(url="https://chef-anna.com/", title="Chef Anna", text=""),
+        ],
+    )
+    leads = source_exa(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        load_category_config(),
+        client,
+        cities=["Phoenix, AZ"],
+    )
+    assert [lead.source_key for lead in leads] == ["chef-anna.com"]
+
+
+def test_blitz_rejecting_one_lead_does_not_fail_enrichment(
+    running, empty_database_url, monkeypatch
+):
+    import leadgen.orchestrator as orchestrator
+    from leadgen.contacts import BlitzRequestRejected
+
+    connection, plan, run = running
+    persist_leads(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        "exa",
+        [RawLead("bad.example", "Bad Domain Chef", website="https://bad.example/")],
+    )
+
+    def rejected(*args, **kwargs):
+        raise BlitzRequestRejected("BlitzAPI rejected the request: domain: Invalid domain.")
+
+    monkeypatch.setattr(orchestrator, "enrich_contact", rejected)
+    settings = Settings(
+        _env_file=None, database_url=empty_database_url, blitz_api_key=SecretStr("offline")
+    )
+    result = asyncio.run(Pipeline(connection, run, settings).run_enrich())
+    assert result == {"processed": 1}
+    lead = read_raw_leads(connection, run.run_id)[0]
+    assert lead["enriched"] and not (lead["phone"] or lead["email"])
+    assert connection.execute(
+        "SELECT status FROM budget_reservations WHERE operation LIKE 'enrich:%%'"
+    ).fetchone() == ("succeeded",)
