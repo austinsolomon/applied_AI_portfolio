@@ -17,7 +17,7 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import class_row
 
-from leadgen.audit import attach_planning_events, audit
+from leadgen.audit import PLANNER, STATE_MACHINE, attach_planning_events, audit
 
 STAGE_SAMPLE = "sample"
 STAGE_FULL = "full"
@@ -215,9 +215,9 @@ def create_plan(connection: psycopg.Connection, cells: Iterable[PlannedCell]) ->
     attach_planning_events(connection, plan_id)
     audit(
         connection,
-        "Planner (leadgen plan)",
+        PLANNER,
         f"creates draft plan {plan_id} with {len(plan.cells)} cells",
-        "Postgres scrape_plans + scrape_plan_cells",
+        f"plan {plan_id}",
         plan_id=plan_id,
         cells=[
             {
@@ -267,16 +267,6 @@ def attach_scraper_run(connection: psycopg.Connection, cell_id: int, apify_run_i
         "UPDATE scrape_plan_cells SET apify_run_id = %s WHERE cell_id = %s",
         (apify_run_id, cell_id),
     )
-    audit(
-        connection,
-        "Maps stage",
-        f"attaches Apify run {apify_run_id} to cell {cell_id}",
-        "Postgres scrape_plan_cells",
-        plan_id=connection.execute(
-            "SELECT plan_id FROM scrape_plan_cells WHERE cell_id = %s", (cell_id,)
-        ).fetchone()[0],
-        apify_run_id=apify_run_id,
-    )
 
 
 # --- approval ----------------------------------------------------------------------------------
@@ -307,13 +297,6 @@ def approve_plan(
             "UPDATE scrape_plans SET status = 'approved' WHERE plan_id = %s", (plan_id,)
         )
     assert approval is not None
-    audit(
-        connection,
-        f"Human ({approved_by})",
-        f"approves plan {plan_id} with a ${budget_usd} budget (the one human step)",
-        "Postgres approvals",
-        plan_id=plan_id,
-    )
     return approval
 
 
@@ -348,17 +331,19 @@ def start_run(connection: psycopg.Connection, plan_id: int) -> Run:
     assert run is not None
     audit(
         connection,
-        "Runner (leadgen run)",
-        f"starts run {run.run_id} of plan {plan_id}",
-        "Postgres runs (state: running)",
+        STATE_MACHINE,
+        f"run {run.run_id} started",
+        f"plan {plan_id}",
         run_id=run.run_id,
         plan_id=plan_id,
     )
     return run
 
 
-def finish_run(connection: psycopg.Connection, run_id: UUID, status: str) -> Run:
-    """Close a run as finished, failed or stopped."""
+def finish_run(
+    connection: psycopg.Connection, run_id: UUID, status: str, **audit_detail: object
+) -> Run:
+    """Close a run as finished, failed or stopped. `audit_detail` goes on its audit row."""
     if status not in RUN_END_STATUSES:
         raise ValueError(f"a run ends as one of {RUN_END_STATUSES}, not {status!r}")
     with connection.cursor(row_factory=class_row(Run)) as cursor:
@@ -374,10 +359,11 @@ def finish_run(connection: psycopg.Connection, run_id: UUID, status: str) -> Run
         raise RunNotFound(f"no run {run_id} is in progress")
     audit(
         connection,
-        "Runner (leadgen run)",
-        f"closes run as {status}",
-        f"Postgres runs (state: {status})",
+        STATE_MACHINE,
+        f"run {status}",
+        f"plan {run.plan_id}",
         run_id=run_id,
+        **audit_detail,
     )
     return run
 
@@ -422,13 +408,6 @@ def start_cell_attempt(
             raise CellAlreadyDone(f"cell {cell_id} already succeeded at {stage}") from error
         raise CellInProgress(f"cell {cell_id} has an attempt in flight at {stage}") from error
     assert attempt is not None
-    audit(
-        connection,
-        "Maps stage",
-        f"opens {stage} attempt {attempt.attempt_number} on cell {cell_id}",
-        "Postgres run_ledger",
-        run_id=run_id,
-    )
     return attempt
 
 
@@ -464,15 +443,6 @@ def finish_cell_attempt(
         ).fetchone()
     if attempt is None:
         raise AttemptNotInProgress(f"attempt {attempt_id} is not in progress")
-    audit(
-        connection,
-        "Maps stage",
-        f"closes {attempt.stage} attempt on cell {attempt.cell_id} as {attempt.status}",
-        "Postgres run_ledger",
-        run_id=attempt.run_id,
-        leads_found=leads_found,
-        error=error,
-    )
     return attempt
 
 

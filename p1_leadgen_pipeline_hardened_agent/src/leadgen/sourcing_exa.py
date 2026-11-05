@@ -15,7 +15,7 @@ from urllib.parse import urljoin
 
 from exa_py import Exa
 
-from leadgen.audit import audit
+from leadgen.audit import EXA_SEARCH, audit
 from leadgen.budget import paid_operation, record_cost
 from leadgen.category_config import is_on_host
 from leadgen.contacts import normalize_domain
@@ -71,6 +71,7 @@ def _record_exa_cost(connection, run_id, response, ceiling):
     else:
         cost, basis = Decimal(str(total)), "provider_reported"
     record_cost(connection, run_id, "exa", cost, endpoint="search", units=1, cost_basis=basis)
+    return cost
 
 
 def _collect(connection, response, candidates, category):
@@ -122,17 +123,6 @@ def source_exa(
     candidates = {}
     for query in exa_queries(category, cities):
         with paid_operation(connection, run_id, f"exa:{market_id}:{query}", ceiling_per_query):
-            audit(
-                connection,
-                "Exa stage",
-                f"sends company search {query!r}",
-                "Exa API",
-                run_id=run_id,
-                type="auto",
-                category="company",
-                num_results=num_results,
-                excluded_domains=len(category.hosts_never_identifying_a_business),
-            )
             try:
                 response = company_search(client, query, category, num_results=num_results)
             except Exception as error:
@@ -140,7 +130,7 @@ def source_exa(
                     "Exa search failed. Check EXA_API_KEY and account credits."
                 ) from error
             before = {domain: lead.query_consensus for domain, lead in candidates.items()}
-            _record_exa_cost(connection, run_id, response, ceiling_per_query)
+            cost = _record_exa_cost(connection, run_id, response, ceiling_per_query)
             _collect(connection, response, candidates, category)
             new = [domain for domain in candidates if domain not in before]
             repeat = [
@@ -148,12 +138,16 @@ def source_exa(
             ]
             audit(
                 connection,
-                "Exa API",
-                f"returns {len(response.results)} results: {len(new)} new businesses, "
-                f"{len(repeat)} already found, "
+                EXA_SEARCH,
+                f"company search returns {len(response.results)} results: {len(new)} new "
+                f"businesses, {len(repeat)} already found, "
                 f"{len(response.results) - len(new) - len(repeat)} filtered out",
-                "Exa stage",
+                query,
                 run_id=run_id,
+                type="auto",
+                category="company",
+                num_results=num_results,
+                cost_usd=cost,
                 new=new,
                 found_again=repeat,
                 filtered=[
@@ -161,13 +155,6 @@ def source_exa(
                     for result in response.results
                     if normalize_domain(result.url) not in candidates
                 ],
-            )
-            audit(
-                connection,
-                "Exa stage",
-                f"saves {len(new)} new leads and caches their page text",
-                "Postgres raw_leads + page_cache",
-                run_id=run_id,
             )
             persist_leads(connection, run_id, market_id, "exa", candidates.values())
     for lead in candidates.values():

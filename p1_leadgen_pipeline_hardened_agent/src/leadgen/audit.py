@@ -1,10 +1,17 @@
-"""Verbose audit trail: every step of one execution as "actor → action → target".
+"""Audit trail: the major steps of one execution as "actor → action → target".
 
 Off by default. `leadgen plan --audit` and `leadgen run --audit` set LEADGEN_AUDIT=1, and then
-each component writes one row per thing it does: the CLI creating a plan, the Agent SDK calling
-a tool, the budget guard reserving money, a worker claiming a job, Exa answering a search, a stage
-writing its checkpoint. The dashboard's Audit log tab reads the rows as they arrive.
+each major actor writes one row per thing it does. There are exactly 19 actors, each named
+"Tool (role)" and listed in `ACTORS` in pipeline order: a person or the weekly policy approving
+the plan, the planner pricing it, the Agent SDK calling a stage tool, the budget reserving money,
+each paid API answering, the code checks grading what came back, and Postgres recording stage
+state, dedupe and the CRM upload. A row from any other actor is skipped. The dashboard's Audit
+log tab reads the rows as they arrive.
 
+Bookkeeping is not a row of its own: a paid call's cost is a `cost_usd` detail on that API's
+row, a page read from the cache makes no row, and job claims and worker steps make none.
+
+Rules for `target`: the thing acted on (a query, URL, lead name, stage or plan), not a table.
 Rules for `detail`: plain facts a reader needs to follow the step (ids, counts, dollars, URLs,
 queries, verdicts). Never credentials, and never a business's phone number or email.
 Writing an audit row never breaks the pipeline: a failure is swallowed.
@@ -19,6 +26,49 @@ from psycopg.types.json import Jsonb
 
 AUDIT_ENVIRONMENT_VARIABLE = "LEADGEN_AUDIT"
 MAX_TEXT = 600
+
+HUMAN_APPROVAL = "CLI (Human approval)"
+POLICY_APPROVAL = "Python (Policy approval)"
+PLANNER = "Python (Planner)"
+SDK_TOOL_CALL = "Claude Agent SDK (Tool call)"
+SDK_PRE_TOOL_USE_HOOK = "Claude Agent SDK (PreToolUse hook)"
+BUDGET_RESERVATION = "Postgres (Budget reservation)"
+APIFY_GOOGLE_MAPS = "Apify API (Google Maps)"
+SAMPLE_GRADER = "Python (Sample grader)"
+EXA_SEARCH = "Exa API (Search)"
+EXA_CONTENTS = "Exa API (Contents)"
+FIRECRAWL_RENDER = "Firecrawl API (Render)"
+CONTACT_EXTRACTION = "Python (Contact extraction)"
+DEDUPE = "Postgres (Dedupe)"
+BLITZ_ENRICHMENT = "BlitzAPI (Enrichment)"
+CLAUDE_LLM_CALL = "Claude API (LLM call)"
+CITATION_CHECK = "Python (Citation check)"
+SDK_RESEARCH_AGENT = "Claude Agent SDK (Research agent)"
+STATE_MACHINE = "Postgres (State machine)"
+CRM_UPLOAD = "Postgres (CRM upload)"
+
+# Every actor the trail accepts, in pipeline order (the dashboard's filter lists them this way).
+ACTORS = (
+    HUMAN_APPROVAL,
+    POLICY_APPROVAL,
+    PLANNER,
+    SDK_TOOL_CALL,
+    SDK_PRE_TOOL_USE_HOOK,
+    BUDGET_RESERVATION,
+    APIFY_GOOGLE_MAPS,
+    SAMPLE_GRADER,
+    EXA_SEARCH,
+    EXA_CONTENTS,
+    FIRECRAWL_RENDER,
+    CONTACT_EXTRACTION,
+    DEDUPE,
+    BLITZ_ENRICHMENT,
+    CLAUDE_LLM_CALL,
+    CITATION_CHECK,
+    SDK_RESEARCH_AGENT,
+    STATE_MACHINE,
+    CRM_UPLOAD,
+)
 
 
 def enable_audit() -> None:
@@ -55,8 +105,8 @@ def audit(
     plan_id: int | None = None,
     **detail: Any,
 ) -> None:
-    """Record one step. A no-op unless auditing is on."""
-    if not audit_enabled() or connection is None:
+    """Record one step. A no-op unless auditing is on, and for an actor outside `ACTORS`."""
+    if not audit_enabled() or connection is None or actor not in ACTORS:
         return
     try:
         if plan_id is None and run_id is not None:
@@ -72,7 +122,7 @@ def audit(
                 plan_id,
                 actor,
                 action[:MAX_TEXT],
-                target,
+                str(target)[:MAX_TEXT],
                 Jsonb(_plain(detail)),
             ),
         )
@@ -87,88 +137,23 @@ def attach_planning_events(connection, plan_id: int) -> None:
     try:
         connection.execute(
             "UPDATE audit_events SET plan_id = %s WHERE plan_id IS NULL AND run_id IS NULL "
-            "AND actor = 'Planner (leadgen plan)'",
-            (plan_id,),
+            "AND actor = %s",
+            (plan_id, PLANNER),
         )
     except Exception:  # noqa: BLE001 - the audit trail must never stop the pipeline
         pass
 
 
 def component_for_operation(operation: str) -> str:
-    """The pipeline component behind a reservation key such as 'web:tier1:7:2:search'."""
+    """The actor whose paid call a reservation key such as 'web:tier1:7:2:search' covers."""
     prefix = operation.split(":", 1)[0]
+    if prefix == "web":
+        return EXA_CONTENTS if operation.endswith(":fetch_page") else EXA_SEARCH
+    if prefix == "sdk":
+        return SDK_RESEARCH_AGENT if operation.startswith("sdk:research") else SDK_TOOL_CALL
     return {
-        "maps": "Maps stage",
-        "exa": "Exa stage",
-        "web": "Qualify/research web tools",
-        "judge": "Claude judge",
-        "sdk": "Agent SDK session",
-        "enrich": "Enrich worker",
+        "maps": APIFY_GOOGLE_MAPS,
+        "exa": EXA_SEARCH,
+        "judge": CLAUDE_LLM_CALL,
+        "enrich": BLITZ_ENRICHMENT,
     }.get(prefix, f"Pipeline ({prefix})")
-
-
-def audit_sdk_message(connection, run_id, agent: str, message) -> None:
-    """One row per Agent SDK message: what the model said, which tool it called, what came back,
-    and the session's final usage."""
-    if not audit_enabled():
-        return
-    from claude_agent_sdk import (
-        AssistantMessage,
-        ResultMessage,
-        SystemMessage,
-        TextBlock,
-        ThinkingBlock,
-        ToolResultBlock,
-        ToolUseBlock,
-        UserMessage,
-    )
-
-    model_label = f"Claude ({agent})"
-    if isinstance(message, SystemMessage):
-        audit(
-            connection,
-            "Agent SDK",
-            f"starts the {agent} session ({message.subtype})",
-            model_label,
-            run_id=run_id,
-        )
-    elif isinstance(message, AssistantMessage):
-        for block in message.content:
-            if isinstance(block, ToolUseBlock):
-                audit(
-                    connection,
-                    model_label,
-                    f"calls tool {block.name} with {block.input}",
-                    "leadgen MCP tools (via Agent SDK)",
-                    run_id=run_id,
-                    tool_use_id=block.id,
-                    model=message.model,
-                )
-            elif isinstance(block, TextBlock) and block.text.strip():
-                audit(connection, model_label, f"says: {block.text}", "Agent SDK", run_id=run_id)
-            elif isinstance(block, ThinkingBlock):
-                audit(
-                    connection, model_label, "thinks (hidden reasoning)", "Agent SDK", run_id=run_id
-                )
-    elif isinstance(message, UserMessage) and isinstance(message.content, list):
-        for block in message.content:
-            if isinstance(block, ToolResultBlock):
-                audit(
-                    connection,
-                    "leadgen MCP tools (via Agent SDK)",
-                    ("returns an error: " if block.is_error else "returns: ") + str(block.content),
-                    model_label,
-                    run_id=run_id,
-                    tool_use_id=block.tool_use_id,
-                )
-    elif isinstance(message, ResultMessage):
-        audit(
-            connection,
-            "Agent SDK",
-            f"ends the {agent} session ({message.subtype}, {message.num_turns} turns, "
-            f"${message.total_cost_usd})",
-            "Runner (leadgen run)",
-            run_id=run_id,
-            is_error=message.is_error,
-            duration_ms=message.duration_ms,
-        )

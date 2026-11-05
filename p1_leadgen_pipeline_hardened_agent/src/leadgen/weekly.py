@@ -21,7 +21,7 @@ import psycopg
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from leadgen.audit import audit
+from leadgen.audit import POLICY_APPROVAL, audit
 from leadgen.budget import plan_spend, trace
 from leadgen.category_config import load_category_config
 from leadgen.gaps import read_gaps
@@ -277,10 +277,12 @@ async def run_weekly(
     approve_plan(connection, plan.plan_id, policy.budget_usd, approver)
     audit(
         connection,
-        "Weekly policy",
-        f"approves plan {plan.plan_id} as {approver} (no person in the loop)",
-        "Postgres approvals",
+        POLICY_APPROVAL,
+        f"approves plan {plan.plan_id} with a ${policy.budget_usd} budget under the "
+        "weekly policy (no person in the loop)",
+        f"plan {plan.plan_id}",
         plan_id=plan.plan_id,
+        approved_by=approver,
     )
     options = {"pipeline_factory": pipeline_factory}
     if query_fn is not None:

@@ -8,7 +8,7 @@ from anthropic import Anthropic, AnthropicError
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from leadgen.audit import audit
+from leadgen.audit import CITATION_CHECK, CLAUDE_LLM_CALL, audit
 from leadgen.budget import paid_operation, record_cost
 from leadgen.claude_pricing import TokenUsage, call_cost_usd
 from leadgen.contacts import normalize_domain
@@ -131,17 +131,12 @@ def judge_lead(
                     default_headers=headers,
                     max_retries=0,
                 )
-            audit(
-                connection,
-                "Claude judge",
-                f"asks for a structured verdict on {lead['business_name']!r} "
-                f"({len(evidence)} evidence sources)",
-                f"Claude API ({settings.leadgen_model})",
-                run_id=run_id,
-                tier=tier,
-                prompt_characters=len(prompt),
-                evidence_urls=list(evidence),
-            )
+            # Facts every judge audit row carries, whatever the reply looked like.
+            call = {
+                "model": settings.leadgen_model,
+                "tier": tier,
+                "evidence_urls": list(evidence),
+            }
             try:
                 response = client.messages.parse(
                     model=settings.leadgen_model,
@@ -167,6 +162,16 @@ def judge_lead(
                     cost_basis="estimated",
                 )
                 response = None
+                audit(
+                    connection,
+                    CLAUDE_LLM_CALL,
+                    "returns incomplete JSON; the lead is kept for review",
+                    lead["business_name"],
+                    run_id=run_id,
+                    cost_usd=ceiling,
+                    cost_basis="estimated",
+                    **call,
+                )
             if response is None:
                 judgment = Judgment(
                     verdict="review",
@@ -184,18 +189,32 @@ def judge_lead(
                     getattr(usage, "cache_read_input_tokens", 0) or 0,
                     usage.output_tokens,
                 )
+                cost = call_cost_usd(settings.leadgen_model, tokens)
                 record_cost(
                     connection,
                     run_id,
                     "claude",
-                    call_cost_usd(settings.leadgen_model, tokens),
+                    cost,
                     model=settings.leadgen_model,
                     endpoint=f"qualification-tier-{tier}",
                     input_tokens=tokens.input_tokens,
                     output_tokens=tokens.output_tokens,
                     request_id=response.id,
                 )
+                call.update(
+                    cost_usd=cost,
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                )
                 if response.parsed_output is None:
+                    audit(
+                        connection,
+                        CLAUDE_LLM_CALL,
+                        "returns no complete decision; the lead is kept for review",
+                        lead["business_name"],
+                        run_id=run_id,
+                        **call,
+                    )
                     judgment = Judgment(
                         verdict="review",
                         reason="Judge returned no complete decision",
@@ -208,28 +227,28 @@ def judge_lead(
                     proposed = response.parsed_output
                     audit(
                         connection,
-                        f"Claude API ({settings.leadgen_model})",
+                        CLAUDE_LLM_CALL,
                         f"returns verdict {proposed.verdict}: {proposed.reason}",
-                        "Claude judge",
+                        lead["business_name"],
                         run_id=run_id,
                         quote=proposed.evidence_quote,
                         source_url=proposed.source_url,
                         serves_market=proposed.serves_market,
-                        input_tokens=usage.input_tokens,
-                        output_tokens=usage.output_tokens,
+                        **call,
                     )
                     judgment = validate_judgment(proposed, evidence, category)
                     audit(
                         connection,
-                        "Citation check (code)",
+                        CITATION_CHECK,
                         (
                             f"accepts {judgment.verdict}: quote found in the cited source"
                             if judgment.verdict == proposed.verdict
-                            else f"changes {proposed.verdict} to {judgment.verdict}: quote, "
+                            else f"downgrades {proposed.verdict} to {judgment.verdict}: quote, "
                             "source, service or market could not be verified"
                         ),
-                        "Postgres raw_leads",
+                        lead["business_name"],
                         run_id=run_id,
+                        source_url=proposed.source_url,
                     )
     with connection.transaction():
         connection.execute(

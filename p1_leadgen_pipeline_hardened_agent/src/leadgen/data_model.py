@@ -443,20 +443,22 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
             ),
             TableGuide(
                 "audit_events",
-                "The opt-in verbose trail of one execution (--audit): every step as who does "
-                "what to whom.",
+                "The opt-in trail of one execution (--audit): each major step as who does "
+                "what to whom, from 19 actors named Tool (role).",
                 [
                     {
-                        "audit_event_id": 1203,
-                        "actor": "Exa stage",
-                        "action": "sends company search 'independent private chefs…'",
-                        "target": "Exa API",
+                        "audit_event_id": 203,
+                        "actor": "Postgres (Budget reservation)",
+                        "action": "reserves $0.03 ceiling for exa:7:independent private chefs…",
+                        "target": "Exa API (Search)",
                     },
                     {
-                        "audit_event_id": 1204,
-                        "actor": "Exa API",
-                        "action": "returns 25 results: 12 new, 3 found again, 10 filtered out",
-                        "target": "Exa stage",
+                        "audit_event_id": 204,
+                        "actor": "Exa API (Search)",
+                        "action": "company search returns 25 results: 12 new businesses, "
+                        "3 already found, 10 filtered out",
+                        "target": "independent private chefs who cook in clients' homes in "
+                        "Phoenix, AZ",
                     },
                 ],
             ),
