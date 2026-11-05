@@ -1,5 +1,6 @@
 """The demand dashboard, rendered headless with Streamlit's AppTest against a seeded database."""
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -157,13 +158,8 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
 
     app = render_dashboard()
 
-    markdown = [element.value for element in app.markdown]
-    stage_rows = {
-        markdown[index].strip("*"): markdown[index + 1]
-        for index in range(len(markdown) - 1)
-        if markdown[index].startswith("**") and "badge" in markdown[index + 1]
-    }
-    assert list(stage_rows) == [
+    track = next(element.value for element in app.markdown if "display:flex" in element.value)
+    labels = [
         "Google Maps",
         "Exa search",
         "Extract contacts",
@@ -172,12 +168,18 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
         "Qualify",
         "Write to CRM",
     ]
-    assert "done" in stage_rows["Exa search"]
-    assert "needs a human" in stage_rows["Extract contacts"]
-    assert "waiting" in stage_rows["Write to CRM"]
+    positions = [track.index(f"{number}. {label}") for number, label in enumerate(labels, 1)]
+    assert positions == sorted(positions), "stages run left to right in pipeline order"
+    stage_cells = track.split('<div style="flex:1')[1:]
+    assert "#1840ED" in stage_cells[1] and "done" in stage_cells[1]  # Exa search: blue
+    assert "needs a human" in stage_cells[2]
+    assert "#E3E5EA" in stage_cells[6] and "waiting" in stage_cells[6]  # CRM: still gray
     assert f"--plan {plan.plan_id} --resume" in app.warning[0].value
-    metrics = {metric.label: metric.value for metric in app.metric}
-    assert (metrics["Status"], metrics["Spent"], metrics["Budget"]) == ("failed", "$0.021", "$3")
+    summary = next(
+        frame.value for frame in app.dataframe if "Per qualified" in frame.value.columns
+    ).iloc[0]
+    assert (summary["Status"], summary["Spend"], summary["Budget"]) == ("failed", "$0.021", "$3")
+    assert "Recent events" not in [header.value for header in app.subheader]
 
 
 def test_audit_log_reads_who_does_what_to_whom(
@@ -197,12 +199,13 @@ def test_audit_log_reads_who_does_what_to_whom(
     app = render_dashboard()
 
     audit = next(frame.value for frame in app.dataframe if "Who (X)" in frame.value.columns)
-    assert list(audit.columns) == ["#", "Time", "+s", "Who (X)", "Does (Y)", "To (Z)", "Details"]
-    # Newest first by default.
-    assert audit[["Who (X)", "To (Z)"]].values.tolist() == [
-        ["Exa API (Search)", "financial planner in Phoenix"],
-        ["Postgres (State machine)", f"plan {plan.plan_id}"],
+    assert list(audit.columns) == ["#", "Time", "+s", "Who (X)", "Summary", "Details"]
+    # Newest first by default; the summary is one plain sentence, the details keep the target.
+    assert audit[["Who (X)", "Summary"]].values.tolist() == [
+        ["Exa API (Search)", "Company search returns 5 results — financial planner in Phoenix"],
+        ["Postgres (State machine)", f"Run started — plan {plan.plan_id}"],
     ]
+    assert json.loads(audit["Details"].iloc[0])["target"] == "financial planner in Phoenix"
     # The actor filter offers the 19 actors in pipeline order.
     actor_filter = next(widget for widget in app.multiselect if widget.label == "Who (X)")
     assert list(actor_filter.options) == list(ACTORS)
