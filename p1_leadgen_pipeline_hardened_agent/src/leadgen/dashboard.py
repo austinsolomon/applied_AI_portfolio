@@ -14,7 +14,7 @@ import psycopg
 import streamlit
 from pydantic import ValidationError
 
-from leadgen import run_status
+from leadgen import data_model, run_status
 from leadgen.database import connect
 from leadgen.eval_review_view import render_eval_review
 from leadgen.gaps import STATUS_BELOW_GOAL, MarketDemand, read_market_demand
@@ -403,6 +403,34 @@ def render_audit(connection: psycopg.Connection) -> None:
     )
 
 
+def example_frame(rows: list[dict]) -> pandas.DataFrame:
+    return pandas.DataFrame(
+        [
+            {
+                key: json.dumps(value) if isinstance(value, dict | list) else value
+                for key, value in row.items()
+            }
+            for row in rows
+        ]
+    )
+
+
+def render_data_model(connection: psycopg.Connection) -> None:
+    streamlit.caption(
+        "Every table and view in the database, what it holds and why. The example rows are made "
+        "up to show the shape of the data and use a selection of each table's columns; the row "
+        "count is the live number in your database."
+    )
+    for group, guides in data_model.GROUPS:
+        streamlit.subheader(group)
+        for guide in guides:
+            count = connection.execute(f'SELECT count(*) FROM "{guide.name}"').fetchone()[0]
+            kind = " (view)" if guide.kind == "view" else ""
+            streamlit.markdown(f"**`{guide.name}`**{kind} · {count:,} rows now")
+            streamlit.caption(guide.summary)
+            streamlit.dataframe(example_frame(guide.examples), hide_index=True)
+
+
 @streamlit.fragment(run_every="5s")
 def live_audit() -> None:
     try:
@@ -425,7 +453,15 @@ def live_run() -> None:
 def render() -> None:
     streamlit.set_page_config(page_title="Lead-gen dashboard", layout="wide")
     streamlit.title("Lead-gen dashboard")
-    demand_tab, run_tab, audit_tab, history_tab, sources_tab, evals_tab = streamlit.tabs(
+    (
+        demand_tab,
+        run_tab,
+        audit_tab,
+        history_tab,
+        sources_tab,
+        evals_tab,
+        data_model_tab,
+    ) = streamlit.tabs(
         [
             "Demand gaps",
             "Current run",
@@ -433,6 +469,7 @@ def render() -> None:
             "Run history",
             "Sources and spend",
             "Eval review",
+            "Data model",
         ]
     )
     try:
@@ -443,6 +480,8 @@ def render() -> None:
                 render_history(connection)
             with sources_tab:
                 render_sources(connection)
+            with data_model_tab:
+                render_data_model(connection)
     except ValidationError:
         streamlit.error(DATABASE_URL_HELP)
         return

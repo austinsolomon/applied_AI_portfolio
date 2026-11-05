@@ -166,7 +166,7 @@ invoice reconciliation and cloud deployment remain open.
 
 ## Dashboard
 
-`leadgen dashboard` opens six tabs, all read through the same functions the pipeline uses:
+`leadgen dashboard` opens seven tabs, all read through the same functions the pipeline uses:
 
 | Tab | Shows |
 |---|---|
@@ -176,6 +176,7 @@ invoice reconciliation and cloud deployment remain open.
 | Run history | One row per run: market, status, Maps and Exa sourced, new, qualified, review, rejected, CRM inserted, spend vs budget, cost per qualified lead |
 | Sources and spend | Qualification rate per source, Exa query-consensus breakdown, spend per service (provider-reported vs estimated) |
 | Eval review | Label the pipeline's decisions; labels export as test fixtures |
+| Data model | Every Postgres table and view: one sentence on what it holds, its live row count, and a few made-up example rows |
 
 Only the Eval review tab writes, and only labels. The page shows contact details and evidence, so
 it is for local use.

@@ -103,6 +103,7 @@ def test_tabs_cover_gaps_run_audit_history_sources_and_evals() -> None:
         "Run history",
         "Sources and spend",
         "Eval review",
+        "Data model",
     ]
 
 
