@@ -494,7 +494,7 @@ def test_pipeline_dedupe_and_crm_share_real_schema(running):
         ],
     )
     pipeline = Pipeline(connection, run, Settings())
-    assert asyncio.run(pipeline.run_dedupe()) == {"duplicates": 1, "new": 1}
+    assert asyncio.run(pipeline.run_dedupe()) == {"duplicates": 1, "new": 1, "already_judged": 0}
     connection.execute(
         "UPDATE raw_leads SET qualification=%s::jsonb",
         (
@@ -1083,3 +1083,46 @@ def test_blitz_rejecting_one_lead_does_not_fail_enrichment(
     assert connection.execute(
         "SELECT status FROM budget_reservations WHERE operation LIKE 'enrich:%%'"
     ).fetchone() == ("succeeded",)
+
+
+def test_dedupe_skips_businesses_judged_in_an_earlier_run(approved):
+    connection, plan = approved
+    market_id = plan.cells[0].market_id
+    earlier = start_run(connection, plan.plan_id)
+    persist_leads(
+        connection,
+        earlier.run_id,
+        market_id,
+        "exa",
+        [
+            RawLead("judged.example", "Judged Chef", website="https://www.judged.example/"),
+            RawLead("unjudged.example", "Unjudged Chef", website="https://unjudged.example/"),
+        ],
+    )
+    connection.execute(
+        'UPDATE raw_leads SET qualification=\'{"verdict": "review"}\' '
+        "WHERE source_key='judged.example'"
+    )
+    connection.execute(
+        "UPDATE runs SET status='finished',finished_at=now() WHERE run_id=%s", (earlier.run_id,)
+    )
+    later = start_run(connection, plan.plan_id)
+    persist_leads(
+        connection,
+        later.run_id,
+        market_id,
+        "exa",
+        [
+            RawLead("judged.example", "Judged Chef", website="https://judged.example/menu"),
+            RawLead("unjudged.example", "Unjudged Chef", website="https://unjudged.example/"),
+            RawLead("fresh.example", "Fresh Chef", website="https://fresh.example/"),
+        ],
+    )
+    result = asyncio.run(Pipeline(connection, later, Settings()).run_dedupe())
+    assert result == {"duplicates": 1, "new": 2, "already_judged": 1}
+    kept = {
+        lead["source_key"]
+        for lead in read_raw_leads(connection, later.run_id)
+        if not lead["duplicate"]
+    }
+    assert kept == {"unjudged.example", "fresh.example"}
