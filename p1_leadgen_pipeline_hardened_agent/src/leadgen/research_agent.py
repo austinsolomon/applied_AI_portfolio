@@ -7,6 +7,7 @@ from decimal import Decimal
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, create_sdk_mcp_server, query, tool
 from psycopg.types.json import Jsonb
 
+from leadgen.audit import audit, audit_sdk_message
 from leadgen.budget import paid_operation, record_cost
 from leadgen.qualification import QualificationError, judge_lead
 
@@ -34,6 +35,13 @@ async def research_lead(
         nonlocal calls
         calls += 1
         if calls > 4:
+            audit(
+                connection,
+                "research search tool",
+                "denies the call (four-call limit reached)",
+                "Claude (research agent)",
+                run_id=run_id,
+            )
             return {
                 "content": [{"type": "text", "text": "Research tool limit reached"}],
                 "isError": True,
@@ -48,6 +56,13 @@ async def research_lead(
         nonlocal calls
         calls += 1
         if calls > 4 or arguments["url"] not in gathered:
+            audit(
+                connection,
+                "research fetch_page tool",
+                f"denies {arguments['url']} (not found earlier, or tool limit reached)",
+                "Claude (research agent)",
+                run_id=run_id,
+            )
             return {
                 "content": [{"type": "text", "text": "URL or tool limit denied"}],
                 "isError": True,
@@ -88,6 +103,7 @@ async def research_lead(
                 )
             ) as messages:
                 async for message in messages:
+                    audit_sdk_message(connection, run_id, "research agent", message)
                     if isinstance(message, ResultMessage):
                         result_seen = True
                         record_cost(

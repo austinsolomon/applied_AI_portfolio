@@ -42,6 +42,7 @@ import psycopg
 import trafilatura
 from psycopg.rows import class_row
 
+from leadgen.audit import audit
 from leadgen.public_urls import validate_public_url
 from leadgen.settings import Settings
 
@@ -50,6 +51,7 @@ DUCKDUCKGO_HTML_URL = "https://html.duckduckgo.com/html/"
 USER_AGENT = "leadgen-agent/0.1 (+https://github.com/austinsolomon/applied_AI_portfolio)"
 
 PAGE_CACHE_MAX_AGE = timedelta(days=7)
+BACKEND_LABELS = {"exa": "Exa API", "firecrawl": "Firecrawl API", "free": "Free web (httpx)"}
 DEFAULT_SEARCH_LIMIT = 5
 REQUEST_TIMEOUT_SECONDS = 30.0
 # Stored page text is capped so one oversized page cannot bloat the cache or a later prompt.
@@ -579,6 +581,11 @@ class WebResearcher:
         self, query: str, *, limit: int = DEFAULT_SEARCH_LIMIT, site: str | None = None
     ) -> list[SearchResult]:
         """Web results for `query`, or only pages on `site` (a domain) when it is given."""
+        self._audit(
+            f"sends search {query!r}" + (f" restricted to {site}" if site else ""),
+            BACKEND_LABELS.get(self.backend.name, self.backend.name),
+            limit=limit,
+        )
         try:
             response = self.backend.search(query, limit=limit, site=site)
         except WebBackendUnavailable as failure:
@@ -587,25 +594,50 @@ class WebResearcher:
                 or not self.fallback_searches
                 or not isinstance(failure, self.fallback_on)
             ):
+                self._audit(f"search failed: {failure}", "Qualify/research web tools")
                 raise
+            self._audit(f"search failed ({failure}); retries on fallback", self.fallback.name)
             response = self.fallback.search(query, limit=limit, site=site)
         self._record_charge(response.charge)
+        self._audit(
+            f"returns {len(response.results)} search results",
+            "Qualify/research web tools",
+            actor=BACKEND_LABELS.get(self.backend.name, self.backend.name),
+            urls=[result.url for result in response.results],
+        )
         return response.results
 
     def fetch_page(self, url: str) -> FetchedPage:
         cache_key = normalize_page_url(url)
         cached = self._read_cache(cache_key)
         if cached is not None:
+            self._audit(
+                f"reads {cache_key} from cache (no paid call)",
+                "Postgres page_cache",
+                cached_from=cached.backend,
+                characters=len(cached.text),
+            )
             return cached
+        self._audit(
+            f"cache miss; fetches {cache_key}",
+            BACKEND_LABELS.get(self.backend.name, self.backend.name),
+        )
         try:
             response = self._fetch_uncached(cache_key)
         except PageFetchFailed as failure:
             # A dead or forbidden page still cost a credit on the paid backend; ledger it so the
             # run's spend matches the provider's usage, then report the failure as before.
             self._record_charge(failure.charge)
+            self._audit(f"page unreadable: {failure}", "Qualify/research web tools", actor="Web")
             raise
         self._record_charge(response.charge)
         self._write_cache(response.page)
+        self._audit(
+            f"returns {len(response.page.text)} characters of page text",
+            "Qualify/research web tools",
+            actor=BACKEND_LABELS.get(response.page.backend, response.page.backend),
+            url=cache_key,
+        )
         return response.page
 
     def _fetch_uncached(self, cache_key: str) -> FetchResponse:
@@ -616,6 +648,11 @@ class WebResearcher:
                 raise
             # The primary may have billed the attempt (Exa charges for an empty page).
             self._record_charge(getattr(failure, "charge", None))
+            self._audit(
+                f"{failure}; hands the page to the fallback",
+                BACKEND_LABELS.get(self.fallback.name, self.fallback.name),
+                actor=BACKEND_LABELS.get(self.backend.name, self.backend.name),
+            )
             return self.fallback.fetch_page(cache_key)
 
     def _read_cache(self, cache_key: str) -> FetchedPage | None:
@@ -633,6 +670,11 @@ class WebResearcher:
 
     def _write_cache(self, page: FetchedPage) -> None:
         write_cached_page(self.connection, page)
+
+    def _audit(
+        self, action: str, target: str, *, actor: str = "Qualify/research web tools", **detail
+    ) -> None:
+        audit(self.connection, actor, action, target, run_id=self.run_id, **detail)
 
     def _record_charge(self, charge: Charge | None) -> None:
         if charge is None:
@@ -661,6 +703,12 @@ class WebResearcher:
                     "cost_basis": charge.cost_basis,
                 },
             )
+        self._audit(
+            f"records ${charge.cost_usd} ({charge.cost_basis}, {charge.endpoint})",
+            "Postgres cost_ledger",
+            actor=f"{charge.service} call",
+            units=charge.credits,
+        )
 
 
 def build_web_researcher(

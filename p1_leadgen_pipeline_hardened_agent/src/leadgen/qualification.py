@@ -8,6 +8,7 @@ from anthropic import Anthropic, AnthropicError
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field
 
+from leadgen.audit import audit
 from leadgen.budget import paid_operation, record_cost
 from leadgen.claude_pricing import TokenUsage, call_cost_usd
 from leadgen.contacts import normalize_domain
@@ -125,6 +126,17 @@ def judge_lead(
                     default_headers=headers,
                     max_retries=0,
                 )
+            audit(
+                connection,
+                "Claude judge",
+                f"asks for a structured verdict on {lead['business_name']!r} "
+                f"({len(evidence)} evidence sources)",
+                f"Claude API ({settings.leadgen_model})",
+                run_id=run_id,
+                tier=tier,
+                prompt_characters=len(prompt),
+                evidence_urls=list(evidence),
+            )
             try:
                 response = client.messages.parse(
                     model=settings.leadgen_model,
@@ -165,7 +177,32 @@ def judge_lead(
                     serves_market="unclear",
                 )
             else:
-                judgment = validate_judgment(response.parsed_output, evidence, category)
+                proposed = response.parsed_output
+                audit(
+                    connection,
+                    f"Claude API ({settings.leadgen_model})",
+                    f"returns verdict {proposed.verdict}: {proposed.reason}",
+                    "Claude judge",
+                    run_id=run_id,
+                    quote=proposed.evidence_quote,
+                    source_url=proposed.source_url,
+                    serves_market=proposed.serves_market,
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                )
+                judgment = validate_judgment(proposed, evidence, category)
+                audit(
+                    connection,
+                    "Citation check (code)",
+                    (
+                        f"accepts {judgment.verdict}: quote found in the cited source"
+                        if judgment.verdict == proposed.verdict
+                        else f"changes {proposed.verdict} to {judgment.verdict}: quote, source, "
+                        "service or market could not be verified"
+                    ),
+                    "Postgres raw_leads",
+                    run_id=run_id,
+                )
     with connection.transaction():
         connection.execute(
             "UPDATE raw_leads SET qualification=%s WHERE raw_lead_id=%s",

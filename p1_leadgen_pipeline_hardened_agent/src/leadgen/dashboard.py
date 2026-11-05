@@ -6,6 +6,8 @@ runner use (`gaps.py`, `run_status.py`, `eval_review.py`), so the page and the p
 the same numbers. Only the Eval review tab writes, and only labels.
 """
 
+import json
+
 import altair
 import pandas
 import psycopg
@@ -331,6 +333,85 @@ def render_sources(connection: psycopg.Connection) -> None:
     )
 
 
+def audit_table(events: list[dict]) -> pandas.DataFrame:
+    started = events[0]["recorded_at"] if events else None
+    return pandas.DataFrame(
+        [
+            {
+                "#": index,
+                "Time": event["recorded_at"].strftime("%H:%M:%S.%f")[:-3],
+                "+s": round((event["recorded_at"] - started).total_seconds(), 1),
+                "Who (X)": event["actor"],
+                "Does (Y)": event["action"],
+                "To (Z)": event["target"],
+                "Details": json.dumps(event["detail"]) if event["detail"] else "",
+            }
+            for index, event in enumerate(events, start=1)
+        ]
+    )
+
+
+def render_audit(connection: psycopg.Connection) -> None:
+    plans = run_status.audited_plans(connection)
+    if not plans:
+        streamlit.info(
+            "No audit trail yet. Plan and run with `--audit`, e.g. "
+            "`leadgen plan --audit ...` then `leadgen run --plan latest --audit`. "
+            "Every step is then recorded here as who → does → to whom."
+        )
+        return
+    labels = dict(plans)
+    plan_id = streamlit.selectbox(
+        "Plan", list(labels), format_func=labels.get, key="audit_plan", help="Newest first"
+    )
+    events = run_status.read_audit_events(connection, plan_id)
+    table = audit_table(events)
+    controls = streamlit.columns([2, 2, 1])
+    actors = controls[0].multiselect(
+        "Who (X)", sorted(table["Who (X)"].unique()), key="audit_actors"
+    )
+    search = controls[1].text_input("Search actions and details", key="audit_search")
+    newest_first = controls[2].toggle("Newest first", value=True, key="audit_newest")
+    shown = table
+    if actors:
+        shown = shown[shown["Who (X)"].isin(actors)]
+    if search:
+        needle = search.lower()
+        shown = shown[
+            shown.apply(lambda row: needle in " ".join(map(str, row.values)).lower(), axis=1)
+        ]
+    if newest_first:
+        shown = shown.iloc[::-1]
+    streamlit.caption(
+        f"{len(shown)} of {len(table)} events. Each row reads: Who (X) → Does (Y) → To (Z). "
+        "Refreshes every 5 seconds."
+    )
+    streamlit.dataframe(
+        shown,
+        hide_index=True,
+        column_config={
+            "Does (Y)": streamlit.column_config.TextColumn(width="large"),
+            "Details": streamlit.column_config.TextColumn(width="medium"),
+        },
+    )
+    streamlit.download_button(
+        "Download as CSV",
+        table.to_csv(index=False),
+        file_name=f"audit_plan_{plan_id}.csv",
+        mime="text/csv",
+        key="audit_download",
+    )
+
+
+@streamlit.fragment(run_every="5s")
+def live_audit() -> None:
+    try:
+        with connect() as connection:
+            render_audit(connection)
+    except psycopg.Error as error:
+        streamlit.error(f"Cannot read the audit trail from the database: {error}")
+
+
 @streamlit.fragment(run_every="10s")
 def live_run() -> None:
     """The Current run tab redraws itself every 10 seconds while the page is open."""
@@ -344,8 +425,15 @@ def live_run() -> None:
 def render() -> None:
     streamlit.set_page_config(page_title="Lead-gen dashboard", layout="wide")
     streamlit.title("Lead-gen dashboard")
-    demand_tab, run_tab, history_tab, sources_tab, evals_tab = streamlit.tabs(
-        ["Demand gaps", "Current run", "Run history", "Sources and spend", "Eval review"]
+    demand_tab, run_tab, audit_tab, history_tab, sources_tab, evals_tab = streamlit.tabs(
+        [
+            "Demand gaps",
+            "Current run",
+            "Audit log",
+            "Run history",
+            "Sources and spend",
+            "Eval review",
+        ]
     )
     try:
         with connect() as connection:
@@ -363,6 +451,8 @@ def render() -> None:
         return
     with run_tab:
         live_run()
+    with audit_tab:
+        live_audit()
     with evals_tab:
         render_eval_review()
 

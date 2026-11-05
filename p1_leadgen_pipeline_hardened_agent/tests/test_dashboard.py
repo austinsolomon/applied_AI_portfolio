@@ -93,12 +93,13 @@ def test_missing_database_url_shows_how_to_fix_it(
 
 
 @pytest.mark.usefixtures("dashboard_database")
-def test_tabs_cover_gaps_run_history_sources_and_evals() -> None:
+def test_tabs_cover_gaps_run_audit_history_sources_and_evals() -> None:
     labels = [tab.label for tab in render_dashboard().tabs]
 
     assert labels == [
         "Demand gaps",
         "Current run",
+        "Audit log",
         "Run history",
         "Sources and spend",
         "Eval review",
@@ -175,3 +176,28 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
     assert f"--plan {plan.plan_id} --resume" in app.warning[0].value
     metrics = {metric.label: metric.value for metric in app.metric}
     assert (metrics["Status"], metrics["Spent"], metrics["Budget"]) == ("failed", "$0.021", "$3")
+
+
+def test_audit_log_reads_who_does_what_to_whom(
+    dashboard_database, migrated_connection: psycopg.Connection
+) -> None:
+    plan, run = seed_blocked_run(migrated_connection)
+    for actor, action, target in [
+        ("Runner (leadgen run)", "starts run", "Postgres runs (state: running)"),
+        ("Exa stage", "sends company search 'mobile massage in Phoenix'", "Exa API"),
+    ]:
+        migrated_connection.execute(
+            "INSERT INTO audit_events (run_id, plan_id, actor, action, target) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (run.run_id, plan.plan_id, actor, action, target),
+        )
+
+    app = render_dashboard()
+
+    audit = next(frame.value for frame in app.dataframe if "Who (X)" in frame.value.columns)
+    assert list(audit.columns) == ["#", "Time", "+s", "Who (X)", "Does (Y)", "To (Z)", "Details"]
+    # Newest first by default.
+    assert audit[["Who (X)", "To (Z)"]].values.tolist() == [
+        ["Exa stage", "Exa API"],
+        ["Runner (leadgen run)", "Postgres runs (state: running)"],
+    ]

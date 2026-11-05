@@ -255,3 +255,25 @@ def read_spend_by_service(connection: psycopg.Connection) -> list[dict[str, Any]
             FROM cost_ledger GROUP BY service ORDER BY total_usd DESC
             """
         ).fetchall()
+
+
+def read_audit_events(connection: psycopg.Connection, plan_id: int) -> list[dict[str, Any]]:
+    """Every audit row for one plan: planning and approval, then each run of it, in order."""
+    with connection.cursor(row_factory=dict_row) as cursor:
+        return cursor.execute(
+            "SELECT audit_event_id, recorded_at, run_id, actor, action, target, detail "
+            "FROM audit_events WHERE plan_id = %s ORDER BY audit_event_id",
+            (plan_id,),
+        ).fetchall()
+
+
+def audited_plans(connection: psycopg.Connection) -> list[tuple[int, str]]:
+    """(plan_id, label) for plans that have an audit trail, newest first."""
+    rows = connection.execute(
+        "SELECT plan_id, min(recorded_at), count(*) FROM audit_events "
+        "WHERE plan_id IS NOT NULL GROUP BY plan_id ORDER BY plan_id DESC"
+    ).fetchall()
+    return [
+        (plan_id, f"plan {plan_id} · started {first:%Y-%m-%d %H:%M} · {count} events")
+        for plan_id, first, count in rows
+    ]
