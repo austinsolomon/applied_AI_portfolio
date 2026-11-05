@@ -532,10 +532,14 @@ def test_sdk_runner_executes_stages_and_rerun_spends_nothing(approved, monkeypat
 
     async def replay(*, prompt, options):
         handler = options.mcp_servers["leadgen"]["tools"][0].handler
+        sdk_hook = options.hooks["PreToolUse"][0].hooks[0]
         assert options.tools == []
         assert options.max_budget_usd <= 0.08
         for stage in STAGES:
-            await handler({"stage": stage})
+            # As the real SDK does: the PreToolUse hook first, then the tool's handler.
+            arguments = {"stage": stage}
+            await sdk_hook({"tool_name": TOOL_NAME, "tool_input": arguments}, None, None)
+            await handler(arguments)
         yield ResultMessage(
             subtype="success",
             duration_ms=1,
@@ -607,8 +611,12 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
     monkeypatch.setattr(orchestrator, "create_sdk_mcp_server", lambda **kwargs: kwargs)
 
     async def replay(*, prompt, options):
+        sdk_hook = options.hooks["PreToolUse"][0].hooks[0]
         for stage in STAGES:
-            await options.mcp_servers["leadgen"]["tools"][0].handler({"stage": stage})
+            # As the real SDK does: the PreToolUse hook first, then the tool's handler.
+            arguments = {"stage": stage}
+            await sdk_hook({"tool_name": TOOL_NAME, "tool_input": arguments}, None, None)
+            await options.mcp_servers["leadgen"]["tools"][0].handler(arguments)
         yield ResultMessage(
             subtype="success",
             duration_ms=1,
@@ -863,6 +871,10 @@ def test_audit_trail_records_one_execution_as_who_does_what_to_whom(
     # wrote 94 rows from 25 actors before the trail was cut down to major steps.
     assert {actor for actor, *_ in rows} <= set(ACTORS)
     assert len(rows) <= 50
+    # One hook decision per tool call: the handler's second check records only a denial.
+    hook_rows = [row for row in rows if row[0] == "Claude Agent SDK (PreToolUse hook)"]
+    tool_calls = [row for row in rows if row[0] == "Claude Agent SDK (Tool call)"]
+    assert len(hook_rows) == len(tool_calls) == len(STAGES)
     # Spend is a detail on the API rows, not a row of its own.
     assert any(actor == "Exa API (Search)" and "cost_usd" in detail for actor, *_, detail in rows)
     assert "cost_usd" in rows[-1][-1], "the run's closing row carries the session's cost"
