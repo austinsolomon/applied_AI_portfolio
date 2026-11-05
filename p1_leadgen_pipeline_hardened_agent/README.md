@@ -427,7 +427,8 @@ that generate `crm_leads`' key columns (a test checks the expressions are copied
 migration verbatim), then matches on Google place ID, phone, email and website domain. A domain
 on a shared or aggregator host never counts as a match: two businesses with Instagram pages are
 not the same business. Each decision names the keys that matched, and the new leads go on to
-enrichment; nothing is spent on a duplicate.
+enrichment; nothing is spent on a duplicate. A business an earlier run already judged for the same
+market (by the same keys) is also skipped, so a repeat search never pays to judge it again.
 
 ## Design
 

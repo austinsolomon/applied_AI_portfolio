@@ -412,20 +412,16 @@ class Pipeline:
             for lead in leads
         ]
         decisions = dedupe_against_crm(self.connection, incoming, self.category)
+        judged_before = self.keys_judged_in_earlier_runs({lead["market_id"] for lead in leads})
         seen = set()
-        duplicates = matched_in_crm = 0
+        duplicates = matched_in_crm = already_judged = 0
         for lead, decision in zip(leads, decisions, strict=True):
-            from leadgen.category_config import is_on_host
-
-            keys = [
-                (key, getattr(decision.keys, key))
-                for key in ("google_place_id", "phone", "email")
-                if getattr(decision.keys, key)
-            ]
-            domain = decision.keys.website_domain
-            if domain and not is_on_host(domain, self.category.hosts_never_identifying_a_business):
-                keys.append(("domain", domain))
-            duplicate = decision.is_duplicate or any(key in seen for key in keys)
+            keys = self.identity_keys(decision)
+            # A business an earlier run already judged for this market is not judged (or paid
+            # for) again; a reviewer can still revisit its earlier decision.
+            judged = not decision.is_duplicate and any(key in judged_before for key in keys)
+            duplicate = decision.is_duplicate or judged or any(key in seen for key in keys)
+            already_judged += judged
             seen.update(keys)
             self.connection.execute(
                 "UPDATE raw_leads SET duplicate=%s WHERE raw_lead_id=%s",
@@ -437,14 +433,55 @@ class Pipeline:
             self.connection,
             DEDUPE,
             f"keeps {len(leads) - duplicates} new leads and marks {duplicates} as duplicates "
-            f"({matched_in_crm} already in the CRM)",
+            f"({matched_in_crm} already in the CRM, {already_judged} judged in an earlier run)",
             f"{len(leads)} sourced leads",
             run_id=self.run.run_id,
             new=len(leads) - duplicates,
             duplicates=duplicates,
             matched_in_crm=matched_in_crm,
+            already_judged=already_judged,
         )
-        return {"duplicates": duplicates, "new": len(leads) - duplicates}
+        return {
+            "duplicates": duplicates,
+            "new": len(leads) - duplicates,
+            "already_judged": already_judged,
+        }
+
+    def identity_keys(self, decision):
+        """The keys that identify one business: place ID, phone, email, and its own domain."""
+        from leadgen.category_config import is_on_host
+
+        keys = [
+            (key, getattr(decision.keys, key))
+            for key in ("google_place_id", "phone", "email")
+            if getattr(decision.keys, key)
+        ]
+        domain = decision.keys.website_domain
+        if domain and not is_on_host(domain, self.category.hosts_never_identifying_a_business):
+            keys.append(("domain", domain))
+        return keys
+
+    def keys_judged_in_earlier_runs(self, market_ids):
+        """Identity keys of every business an earlier run judged in these markets, normalized by
+        the same CRM expressions dedupe uses."""
+        if not market_ids:
+            return set()
+        rows = self.connection.execute(
+            "SELECT business_name,google_place_id,phone,email,website FROM raw_leads "
+            "WHERE market_id = ANY(%s) AND run_id <> %s AND qualification IS NOT NULL",
+            (list(market_ids), self.run.run_id),
+        ).fetchall()
+        earlier = [
+            IncomingLead(
+                business_name=name, google_place_id=place, phone=phone, email=email, website=site
+            )
+            for name, place, phone, email, site in rows
+        ]
+        return {
+            key
+            for decision in dedupe_against_crm(self.connection, earlier, self.category)
+            for key in self.identity_keys(decision)
+        }
 
     async def run_enrich(self):
         leads = [
