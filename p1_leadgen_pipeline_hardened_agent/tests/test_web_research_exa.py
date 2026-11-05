@@ -24,11 +24,11 @@ from leadgen.web_research import (
     build_web_researcher,
 )
 
-PAGE_URL = "https://serenity-mobile-massage.example/services"
-PAGE_TEXT = "We bring a licensed massage therapist to your home anywhere in Pasadena."
+PAGE_URL = "https://serenity-private-chef.example/services"
+PAGE_TEXT = "We bring a professional private chef to your home anywhere in Pasadena."
 
 
-def exa_result(url=PAGE_URL, title="Serenity Mobile Massage", text=PAGE_TEXT):
+def exa_result(url=PAGE_URL, title="Serenity Private Chef", text=PAGE_TEXT):
     return SimpleNamespace(url=url, title=title, text=text)
 
 
@@ -188,9 +188,9 @@ def test_exa_site_search_uses_include_domains(migrated_connection):
     client = Mock()
     client.search.return_value = exa_response(exa_result())
     researcher_with(migrated_connection, client).search(
-        "services", limit=3, site="serenity-mobile-massage.example"
+        "services", limit=3, site="serenity-private-chef.example"
     )
-    assert client.search.call_args.kwargs["include_domains"] == ["serenity-mobile-massage.example"]
+    assert client.search.call_args.kwargs["include_domains"] == ["serenity-private-chef.example"]
     assert "site:" not in client.search.call_args.args[0]
 
 
@@ -207,20 +207,20 @@ def test_tier1_evidence_reads_the_homepage_then_searches_the_site():
 
     web = Mock()
     web.fetch_page.return_value = SimpleNamespace(
-        final_url="https://desertmassage.com/", text="Desert Massage home page"
+        final_url="https://desertchef.com/", text="Desert Chef home page"
     )
     web.search.side_effect = [
-        [SimpleNamespace(url="https://desertmassage.com/areas", description="We travel to Mesa.")],
+        [SimpleNamespace(url="https://desertchef.com/areas", description="We travel to Mesa.")],
         [],
     ]
-    lead = {"website": "https://desertmassage.com", "business_name": "Desert Massage"}
+    lead = {"website": "https://desertchef.com", "business_name": "Desert Chef"}
     config = {"pages": [""], "site_searches": 1, "searches": 1, "max_evidence_characters": 18000}
 
     evidence = gather_evidence(lead, "Phoenix, AZ", web, config)
 
-    web.fetch_page.assert_called_once_with("https://desertmassage.com/")
-    assert web.search.call_args_list[0].kwargs == {"limit": 3, "site": "desertmassage.com"}
+    web.fetch_page.assert_called_once_with("https://desertchef.com/")
+    assert web.search.call_args_list[0].kwargs == {"limit": 3, "site": "desertchef.com"}
     assert evidence == {
-        "https://desertmassage.com/": "Desert Massage home page",
-        "https://desertmassage.com/areas": "We travel to Mesa.",
+        "https://desertchef.com/": "Desert Chef home page",
+        "https://desertchef.com/areas": "We travel to Mesa.",
     }

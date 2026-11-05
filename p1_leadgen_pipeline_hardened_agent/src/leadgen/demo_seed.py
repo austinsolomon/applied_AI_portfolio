@@ -49,7 +49,7 @@ NAME_FIRST_WORDS = [
     "Willow",
     "Summit",
     "Bayside",
-    "Lotus",
+    "Saffron",
     "Juniper",
     "Coastal",
     "Sage",
@@ -57,7 +57,7 @@ NAME_FIRST_WORDS = [
     "Maple",
     "Riverstone",
     "Sunrise",
-    "Tranquil",
+    "Rosemary",
     "Blue Ridge",
     "Driftwood",
     "Copper",
@@ -65,14 +65,14 @@ NAME_FIRST_WORDS = [
     "Pacific",
 ]
 NAME_SECOND_WORDS = [
-    "Mobile Massage",
-    "Bodywork",
-    "In-Home Massage",
-    "Massage Therapy",
-    "Wellness Massage",
-    "Healing Hands",
-    "Sports Massage",
-    "Touch Therapy",
+    "Private Chef",
+    "Table",
+    "Personal Chef",
+    "Kitchen at Home",
+    "Private Dining",
+    "Supper Club",
+    "Meal Prep Chef",
+    "Chef at Home",
 ]
 
 

@@ -1,50 +1,97 @@
 # The one category this deployment sources. Changed by pull request, never at runtime.
-# Demo category: mobile and in-home massage providers in US markets.
+# Demo category: independent private and personal chefs in US markets, not restaurant chefs.
 
-name: mobile_massage
-label: Mobile and in-home massage providers
+name: private_chef
+label: Independent private and personal chefs
 
 # Google Maps search terms, strongest first. The planner reorders them by the purity each one
 # produced in past samples once that history exists.
 keywords:
-  - mobile massage
-  - in-home massage
-  - massage therapist
-  - sports massage
-  - couples massage
-  - massage therapy
+  - private chef
+  - personal chef
+  - in-home chef
+  - personal chef service
+  - meal prep chef
+  - private dinner chef
 
 # Exa sourcing: plain-language descriptions of the businesses wanted, as Exa's search guide
 # recommends ("describe the pages you want, not a bag of keywords"). Each is run once per planned
 # city; a business found by several phrasings ranks higher (query_consensus).
 exa_queries:
-  - independent mobile massage therapists who travel to clients' homes in {city}, business homepages
-  - in-home massage therapy services that come to your house in {city}, business homepages
-  - outcall massage therapists offering sessions at homes, hotels and offices in {city}
+  - independent private chefs who cook in clients' homes in {city}, personal chef business homepages
+  - personal chef services offering in-home meal prep and private dinners in {city}
+  - hire a private chef for dinner parties and weekly meal prep in {city}, the chef's own website
+
+# Words that mark a page title or domain as this category. An Exa result needs one of them.
+signal_terms:
+  - chef
+  - culinary
+
+# The Maps sample grader counts a business as on-category when one of its Maps categories
+# contains a term from `maps_category_terms` and none from `maps_category_excludes`.
+maps_category_terms:
+  - chef
+maps_category_excludes:
+  - restaurant
+  - school
+  - caterer
+
+# Evidence gathering during qualification. `{business}` and `{market}` are filled in per lead.
+# The site search runs on the business's own domain; the web search looks for third-party pages.
+site_search: "{business}: private chef services, where they cook, and any restaurant they work at"
+evidence_search: "{business} {market} private chef personal chef"
+
+# Added to the judge's instructions: what the evidence must show before a lead can qualify.
+judge_requirement: >
+  Require affirmative evidence that this is a private or personal chef who currently cooks for
+  clients (in homes, rentals or private events) and serves the market. A current restaurant,
+  restaurant group, catering company or meal-delivery affiliation means rejected. Past restaurant
+  experience in a biography does not disqualify. Mixed or unclear affiliation means review.
 
 # Share of raw leads expected to qualify. The planner sizes a plan as goal ÷ this rate.
-expected_qualification_rate: 0.40
+expected_qualification_rate: 0.30
 
 # The eligibility rubric the sample grader and the qualification judge read.
 rubric:
   qualified_when: >
-    The business sends a massage therapist to the client's home, hotel, office or event
-    (described as mobile, in-home, on-site, outcall or traveling), or lists in-home sessions
-    as a bookable service.
+    An individual private or personal chef, or a small chef-led business, that currently cooks
+    for clients in their homes, vacation rentals or private events (in-home dinners, weekly meal
+    prep, private dining) and is not currently employed by, owning or cooking for a restaurant.
+    Past restaurant experience mentioned in a biography is fine.
   rejected_when: >
-    The business only serves clients at its own premises (studio, spa, clinic, salon, gym),
-    is a massage school, a franchise locator, an equipment or supplies seller, a booking
-    marketplace or directory, or shows adult-service signals.
+    A restaurant or restaurant group; a chef who currently works at or owns a restaurant; a
+    restaurant's catering arm; a catering company; a ghost kitchen, meal-kit or meal-delivery
+    business; a food truck; a cooking school or class venue; or a chef marketplace or directory.
   review_when: >
-    The pages read do not say where sessions take place, or the business is a chiropractic,
-    physiotherapy or wellness practice whose massage travel service is not confirmed.
+    The pages do not say whether the chef is independent today, the business mixes private-chef
+    work with restaurant or catering work (for example "private chef and catering"), or it is
+    unclear whether the chef cooks for private clients.
   eligible_services:
-    - mobile massage
-    - in-home massage
-    - couples massage at home
-    - on-site chair massage for offices and events
-    - traveling sports massage
-    - hotel or vacation-rental massage
+    - private chef
+    - personal chef
+    - in-home dinner
+    - weekly meal prep
+    - private dinner party
+    - vacation rental chef
+    - private event chef
+
+# Phrases that, affirmed in a qualification reason, describe a business the rubric rejects. The
+# CRM write flags a qualified lead whose reason affirms one ("works at a restaurant"); negated
+# mentions ("is not affiliated with a restaurant") do not count.
+disqualifier_phrases:
+  - works at a restaurant
+  - owns a restaurant
+  - restaurant group
+  - restaurant's catering
+  - catering company
+  - meal delivery
+  - meal-kit
+  - ghost kitchen
+  - food truck
+  - cooking school
+  - chef marketplace
+  - business directory
+  - online directory
 
 # Domains many unrelated businesses share: social profiles, link-in-bio pages and site builders
 # that put every business under one host. Dedupe never treats these as a match key, and
@@ -75,35 +122,28 @@ shared_hosts:
 # a result on one of these hosts is never a lead. They are also
 # excluded from the domain match key, for the same reason as the shared hosts.
 aggregator_hosts:
+  # Directories and review sites: their pages describe many businesses.
   - yelp.com
   - yellowpages.com
-  - thumbtack.com
-  - angi.com
-  - bark.com
-  - care.com
-  - groupon.com
-  - nextdoor.com
   - tripadvisor.com
   - mapquest.com
   - bbb.org
   - manta.com
   - foursquare.com
-  - massagebook.com
-  - vagaro.com
-  - booksy.com
-  - styleseat.com
-  - schedulicity.com
-  - mindbodyonline.com
-  - fresha.com
-  - zeel.com
-  - soothe.com
-  - psychologytoday.com
-  - healthgrades.com
-  - zocdoc.com
-  # Found in the 2026-11-04 Phoenix Exa results: a booking platform, therapist directories and an
-  # NPI provider registry.
-  - glossgenius.com
-  - qdexx.com
-  - excellenttherapists.com
-  - carenary.com
-  - stedi.com
+  - nextdoor.com
+  # Hiring and gig marketplaces that list many chefs under one host.
+  - thumbtack.com
+  - angi.com
+  - bark.com
+  - care.com
+  - takeachef.com
+  - cozymeal.com
+  # Restaurant reservation, delivery and event platforms: never an independent chef's own site.
+  - opentable.com
+  - resy.com
+  - doordash.com
+  - ubereats.com
+  - grubhub.com
+  - eventbrite.com
+  - theknot.com
+  - weddingwire.com

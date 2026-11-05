@@ -120,7 +120,7 @@ def test_enrich_without_a_blitz_key_explains_instead_of_calling(
 ) -> None:
     completed = run_leadgen(
         "enrich",
-        "https://www.cedar-massage.example",
+        "https://www.cedar-table.example",
         env={"DATABASE_URL": empty_database_url, "PATH": ""},
         cwd=tmp_path,
     )
@@ -144,7 +144,7 @@ def test_evals_export_fixtures_writes_labeled_records(
     run_leadgen("db", "migrate", env=environment, cwd=tmp_path)
     with psycopg.connect(empty_database_url, autocommit=True) as connection:
         record_id = record_eval(
-            connection, kind="judge_decision", subject="Cedar Massage", verdict="qualified"
+            connection, kind="judge_decision", subject="Cedar Private Chef", verdict="qualified"
         )
         label_eval_record(connection, record_id, label="correct", labeled_by="austin")
 

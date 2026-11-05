@@ -16,7 +16,7 @@ def add_market(connection: psycopg.Connection, name: str = "Los Angeles", goal: 
 
 
 def add_lead(connection: psycopg.Connection, market_id: int, **columns: object) -> int:
-    values = {"business_name": "Cedar Mobile Massage", "source": "demo_seed", **columns}
+    values = {"business_name": "Cedar Private Chef", "source": "demo_seed", **columns}
     names = ", ".join(["market_id", *values])
     value_markers = ", ".join(["%s"] * (len(values) + 1))
     row = connection.execute(

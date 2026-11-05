@@ -13,6 +13,7 @@ from leadgen.category_config import (
 )
 
 DEMO_CATEGORY_PATH = Path(__file__).resolve().parents[1] / "config" / "category.yaml"
+MASSAGE_CATEGORY_PATH = Path(__file__).parent / "fixtures" / "mobile_massage_category.yaml"
 
 
 @pytest.fixture
@@ -32,12 +33,13 @@ def test_the_demo_category_loads(monkeypatch: pytest.MonkeyPatch) -> None:
 
     category = load_category_config()
 
-    assert category.name == "mobile_massage"
-    assert category.keywords[0] == "mobile massage"
-    assert category.expected_qualification_rate == 0.40
+    assert category.name == "private_chef"
+    assert category.keywords[0] == "private chef"
+    assert category.expected_qualification_rate == 0.30
     assert "instagram.com" in category.shared_hosts
     assert "yelp.com" in category.aggregator_hosts
-    assert "in-home massage" in category.rubric.eligible_services
+    assert "private chef" in category.rubric.eligible_services
+    assert "restaurant" in category.rubric.rejected_when
     assert category.hosts_never_identifying_a_business >= {"instagram.com", "yelp.com"}
 
 
@@ -52,16 +54,16 @@ def test_an_explicit_path_wins_over_the_setting(tmp_path: Path, demo_category_do
     ("field", "bad_value", "complaint"),
     [
         ("keywords", [], "keywords"),
-        ("keywords", ["mobile massage", "mobile massage"], "duplicate"),
-        ("keywords", ["mobile massage", "  "], "blank"),
+        ("keywords", ["private chef", "private chef"], "duplicate"),
+        ("keywords", ["private chef", "  "], "blank"),
         ("expected_qualification_rate", 0, "expected_qualification_rate"),
         ("expected_qualification_rate", 1.5, "expected_qualification_rate"),
         ("shared_hosts", ["https://instagram.com"], "shared_hosts"),
         ("shared_hosts", ["www.instagram.com/"], "shared_hosts"),
         ("aggregator_hosts", ["Yelp.com"], "aggregator_hosts"),
-        ("name", "Mobile Massage", "name"),
+        ("name", "Private Chef", "name"),
         ("rubric", {"qualified_when": "x"}, "rubric"),
-        ("exa_queries", ["mobile massage therapists"], "city"),
+        ("exa_queries", ["private chef therapists"], "city"),
         ("exa_queries", [], "exa_queries"),
     ],
 )
@@ -113,7 +115,7 @@ def test_the_config_is_immutable(demo_category_document: dict) -> None:
         ("Instagram.com", True),
         ("notinstagram.com", False),
         ("instagram.com.example", False),
-        ("cedarmassage.example", False),
+        ("cedartable.example", False),
         ("com", False),
     ],
 )
@@ -133,5 +135,52 @@ def test_a_host_covers_itself_and_its_subdomains_only(domain: str, expected: boo
     ],
 )
 def test_platforms_seen_in_live_exa_results_never_count_as_a_business(domain):
-    category = load_category_config()
+    # Seen in the 2026-11-04 massage run; the massage category (a test fixture) excludes them.
+    category = load_category_config(MASSAGE_CATEGORY_PATH)
     assert is_on_host(domain, category.hosts_never_identifying_a_business)
+
+
+@pytest.mark.parametrize(
+    "domain", ["takeachef.com", "www.cozymeal.com", "opentable.com", "www.thumbtack.com"]
+)
+def test_chef_marketplaces_and_restaurant_platforms_never_count_as_a_business(domain):
+    assert is_on_host(
+        domain, load_category_config(DEMO_CATEGORY_PATH).hosts_never_identifying_a_business
+    )
+
+
+@pytest.mark.parametrize(
+    ("maps_category", "counts"),
+    [
+        ("Personal chef service", True),
+        ("Chef", True),
+        ("Restaurant", False),
+        ("Chef's restaurant", False),
+        ("Cooking school", False),
+        ("Caterer", False),
+    ],
+)
+def test_maps_categories_count_only_independent_chef_listings(maps_category, counts):
+    from leadgen.sourcing_maps import on_category
+
+    assert on_category(maps_category, load_category_config(DEMO_CATEGORY_PATH)) is counts
+
+
+@pytest.mark.parametrize(
+    ("title", "matches"),
+    [
+        ("Saffron Table | Private chef in Phoenix", True),
+        ("Culinary Nomad", True),
+        ("Pho King", False),
+    ],
+)
+def test_exa_results_need_a_category_signal_term(title, matches):
+    from leadgen.sourcing_exa import category_signal
+
+    assert category_signal(title, load_category_config(DEMO_CATEGORY_PATH)) is matches
+
+
+def test_evidence_search_templates_must_name_their_placeholders(tmp_path, demo_category_document):
+    demo_category_document["evidence_search"] = "{business} private chef"
+    with pytest.raises(CategoryConfigError, match="evidence_search"):
+        load_category_config(write_category(tmp_path, demo_category_document))

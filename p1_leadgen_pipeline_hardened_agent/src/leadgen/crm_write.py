@@ -11,9 +11,9 @@ as a conflict. The whole batch is one transaction: a run either writes all of it
 none of them.
 
 After the write, a contradiction scan reads each written lead's `qualification_reason`. A reason
-that affirms a disqualifier ("operates a massage school") while the verdict is `qualified` is a
-judge inconsistency worth a human look. The scan is negation-aware: "is not a massage school" is
-no hit. Hits go to `eval_records` and never block the write.
+that affirms a disqualifier ("works at a restaurant") while the verdict is `qualified` is a
+judge inconsistency worth a human look. The scan is negation-aware: "is not part of a
+restaurant group" is no hit. Hits go to `eval_records` and never block the write.
 """
 
 import logging
@@ -58,27 +58,13 @@ JUNK_EMAIL_HOSTS: tuple[str, ...] = (
 # Same shape the CRM's CHECK constraint enforces on `email_normalized`.
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-# Phrases that, affirmed in a qualification reason, describe a business the rubric rejects.
-# They are kept here rather than parsed from the rubric prose so the scan is explicit and testable.
+# Phrases that, affirmed in a qualification reason, describe a business the rubric rejects. The
+# pipeline passes the category's own list (config/category.yaml); this generic list is the default.
 DEFAULT_DISQUALIFIER_PHRASES: tuple[str, ...] = (
-    "massage school",
-    "franchise locator",
-    "equipment seller",
-    "supplies seller",
-    "sells equipment",
-    "sells supplies",
     "booking marketplace",
     "business directory",
     "online directory",
     "directory site",
-    "adult service",
-    "adult services",
-    "only at its own premises",
-    "only serves clients at",
-    "studio only",
-    "in-studio only",
-    "no mobile service",
-    "does not travel",
 )
 
 # A disqualifier phrase preceded by one of these within the same clause is negated, not affirmed.
@@ -210,8 +196,8 @@ def find_contradictions(
     """Disqualifier phrases the reason affirms, as (phrase, clause) pairs.
 
     The reason is split into clauses; a phrase counts only when no negation marker appears in the
-    few words before it inside its clause. "is a massage school" hits; "is not a massage school"
-    and "a studio, not a mobile service" do not.
+    few words before it inside its clause. "works at a restaurant" hits; "never works at a
+    restaurant" and "independent, not part of a restaurant group" do not.
     """
     hits: list[tuple[str, str]] = []
     for clause in CLAUSE_SPLIT.split(reason):

@@ -11,7 +11,9 @@ the CRM.
 **Exa is central to the pipeline:** plain-language Exa searches find the businesses, and Exa supplies
 the page text Claude must quote to qualify a lead. See [Why Exa](#why-exa). Every decision is recorded for a recurring evaluation review.
 
-The demo category is mobile and in-home massage providers in US markets.
+The demo category is independent private and personal chefs in US markets: chefs who cook in
+clients' homes, rentals and private events. A chef currently tied to a restaurant, catering
+company or meal-delivery business is rejected. Past restaurant experience is fine.
 
 Explore the [three connected architecture diagrams](docs/architecture/README.md): the lead
 pipeline, production safeguards, and qualification with human review. Each opens into focused
@@ -42,15 +44,16 @@ over what Exa returns.
 | **1. Find businesses** | Sourcing | `search("<plain-language description> in <city>", type="auto", category="company", num_results=25, exclude_domains=<directories>, contents={"text": ...})` per phrasing and city | Business homepages, with their page text cached for qualification |
 | **2. Gather evidence** | Qualification and research | `get_contents(homepage)`, `search(..., include_domains=[the business's site])` and one open `search` | Page text the judge must quote from to qualify a lead |
 
-Why it fits this category: Google Maps finds businesses by keyword and location, but many mobile
-massage therapists work only in clients' homes. They have no storefront and often no Maps listing,
-but they do have their own website, which is what Exa indexes and matches on meaning.
+Why it fits this category: Google Maps finds businesses by keyword and location, but most
+private chefs have no storefront. They cook in clients' homes, so many have no Maps listing, and
+the ones that do sit beside restaurants. What they do have is their own website, which is what Exa
+indexes and matches on meaning.
 
 - **Plain-language queries, as Exa recommends.** `config/category.yaml` holds a few
-  descriptions of the business wanted, for example "independent mobile massage therapists who
-  travel to clients' homes in {city}, business homepages". Each runs once per planned city with
-  `type="auto"` and `category="company"`. Directories and shared platforms (Yelp, Vagaro,
-  Instagram) are excluded in the request and filtered again locally.
+  descriptions of the business wanted, for example "independent private chefs who cook in
+  clients' homes in {city}, personal chef business homepages". Each runs once per planned city with
+  `type="auto"` and `category="company"`. Directories and shared platforms (Yelp,
+  Take a Chef, Instagram) are excluded in the request and filtered again locally.
 - **Query consensus as a confidence signal.** A business found by several phrasings is more
   likely to fit. The count is stored on each lead. Enrichment and qualification process
   high-consensus leads first, so they survive a budget or target cutoff, and every judge decision
@@ -277,7 +280,7 @@ is a readable diff.
 
 ## Contact enrichment
 
-`leadgen enrich https://www.cedar-massage.example` looks up a phone and an email for the business
+`leadgen enrich https://www.saffron-table.example` looks up a phone and an email for the business
 behind a website ([`contacts.py`](src/leadgen/contacts.py)). It is a plain function with a fixed
 input and output, not an agent. BlitzAPI keys its data on LinkedIn, so one lookup is a short
 fixed chain, each step one HTTP call, stopping at the first step that finds nothing: domain →
@@ -316,7 +319,7 @@ as a plain message, so a configuration problem is never hidden. Tests fake every
 neither the test suite nor CI touches the network.
 
 ```bash
-uv run leadgen web search "mobile massage Pasadena"          # top results
+uv run leadgen web search "private chef Pasadena"          # top results
 uv run leadgen web fetch https://example.com/services --free  # main text, cached
 ```
 
@@ -373,7 +376,7 @@ columns), so `(310) 555-0142` and `+1 310.555.0142` are the same lead and the se
 every lead needs a phone or an email; statuses and sources are fixed lists. `gap_view` computes
 Leads Available % per market, and `read_gaps()` returns the markets below 100%, biggest gap first.
 
-The demo data is fictional and deterministic: eight real US markets, invented massage businesses on
+The demo data is fictional and deterministic: eight real US markets, invented private-chef businesses on
 `.example` domains, and phone numbers in the 555-0100 to 555-0199 range reserved for fiction.
 
 ### Census places and market expansion

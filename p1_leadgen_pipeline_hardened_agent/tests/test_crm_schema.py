@@ -30,10 +30,10 @@ def test_the_same_email_in_another_case_is_a_duplicate(
     migrated_connection: psycopg.Connection,
 ) -> None:
     market_id = add_market(migrated_connection)
-    add_lead(migrated_connection, market_id, email="Hello@CedarMassage.example")
+    add_lead(migrated_connection, market_id, email="Hello@CedarTable.example")
 
     with pytest.raises(psycopg.errors.UniqueViolation):
-        add_lead(migrated_connection, market_id, email="  hello@cedarmassage.example ")
+        add_lead(migrated_connection, market_id, email="  hello@cedartable.example ")
 
 
 def test_the_same_google_place_is_a_duplicate(migrated_connection: psycopg.Connection) -> None:
@@ -47,9 +47,9 @@ def test_the_same_google_place_is_a_duplicate(migrated_connection: psycopg.Conne
 @pytest.mark.parametrize(
     ("website", "expected_domain"),
     [
-        ("https://www.CedarMassage.example/services?ref=maps#top", "cedarmassage.example"),
-        ("http://cedarmassage.example:8080", "cedarmassage.example"),
-        ("cedarmassage.example/about", "cedarmassage.example"),
+        ("https://www.CedarTable.example/services?ref=maps#top", "cedartable.example"),
+        ("http://cedartable.example:8080", "cedartable.example"),
+        ("cedartable.example/about", "cedartable.example"),
         ("   ", None),
     ],
 )

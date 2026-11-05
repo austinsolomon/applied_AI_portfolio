@@ -218,16 +218,26 @@ def distance_km(latitude, longitude, center_latitude, center_longitude):
     return 6371 * 2 * math.asin(math.sqrt(min(1, value)))
 
 
-def grade_sample(connection, run_id, cell, leads, *, discount=0.15):
+def on_category(maps_category, category):
+    """A Maps category such as "Personal chef service" counts when it contains one of the
+    configured terms and none of the excludes ("Restaurant", "Cooking school")."""
+    lowered = maps_category.lower()
+    return any(term.lower() in lowered for term in category.maps_category_terms) and not any(
+        exclude.lower() in lowered for exclude in category.maps_category_excludes
+    )
+
+
+def grade_sample(connection, run_id, cell, leads, *, category=None, discount=0.15):
+    if category is None:
+        from leadgen.category_config import load_category_config
+
+        category = load_category_config()
     market = connection.execute(
         "SELECT center_latitude,center_longitude,service_radius_km FROM markets WHERE market_id=%s",
         (cell.market_id,),
     ).fetchone()
     pure = sum(
-        any(
-            "massage" in category.lower() and "school" not in category.lower()
-            for category in lead.categories
-        )
+        any(on_category(maps_category, category) for maps_category in lead.categories)
         for lead in leads
     )
     in_market = sum(

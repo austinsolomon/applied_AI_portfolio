@@ -38,33 +38,33 @@ def fixture_urls_do_not_need_dns(monkeypatch):
 
 
 USD_PER_CREDIT = Decimal("0.0032")
-PAGE_URL = "https://serenity-mobile-massage.example/services"
+PAGE_URL = "https://serenity-private-chef.example/services"
 
 # Long enough for trafilatura's main-content extractor; navigation and footer must be dropped.
 SERVICES_HTML = """
-<html><head><title>Serenity Mobile Massage | Services</title></head>
+<html><head><title>Serenity Private Chef | Services</title></head>
 <body>
 <nav><a href="/">Home</a> <a href="/book">Book now</a> <a href="/faq">FAQ</a></nav>
 <main>
-<h1>Mobile massage in Pasadena</h1>
-<p>We bring a licensed massage therapist to your home, hotel or office anywhere in Pasadena,
+<h1>Private chef in Pasadena</h1>
+<p>We bring a professional private chef to your home, hotel or office anywhere in Pasadena,
 Glendale and Burbank. Sessions run 60, 90 or 120 minutes and include a portable table, fresh
 linens and oils. Book online or call us; same-day appointments are often available in the
 afternoon.</p>
-<p>Our therapists are certified in Swedish, deep tissue and prenatal massage, and every visit
+<p>Our therapists are certified in Italian, Mexican and plant-based menus, and every visit
 is covered by liability insurance.</p>
 </main>
-<footer>Copyright 2026 Serenity Mobile Massage</footer>
+<footer>Copyright 2026 Serenity Private Chef</footer>
 </body></html>
 """
 
 FIRECRAWL_SCRAPE_RESPONSE = {
     "success": True,
     "data": {
-        "markdown": "# Mobile massage in Pasadena\n\nWe bring a licensed massage therapist to "
+        "markdown": "# Private chef in Pasadena\n\nWe bring a professional private chef to "
         "your home, hotel or office anywhere in Pasadena, Glendale and Burbank.",
         "metadata": {
-            "title": "Serenity Mobile Massage | Services",
+            "title": "Serenity Private Chef | Services",
             "sourceURL": PAGE_URL,
             "url": PAGE_URL,
             "statusCode": 200,
@@ -77,13 +77,13 @@ FIRECRAWL_SEARCH_RESPONSE = {
     "data": {
         "web": [
             {
-                "url": "https://serenity-mobile-massage.example/",
-                "title": "Serenity Mobile Massage",
-                "description": "In-home massage across Pasadena and Glendale.",
+                "url": "https://serenity-private-chef.example/",
+                "title": "Serenity Private Chef",
+                "description": "In-home dinners across Pasadena and Glendale.",
             },
             {
-                "url": "https://pasadena-wellness-directory.example/massage",
-                "title": "Massage therapists in Pasadena",
+                "url": "https://pasadena-dining-directory.example/chefs",
+                "title": "Private chefs in Pasadena",
                 "description": "A directory of local therapists.",
             },
         ]
@@ -136,22 +136,22 @@ def test_firecrawl_search_sends_the_query_and_parses_web_results(
     )
     researcher = WebResearcher(migrated_connection, firecrawl_backend(http_client))
 
-    results = researcher.search("mobile massage Pasadena", limit=2)
+    results = researcher.search("private chef Pasadena", limit=2)
 
     sent = search_route.calls.last.request
     assert sent.headers["Authorization"] == "Bearer fc-test-key"
     assert httpx.Request.read(sent) == (
-        b'{"query":"mobile massage Pasadena","limit":2,"sources":[{"type":"web"}]}'
+        b'{"query":"private chef Pasadena","limit":2,"sources":[{"type":"web"}]}'
     )
     assert results == [
         SearchResult(
-            "https://serenity-mobile-massage.example/",
-            "Serenity Mobile Massage",
-            "In-home massage across Pasadena and Glendale.",
+            "https://serenity-private-chef.example/",
+            "Serenity Private Chef",
+            "In-home dinners across Pasadena and Glendale.",
         ),
         SearchResult(
-            "https://pasadena-wellness-directory.example/massage",
-            "Massage therapists in Pasadena",
+            "https://pasadena-dining-directory.example/chefs",
+            "Private chefs in Pasadena",
             "A directory of local therapists.",
         ),
     ]
@@ -164,8 +164,8 @@ def test_firecrawl_search_is_ledgered_at_credits_times_price(
     run_id = uuid.uuid4()
     researcher = WebResearcher(migrated_connection, firecrawl_backend(http_client), run_id=run_id)
 
-    researcher.search("mobile massage Pasadena")
-    researcher.search("in-home massage Glendale")
+    researcher.search("private chef Pasadena")
+    researcher.search("personal chef Glendale")
 
     assert ledger_rows(migrated_connection) == [
         ("firecrawl", None, "/v2/search", 2, 1, Decimal("0.006400")),
@@ -196,11 +196,11 @@ def test_firecrawl_fetch_returns_markdown_and_charges_one_credit(
 
     sent_body = httpx.Request.read(scrape_route.calls.last.request)
     assert sent_body == (
-        b'{"url":"https://serenity-mobile-massage.example/services",'
+        b'{"url":"https://serenity-private-chef.example/services",'
         b'"formats":["markdown"],"onlyMainContent":true}'
     )
-    assert page.title == "Serenity Mobile Massage | Services"
-    assert page.text.startswith("# Mobile massage in Pasadena")
+    assert page.title == "Serenity Private Chef | Services"
+    assert page.text.startswith("# Private chef in Pasadena")
     assert (page.backend, page.status_code, page.from_cache) == ("firecrawl", 200, False)
     assert ledger_rows(migrated_connection) == [
         ("firecrawl", None, "/v2/scrape", 1, 1, Decimal("0.003200"))
@@ -310,7 +310,7 @@ def test_firecrawl_outage_falls_back_to_the_free_backend_without_a_charge(
 
     assert free_route.called
     assert page.backend == "free"
-    assert "licensed massage therapist" in page.text
+    assert "professional private chef" in page.text
     assert ledger_rows(migrated_connection) == []
     assert cache_rows(migrated_connection) == [(PAGE_URL, "free")]
 
@@ -343,7 +343,7 @@ def test_free_fetch_extracts_main_text_and_drops_navigation(
 
     page = researcher.fetch_page(PAGE_URL)
 
-    assert page.title == "Mobile massage in Pasadena"
+    assert page.title == "Private chef in Pasadena"
     assert "Sessions run 60, 90 or 120 minutes" in page.text
     assert "Book now" not in page.text
     assert "Copyright" not in page.text
@@ -354,7 +354,7 @@ def test_free_fetch_extracts_main_text_and_drops_navigation(
 def test_free_fetch_follows_redirects_and_keeps_the_final_url(
     migrated_connection: psycopg.Connection, mocked_web: respx.MockRouter, http_client: httpx.Client
 ) -> None:
-    moved_url = "http://serenity-mobile-massage.example/old-services"
+    moved_url = "http://serenity-private-chef.example/old-services"
     mocked_web.get(moved_url).respond(status_code=301, headers={"Location": PAGE_URL})
     mocked_web.get(PAGE_URL).respond(html=SERVICES_HTML)
     researcher = WebResearcher(migrated_connection, FreeWebBackend(http_client=http_client))
@@ -409,28 +409,26 @@ def test_free_search_parses_duckduckgo_results_and_unwraps_redirects(
     search_route = mocked_web.post(DUCKDUCKGO_HTML_URL).respond(
         html=duckduckgo_results_html(
             (
-                "https://serenity-mobile-massage.example/?ref=ddg",
-                "Serenity <b>Mobile</b> Massage",
-                "In-home massage across\n  Pasadena &amp; Glendale.",
+                "https://serenity-private-chef.example/?ref=ddg",
+                "Serenity <b>Private</b> Chef",
+                "In-home dinners across\n  Pasadena &amp; Glendale.",
             ),
-            ("https://pasadena-wellness-directory.example/massage", "Directory", "Listings."),
+            ("https://pasadena-dining-directory.example/chefs", "Directory", "Listings."),
             ("https://third-result.example/", "Third", "Beyond the limit."),
         )
     )
     researcher = WebResearcher(migrated_connection, FreeWebBackend(http_client=http_client))
 
-    results = researcher.search("mobile massage Pasadena", limit=2)
+    results = researcher.search("private chef Pasadena", limit=2)
 
-    assert b"q=mobile+massage+Pasadena" in httpx.Request.read(search_route.calls.last.request)
+    assert b"q=private+chef+Pasadena" in httpx.Request.read(search_route.calls.last.request)
     assert results == [
         SearchResult(
-            "https://serenity-mobile-massage.example/?ref=ddg",
-            "Serenity Mobile Massage",
-            "In-home massage across Pasadena & Glendale.",
+            "https://serenity-private-chef.example/?ref=ddg",
+            "Serenity Private Chef",
+            "In-home dinners across Pasadena & Glendale.",
         ),
-        SearchResult(
-            "https://pasadena-wellness-directory.example/massage", "Directory", "Listings."
-        ),
+        SearchResult("https://pasadena-dining-directory.example/chefs", "Directory", "Listings."),
     ]
     assert ledger_rows(migrated_connection) == []
 
@@ -514,7 +512,7 @@ def test_stale_cache_entry_is_refetched_and_replaced(
         "SELECT text, fetched_at > now() - interval '1 minute' FROM page_cache"
     ).fetchall()
     assert len(rows) == 1
-    assert rows[0][0].startswith("# Mobile massage") and rows[0][1] is True
+    assert rows[0][0].startswith("# Private chef") and rows[0][1] is True
 
 
 def test_cache_key_ignores_fragments_and_host_case(
@@ -527,7 +525,7 @@ def test_cache_key_ignores_fragments_and_host_case(
 
     researcher.fetch_page(PAGE_URL)
     researcher.fetch_page(f"{PAGE_URL}#pricing")
-    page = researcher.fetch_page("  HTTPS://Serenity-Mobile-Massage.example/services  ")
+    page = researcher.fetch_page("  HTTPS://Serenity-Private-Chef.example/services  ")
 
     assert scrape_route.call_count == 1
     assert page.from_cache
@@ -714,7 +712,7 @@ def test_firecrawl_site_search_adds_a_site_operator(
     )
     researcher = WebResearcher(migrated_connection, firecrawl_backend(http_client))
 
-    researcher.search("services", limit=3, site="serenity-mobile-massage.example")
+    researcher.search("services", limit=3, site="serenity-private-chef.example")
 
     sent = httpx.Request.read(search_route.calls.last.request)
-    assert b'"query":"site:serenity-mobile-massage.example services"' in sent
+    assert b'"query":"site:serenity-private-chef.example services"' in sent

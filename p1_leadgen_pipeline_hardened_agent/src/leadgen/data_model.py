@@ -52,12 +52,12 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                     {
                         "lead_id": 401,
                         "market_id": 1,
-                        "business_name": "Desert Glow Mobile Massage",
+                        "business_name": "Desert Sage Private Chef",
                         "status": "available",
                         "phone": "(602) 555-0142",
-                        "website_domain": "desertglow.example",
+                        "website_domain": "desertsage.example",
                         "source": "exa",
-                        "qualification_reason": "Travels to clients' homes in Phoenix",
+                        "qualification_reason": "Private chef cooking in clients' homes in Phoenix",
                     },
                     {
                         "lead_id": 12,
@@ -142,7 +142,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                         "plan_id": 3,
                         "market_id": 1,
                         "city": "Phoenix, AZ",
-                        "keyword": "mobile massage",
+                        "keyword": "private chef",
                         "expected_raw_leads": 30,
                         "estimated_cost_usd": 1.00,
                         "status": "scraped",
@@ -258,8 +258,8 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                     {
                         "raw_lead_id": 214,
                         "source": "exa",
-                        "business_name": "Desert Glow Mobile Massage",
-                        "website": "https://desertglow.example/",
+                        "business_name": "Desert Sage Private Chef",
+                        "website": "https://desertsage.example/",
                         "query_consensus": 3,
                         "duplicate": False,
                         "enriched": True,
@@ -296,11 +296,11 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                 "days so a repeat read costs nothing.",
                 [
                     {
-                        "url": "https://desertglow.example/",
+                        "url": "https://desertsage.example/",
                         "backend": "exa",
                         "status_code": 200,
-                        "title": "Desert Glow | Mobile massage in Phoenix",
-                        "text": "We bring the table to your home across Phoenix, Mesa…",
+                        "title": "Desert Sage | Private chef in Phoenix",
+                        "text": "Private dinners and meal prep in your home across Phoenix…",
                     }
                 ],
             ),
@@ -310,11 +310,11 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                 "and their email and phone, so a domain is never paid for twice.",
                 [
                     {
-                        "domain": "desertglow.example",
+                        "domain": "desertsage.example",
                         "found": True,
                         "person_name": "Jordan Example",
                         "person_title": "Owner",
-                        "email": "jordan@desertglow.example",
+                        "email": "jordan@desertsage.example",
                         "records_used": 2,
                     },
                     {
@@ -354,7 +354,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                 [
                     {
                         "reservation_id": 301,
-                        "operation": "exa:1:independent mobile massage…",
+                        "operation": "exa:1:independent private chefs…",
                         "ceiling_usd": 0.03,
                         "status": "succeeded",
                     },
@@ -402,9 +402,9 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                     {
                         "eval_record_id": 77,
                         "kind": "judge_decision",
-                        "subject": "Desert Glow Mobile Massage",
+                        "subject": "Desert Sage Private Chef",
                         "verdict": "qualified",
-                        "reason": "Travels to clients' homes in Phoenix",
+                        "reason": "Private chef cooking in clients' homes in Phoenix",
                         "model": "claude-haiku-5-5",
                     }
                 ],
@@ -429,7 +429,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                 [
                     {
                         "trace_id": 501,
-                        "operation": "exa:1:independent mobile massage…",
+                        "operation": "exa:1:independent private chefs…",
                         "outcome": "succeeded",
                         "latency_ms": 1840,
                     },
@@ -449,7 +449,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                     {
                         "audit_event_id": 1203,
                         "actor": "Exa stage",
-                        "action": "sends company search 'independent mobile massage…'",
+                        "action": "sends company search 'independent private chefs…'",
                         "target": "Exa API",
                     },
                     {
