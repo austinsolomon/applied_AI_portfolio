@@ -1,0 +1,19 @@
+# Standing policy for `leadgen weekly`: the approval a person would otherwise give with
+# `leadgen plan`. A plan whose estimated Maps + Exa ceilings do not leave room under budget_usd
+# is refused, and the budget reservations still stop any paid call that would exceed it.
+# Changing this file changes the approver recorded on the next plan (policy:weekly@<file sha>).
+
+# Total spend allowed for one run, all services (Maps, Exa, Blitz, Firecrawl, Anthropic).
+# Anthropic also has its own fixed 0.75 USD per-plan allowance inside this budget.
+budget_usd: 3.00
+
+# Plan size: cities from the market's Census places, keywords from config/category.yaml.
+max_cities: 1
+max_keywords: 1
+target_leads: 30
+
+# Run at most once per this many days, even if the job is triggered again.
+min_days_between_runs: 6
+
+# Optional: always plan this market (e.g. "Phoenix, AZ") instead of the biggest gap.
+market: null

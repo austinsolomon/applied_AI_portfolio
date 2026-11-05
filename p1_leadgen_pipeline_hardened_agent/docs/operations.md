@@ -32,6 +32,23 @@ Queue retries are suitable for repeatable work. Pipeline enrichment uses one att
 provider timeout can already have consumed credits. General queue consumers may choose a larger
 attempt limit. Do not requeue a job whose worker may still be running an external operation.
 
+## Weekly unattended runs
+
+`leadgen weekly` approves plans by policy (`config/weekly_policy.yaml`), not by a person. Before
+changing the policy, run `leadgen weekly --dry-run`: it shows the market, cities and ceilings the
+policy would approve and stores nothing. Each approval records the policy file's git blob id
+(`policy:weekly@<sha>`), so `git log` on the policy file shows which limits approved a run.
+
+| Exit | What to do |
+|---|---|
+| 0 | Nothing. The summary is in the output, in `traces` (operation `weekly`) and in the dashboard |
+| 1 | The run failed. Read the summary's `error`, then follow Failure recovery above; the next weekly run stays blocked while any paid call is uncertain |
+| 2 | Nothing. It already ran within the cadence, or no market is below goal |
+| 3 | Act on the reason: run `leadgen db migrate`, reconcile uncertain reservations, or raise `budget_usd` or shrink the plan in the policy file |
+
+The weekly command never migrates and never retries a failed run by itself. Retrying paid work is
+always an operator decision.
+
 ## Review and evidence
 
 `leadgen evals review` opens the review UI. Label decisions, then export fixtures with

@@ -122,7 +122,54 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="continue a failed run after reconciling provider usage",
     )
+    weekly_parser = commands.add_parser(
+        "weekly",
+        help="plan, approve by standing policy and run the full pipeline, unattended (paid)",
+    )
+    weekly_parser.add_argument(
+        "--policy", type=Path, default=Path("config/weekly_policy.yaml"), help="policy file"
+    )
+    weekly_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show the market, plan and ceilings the policy would approve; store and spend nothing",
+    )
+    weekly_parser.add_argument(
+        "--audit", action="store_true", help="write a verbose audit trail (dashboard Audit log tab)"
+    )
     return parser
+
+
+def run_weekly_command(arguments) -> int:
+    """Exit codes: 0 ran (or dry run fits), 1 error, 2 nothing to do, 3 needs a human."""
+    import asyncio
+    import json
+
+    from leadgen.weekly import EXIT_ERROR, PolicyError, load_policy, post_to_slack, run_weekly
+
+    if arguments.audit:
+        from leadgen.audit import enable_audit
+
+        enable_audit()
+    try:
+        policy, version = load_policy(arguments.policy)
+        settings = get_settings()
+        with connect() as connection:
+            exit_code, summary = asyncio.run(
+                run_weekly(connection, settings, policy, version, dry_run=arguments.dry_run)
+            )
+    except PolicyError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    except (ValidationError, psycopg.OperationalError) as error:
+        return report_database_error(error)
+    except Exception as error:
+        print(f"leadgen weekly stopped: {type(error).__name__}: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    print(json.dumps(summary, indent=2))
+    if settings.slack_webhook_url and not arguments.dry_run:
+        post_to_slack(settings.slack_webhook_url.get_secret_value(), summary)
+    return exit_code
 
 
 def report_database_error(error: Exception) -> int:
@@ -486,6 +533,8 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     if arguments.command in ("plan", "run"):
         return run_pipeline_command(arguments)
+    if arguments.command == "weekly":
+        return run_weekly_command(arguments)
     if arguments.command == "db" and arguments.db_command == "migrate":
         return run_migrate()
     if arguments.command == "db" and arguments.db_command == "seed-demo":

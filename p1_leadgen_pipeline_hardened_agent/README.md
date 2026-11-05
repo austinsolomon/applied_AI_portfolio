@@ -103,6 +103,7 @@ its first live run will replace this row.
 | Maps and Exa sourcing, qualification, CRM write | done; live Maps-to-CRM sample verified; Exa live run through qualification (partial: research and CRM write pending) |
 | Eval capture, weekly review page, labels exported as test fixtures | done |
 | SDK orchestrator, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
+| Unattended weekly run approved by a standing policy (`leadgen weekly`) | done; tested with fake providers |
 | Scheduled cloud deployment | planned |
 
 ## Quickstart
@@ -163,6 +164,40 @@ The Phoenix sample sourced 50 businesses, qualified 12 and saved 10 with usable 
 ledger total was 1.385297 USD, including 0.374400 USD of conservative web estimates; Anthropic
 accounted for 0.097097 USD. Twenty-four businesses remain for human review. Exact Firecrawl
 invoice reconciliation and cloud deployment remain open.
+
+## Unattended weekly run
+
+```bash
+uv run leadgen weekly --dry-run   # what the policy would approve: market, cities, ceilings; spends nothing
+uv run leadgen weekly --audit     # plan, approve by policy and run every stage, no person in the loop
+```
+
+`leadgen weekly` replaces the one human approval with a standing policy,
+[`config/weekly_policy.yaml`](config/weekly_policy.yaml): total budget per run, plan size, an
+optional pinned market, and a minimum number of days between runs. It then:
+
+1. Refuses to start if migrations are not applied, a run is still marked running, or any paid
+   call has an unknown outcome. Those need a person ([operations](docs/operations.md)).
+2. Does nothing if a policy-approved plan already ran within `min_days_between_runs`, or if
+   every market is at its goal.
+3. Builds the plan for the biggest gap (or the pinned market) and refuses it if the Maps and
+   Exa ceilings leave no room under the policy budget.
+4. Approves it as `policy:weekly@<policy file sha>` through the same approval path a person
+   uses, so the audit trail names the policy version. The pre-tool-use hook and budget
+   reservations enforce that budget on every paid call, exactly as for a human approval.
+5. Runs every stage through the Agent SDK orchestrator, the same path as `leadgen run`.
+6. Prints a JSON summary (run, market, sourced by source, duplicates, verdicts, CRM inserts,
+   spend by service vs budget), stores it in `traces`, and posts it to `SLACK_WEBHOOK_URL` if
+   that is set. A failed post never fails the run.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Ran to completion (or the dry run fits the policy) |
+| 1 | The run started and failed; inspect the summary and traces |
+| 2 | Nothing to do: already ran this cadence, or every market is at goal |
+| 3 | Needs a person: unapplied migrations, unreconciled paid calls, or a plan over policy |
+
+The exit codes let a scheduler such as cron or Cloud Scheduler tell these cases apart.
 
 ## Dashboard
 
