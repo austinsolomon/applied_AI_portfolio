@@ -235,7 +235,7 @@ logo and implies no endorsement.
 | Audit log | For a plan run with `--audit`: each major step as Who (X), a plain-language Summary (for example "Company search returns 25 results — independent CFP® financial planners … in Phoenix, AZ" or "Allows the tool call (approved stage) — run_stage maps") and the recorded Details as JSON; filter by the 19 actors in pipeline order, search, newest first; refreshes every 5 s |
 | Run history | One row per run: market, status, Maps and Exa sourced, new, qualified, review, rejected, CRM inserted, spend vs budget, cost per qualified lead |
 | Sources and spend | Qualification rate per source, Exa query-consensus breakdown, spend per service (provider-reported vs estimated) |
-| Eval review | Label the pipeline's decisions; labels export as test fixtures |
+| Eval review | One judge decision per screen (business, market, source, run, tier) beside the page text it read with the judge's quote highlighted; blind mode hides the verdict until you pick your own; a Pass/Fail label, with a one-line critique, the correct verdict and failure-mode tags on a fail; automatic checks as plain sentences; a judge-alignment panel (confusion matrix, raw agreement, precision and recall per verdict); failure-mode counts; JSONL export. The workflow follows Hamel Husain's "Your AI Product Needs Evals" |
 | Data model | Every Postgres table and view: one sentence on what it holds, its live row count, and a few made-up example rows |
 
 Only the Eval review tab writes, and only labels. The page shows contact details and evidence, so

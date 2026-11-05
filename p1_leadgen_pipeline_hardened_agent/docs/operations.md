@@ -51,8 +51,15 @@ always an operator decision.
 
 ## Review and evidence
 
-`leadgen evals review` opens the review UI. Label decisions, then export fixtures with
-`leadgen evals export-fixtures --out out/evals`. Review and redact business contact data and page
+`leadgen evals review` opens the review UI (also the dashboard's Eval review tab). It follows the
+error-analysis loop of Hamel Husain's "Your AI Product Needs Evals": work through the queue one
+judge decision at a time (unlabeled `review` verdicts first), read the evidence page, pick your own
+verdict while blind mode hides the judge's, then answer "Was the judge right?" Pass or Fail; a fail
+takes a one-line critique, the verdict it should have been and failure-mode tags (the list is
+`eval_failure_modes` in `config/category.yaml`). Use the Judge alignment panel's per-verdict
+precision and recall, and the failure-mode counts, to decide what to change in the judge
+requirement or rubric. Then export fixtures with `leadgen evals export-fixtures --out out/evals`
+(or the page's JSONL download); both carry your verdict, failure modes and critique. Review and redact business contact data and page
 text before moving any fixture into version control. The local database contains the full evidence;
 the public sample report contains business names and aggregate counts only.
 
