@@ -134,10 +134,13 @@ uv run leadgen plan --target 50 --max-cities 1 --max-keywords 1 --budget-usd 5
 uv run leadgen run --plan latest
 ```
 
-Add `--audit` to both commands to record a verbose audit trail of that execution: one row per step
-(planner reads, the approval, Agent SDK tool calls and hook decisions, budget reservations, every
-provider request and response, cache hits, job claims, checkpoints, CRM writes), read in the
-dashboard's Audit log tab while the run executes. It is off by default.
+Add `--audit` to both commands to record an audit trail of that execution: one row per major step,
+from 19 actors named "Tool (role)" in pipeline order (`ACTORS` in `src/leadgen/audit.py`): the
+approval (CLI or weekly policy), the planner, Agent SDK tool calls and PreToolUse hook decisions,
+budget reservations, each paid Apify, Exa, Firecrawl, BlitzAPI and Claude call with its
+`cost_usd`, the sample grader, contact extraction, dedupe and citation checks, the research agent,
+stage and run state, and the CRM upload. Cache hits, ledger rows and job claims are not rows of
+their own. Read it in the dashboard's Audit log tab while the run executes. It is off by default.
 
 The planner selects the market with the lowest available-lead coverage, expands it using Census
 places, and displays its cells and Maps and Exa ceilings before asking for one approval. The total budget
@@ -223,7 +226,7 @@ logo and implies no endorsement.
 |---|---|
 | Demand gaps | Leads Available % per market, biggest gap first |
 | Current run | The seven stages in order, each done, running, failed, waiting or "needs a human", with stage results, job progress, spend vs budget and recent events; refreshes every 10 s |
-| Audit log | For a plan run with `--audit`: every step of the execution as Who (X) → Does (Y) → To (Z), for example "Exa stage → sends company search '…' → Exa API" or "PreToolUse hook → allows the tool call → Agent SDK"; filter by actor, search, newest first; refreshes every 5 s |
+| Audit log | For a plan run with `--audit`: each major step of the execution as Who (X) → Does (Y) → To (Z), for example "Exa API (Search) → company search returns 25 results → '…private chefs in Phoenix, AZ'" or "Claude Agent SDK (PreToolUse hook) → allows the tool call → run_stage maps"; filter by the 19 actors in pipeline order, search, newest first; refreshes every 5 s |
 | Run history | One row per run: market, status, Maps and Exa sourced, new, qualified, review, rejected, CRM inserted, spend vs budget, cost per qualified lead |
 | Sources and spend | Qualification rate per source, Exa query-consensus breakdown, spend per service (provider-reported vs estimated) |
 | Eval review | Label the pipeline's decisions; labels export as test fixtures |

@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from apify_client import ApifyClient
 
-from leadgen.audit import audit
+from leadgen.audit import APIFY_GOOGLE_MAPS, SAMPLE_GRADER, audit
 from leadgen.budget import paid_operation, record_cost
 from leadgen.eval_review import record_eval
 from leadgen.plans import attach_scraper_run
@@ -87,15 +87,17 @@ def source_maps(
                 (cell.apify_run_id,),
             ).fetchone()[0]
         actor_run = None
+        abort_reason = None
         try:
             if stage == "full" and cell.apify_run_id:
                 audit(
                     connection,
-                    "Maps stage",
-                    f"resumes Apify run {cell.apify_run_id} for the full scrape "
-                    f"(up to {cell.expected_raw_leads} places)",
-                    f"Apify ({ACTOR})",
+                    APIFY_GOOGLE_MAPS,
+                    f"resumes run {cell.apify_run_id} for the full scrape "
+                    f"(up to {cell.expected_raw_leads} places, ${ceiling} cap)",
+                    f"{cell.keyword} in {cell.city}",
                     run_id=run_id,
+                    apify_actor=ACTOR,
                 )
                 actor_run = client.run(cell.apify_run_id).resurrect(
                     max_total_charge_usd=ceiling + previous_charge,
@@ -105,11 +107,12 @@ def source_maps(
             else:
                 audit(
                     connection,
-                    "Maps stage",
-                    f"starts the Google Maps scraper for {cell.keyword!r} in {cell.city} "
+                    APIFY_GOOGLE_MAPS,
+                    f"starts the Google Maps scraper "
                     f"({stage}, up to {cell.expected_raw_leads} places, ${ceiling} cap)",
-                    f"Apify ({ACTOR})",
+                    f"{cell.keyword} in {cell.city}",
                     run_id=run_id,
+                    apify_actor=ACTOR,
                 )
                 actor_run = client.actor(ACTOR).start(
                     run_input={
@@ -132,25 +135,12 @@ def source_maps(
                     connection, run_id, cell.market_id, "google_maps", leads, cell_id=cell.cell_id
                 )
                 unique = len({lead.source_key for lead in leads})
-                audit(
-                    connection,
-                    f"Apify ({ACTOR})",
-                    f"reports {actor_run['status']} with {unique} places so far "
-                    f"(${apify_cost(actor_run)} used)",
-                    "Maps stage",
-                    run_id=run_id,
-                )
                 if actor_run["status"] in TERMINAL:
                     break
                 spend = apify_cost(actor_run)
                 if unique >= limit or spend >= ceiling + previous_charge:
-                    audit(
-                        connection,
-                        "Maps stage",
-                        f"aborts the scraper ({unique} places reached the limit of {limit} "
-                        f"or ${spend} reached the cap)",
-                        f"Apify ({ACTOR})",
-                        run_id=run_id,
+                    abort_reason = (
+                        f"{unique} places reached the limit of {limit} or ${spend} reached the cap"
                     )
                     actor_run = resource.abort()
                     break
@@ -186,23 +176,30 @@ def source_maps(
                 persist_leads(
                     connection, run_id, cell.market_id, "google_maps", leads, cell_id=cell.cell_id
                 )
-                audit(
-                    connection,
-                    "Maps stage",
-                    f"reads the final dataset and saves {len(leads)} businesses",
-                    "Postgres raw_leads",
-                    run_id=run_id,
-                    businesses=[lead.business_name for lead in leads],
-                )
                 spend = apify_cost(actor_run)
+                cost = max(Decimal(0), spend - previous_charge)
                 record_cost(
                     connection,
                     run_id,
                     "apify",
-                    max(Decimal(0), spend - previous_charge),
+                    cost,
                     endpoint=ACTOR,
                     units=len(leads),
                     request_id=actor_run["id"],
+                )
+                audit(
+                    connection,
+                    APIFY_GOOGLE_MAPS,
+                    (
+                        f"aborts the scraper ({abort_reason}) and returns {len(leads)} businesses"
+                        if abort_reason
+                        else f"finishes as {actor_run['status']} with {len(leads)} businesses"
+                    ),
+                    f"{cell.keyword} in {cell.city}",
+                    run_id=run_id,
+                    apify_run_id=actor_run["id"],
+                    businesses=[lead.business_name for lead in leads],
+                    cost_usd=cost,
                 )
         return leads
 
@@ -275,10 +272,10 @@ def grade_sample(connection, run_id, cell, leads, *, category=None, discount=0.1
     )
     audit(
         connection,
-        "Sample grader (code)",
+        SAMPLE_GRADER,
         f"grades the {count}-place sample {verdict} (category purity {purity:.0%}, "
         f"in market {coverage:.0%})",
-        "Postgres scrape_plan_cells + eval_records",
+        f"{cell.keyword} in {cell.city}",
         run_id=run_id,
     )
     return verdict

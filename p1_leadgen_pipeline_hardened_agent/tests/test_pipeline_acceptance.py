@@ -11,6 +11,7 @@ import pytest
 from claude_agent_sdk import ResultMessage
 from pydantic import SecretStr
 
+from leadgen.audit import ACTORS
 from leadgen.budget import BudgetBlocked, paid_operation, plan_spend, reserve
 from leadgen.category_config import load_category_config
 from leadgen.orchestrator import (
@@ -830,37 +831,41 @@ def test_audit_trail_records_one_execution_as_who_does_what_to_whom(
     test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_url, monkeypatch)
     connection, plan = approved
     rows = connection.execute(
-        "SELECT actor, action, target, plan_id FROM audit_events ORDER BY audit_event_id"
+        "SELECT actor, action, target, plan_id, detail FROM audit_events ORDER BY audit_event_id"
     ).fetchall()
-    assert all(plan_id == plan.plan_id for *_, plan_id in rows)
-    trail = [f"{actor} | {action} | {target}" for actor, action, target, _ in rows]
+    assert all(plan_id == plan.plan_id for *_, plan_id, _detail in rows)
+    trail = [f"{actor} | {action} | {target}" for actor, action, target, *_ in rows]
 
     def first(fragment):
         return next(index for index, line in enumerate(trail) if fragment in line)
 
     # The execution, in the order it happened.
     milestones = [
-        "Runner (leadgen run) | starts run",
-        "Runner (leadgen run) | opens an Agent SDK session",
-        "leadgen MCP tool run_stage | executes stage maps",
-        "Pipeline runner | enters stage maps",
-        "Maps stage | reserves $",
-        "Maps stage | starts the Google Maps scraper",
-        "Pipeline runner | checkpoints stage maps",
-        "Exa stage | sends company search",
-        "Dedupe stage | keeps",
-        "Enrich worker",
-        "Qualify worker",
-        "Claude judge | asks for a structured verdict",
-        "Citation check (code)",
-        "CRM writer | inserts 1",
-        "Agent SDK | ends the orchestrator session",
-        "Runner (leadgen run) | closes run as finished",
+        "Postgres (State machine) | run ",
+        "Claude Agent SDK (Tool call) | calls run_stage('maps')",
+        "Postgres (State machine) | stage maps started",
+        "Postgres (Budget reservation) | reserves $1.0000 ceiling for maps",
+        "Apify API (Google Maps) | starts the Google Maps scraper",
+        "Python (Sample grader) | grades",
+        "Postgres (State machine) | stage maps finished",
+        "Exa API (Search) | company search returns",
+        "Python (Contact extraction) | reads",
+        "Postgres (Dedupe) | keeps",
+        "Claude API (LLM call) | returns verdict",
+        "Python (Citation check)",
+        "Postgres (CRM upload) | inserts 1",
+        "Postgres (State machine) | run finished",
     ]
     positions = [first(milestone) for milestone in milestones]
     assert positions == sorted(positions)
-    assert any("| Postgres cost_ledger" in line for line in trail)
     assert not any("@" in line for line in trail), "no email addresses in the audit trail"
+    # Every row comes from one of the 19 actors, and the trail stays readable: the same fake run
+    # wrote 94 rows from 25 actors before the trail was cut down to major steps.
+    assert {actor for actor, *_ in rows} <= set(ACTORS)
+    assert len(rows) <= 50
+    # Spend is a detail on the API rows, not a row of its own.
+    assert any(actor == "Exa API (Search)" and "cost_usd" in detail for actor, *_, detail in rows)
+    assert "cost_usd" in rows[-1][-1], "the run's closing row carries the session's cost"
 
 
 def test_audit_trail_is_off_unless_asked_for(approved, empty_database_url, monkeypatch):

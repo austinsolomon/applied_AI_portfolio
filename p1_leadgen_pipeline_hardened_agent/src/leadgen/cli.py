@@ -467,14 +467,14 @@ def run_pipeline_command(arguments):
                     print(f"  {cell.city}: {cell.keyword} ({cell.expected_raw_leads} leads)")
                 if plan.estimated_cost_usd + exa_cap >= arguments.budget_usd:
                     raise ValueError("Budget must also leave room for enrichment and qualification")
-                from leadgen.audit import audit
+                from leadgen.audit import HUMAN_APPROVAL, PLANNER, audit
 
                 audit(
                     connection,
-                    "Planner (leadgen plan)",
-                    f"shows the priced plan (Maps cap ${plan.estimated_cost_usd}, Exa cap "
+                    PLANNER,
+                    f"prices the plan (Maps cap ${plan.estimated_cost_usd}, Exa cap "
                     f"${exa_cap}, budget ${arguments.budget_usd}) and asks for approval",
-                    f"Human ({arguments.approved_by})",
+                    f"plan {plan.plan_id}",
                     plan_id=plan.plan_id,
                 )
                 approved = (
@@ -484,6 +484,15 @@ def run_pipeline_command(arguments):
                 if approved:
                     approve_plan(
                         connection, plan.plan_id, arguments.budget_usd, arguments.approved_by
+                    )
+                    audit(
+                        connection,
+                        HUMAN_APPROVAL,
+                        f"approves plan {plan.plan_id} with a ${arguments.budget_usd} budget "
+                        f"({'--approve' if arguments.approve else 'answered y'})",
+                        f"plan {plan.plan_id}",
+                        plan_id=plan.plan_id,
+                        approved_by=arguments.approved_by,
                     )
                     print(f"Approved plan {plan.plan_id}")
                 else:

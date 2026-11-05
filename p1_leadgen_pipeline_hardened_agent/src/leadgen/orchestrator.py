@@ -15,7 +15,18 @@ from claude_agent_sdk import (
 )
 from psycopg.types.json import Jsonb
 
-from leadgen.audit import audit, audit_sdk_message
+from leadgen.audit import (
+    BLITZ_ENRICHMENT,
+    CONTACT_EXTRACTION,
+    CRM_UPLOAD,
+    DEDUPE,
+    PLANNER,
+    SDK_PRE_TOOL_USE_HOOK,
+    SDK_RESEARCH_AGENT,
+    SDK_TOOL_CALL,
+    STATE_MACHINE,
+    audit,
+)
 from leadgen.budget import BudgetBlocked, paid_operation, plan_spend, record_cost, trace
 from leadgen.category_config import load_category_config
 from leadgen.contacts import BlitzClient, enrich_contact
@@ -68,18 +79,18 @@ def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50,
         raise ValueError("No Census places loaded for the market; run `leadgen db load-places`")
     audit(
         connection,
-        "Planner (leadgen plan)",
+        PLANNER,
         f"reads demand and picks {market.market_name}, {market.state} "
         f"({market.available_leads}/{market.lead_goal} available, {market.leads_needed} needed)",
-        "Postgres gap_view",
+        f"{market.market_name}, {market.state}",
         other_markets=[f"{gap.market_name} {gap.leads_available_pct}%" for gap in gaps[1:]],
     )
     audit(
         connection,
-        "Planner (leadgen plan)",
+        PLANNER,
         f"expands the market into {len(places)} Census cities: "
         + ", ".join(place.label for place in places),
-        "Postgres places",
+        f"{market.market_name}, {market.state}",
     )
     desired = min(target, math.ceil(market.leads_needed / category.expected_qualification_rate))
     per_cell = math.ceil(desired / (len(places) * max_keywords))
@@ -126,6 +137,14 @@ def budget_hook(connection, run_id, plan_id):
             reason = "Approved budget is exhausted or missing"
         decision = "deny" if reason else "allow"
         trace(connection, run_id, "PreToolUse", decision, {"reason": reason})
+        audit(
+            connection,
+            SDK_PRE_TOOL_USE_HOOK,
+            f"{decision}s the tool call ({reason or 'approved stage'})",
+            f"run_stage {arguments.get('stage')}",
+            run_id=run_id,
+            tool=input_data.get("tool_name"),
+        )
         return {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
@@ -223,22 +242,32 @@ class Pipeline:
             raise BudgetBlocked("Stage is outside the approved sequence")
         audit(
             connection,
-            "Pipeline runner",
-            f"enters stage {stage}",
-            "State machine",
+            STATE_MACHINE,
+            f"stage {stage} started",
+            stage,
             run_id=run_id,
             completed=list(done),
         )
-        result = await getattr(self, f"run_{stage}")()
+        try:
+            result = await getattr(self, f"run_{stage}")()
+        except Exception as error:
+            audit(
+                connection,
+                STATE_MACHINE,
+                f"stage {stage} failed: {type(error).__name__}",
+                stage,
+                run_id=run_id,
+            )
+            raise
         connection.execute(
             "INSERT INTO pipeline_stages(run_id,stage,result) VALUES (%s,%s,%s)",
             (run_id, stage, Jsonb(result)),
         )
         audit(
             connection,
-            "Pipeline runner",
-            f"checkpoints stage {stage} as done: {result}",
-            "Postgres pipeline_stages (state machine)",
+            STATE_MACHINE,
+            f"stage {stage} finished: {result}",
+            stage,
             run_id=run_id,
         )
         trace(connection, run_id, stage, "succeeded", result)
@@ -356,14 +385,16 @@ class Pipeline:
                 )
             phones += bool(phone)
             emails += bool(email)
-            audit(
-                self.connection,
-                "Extract stage",
-                f"reads cached page text for {lead['business_name']!r}: "
-                f"{'phone' if phone else 'no phone'}, {'email' if email else 'no email'}",
-                "Postgres page_cache",
-                run_id=self.run.run_id,
-            )
+        audit(
+            self.connection,
+            CONTACT_EXTRACTION,
+            f"reads {checked} cached pages: {phones} phones and {emails} emails found",
+            "Exa page text",
+            run_id=self.run.run_id,
+            pages_read=checked,
+            phones_found=phones,
+            emails_found=emails,
+        )
         return {"pages_read": checked, "phones_found": phones, "emails_found": emails}
 
     async def run_dedupe(self):
@@ -379,7 +410,7 @@ class Pipeline:
         ]
         decisions = dedupe_against_crm(self.connection, incoming, self.category)
         seen = set()
-        duplicates = 0
+        duplicates = matched_in_crm = 0
         for lead, decision in zip(leads, decisions, strict=True):
             from leadgen.category_config import is_on_host
 
@@ -397,20 +428,19 @@ class Pipeline:
                 "UPDATE raw_leads SET duplicate=%s WHERE raw_lead_id=%s",
                 (duplicate, lead["raw_lead_id"]),
             )
-            audit(
-                self.connection,
-                "Dedupe stage",
-                (
-                    f"marks {lead['business_name']!r} ({lead['source']}) as duplicate"
-                    if duplicate
-                    else f"keeps {lead['business_name']!r} ({lead['source']}) as new"
-                ),
-                "Postgres raw_leads",
-                run_id=self.run.run_id,
-                matched_in_crm=decision.is_duplicate,
-                match_keys=[key for key, _ in keys],
-            )
             duplicates += duplicate
+            matched_in_crm += decision.is_duplicate
+        audit(
+            self.connection,
+            DEDUPE,
+            f"keeps {len(leads) - duplicates} new leads and marks {duplicates} as duplicates "
+            f"({matched_in_crm} already in the CRM)",
+            f"{len(leads)} sourced leads",
+            run_id=self.run.run_id,
+            new=len(leads) - duplicates,
+            duplicates=duplicates,
+            matched_in_crm=matched_in_crm,
+        )
         return {"duplicates": duplicates, "new": len(leads) - duplicates}
 
     async def run_enrich(self):
@@ -419,14 +449,6 @@ class Pipeline:
             for lead in read_raw_leads(self.connection, self.run.run_id, by_consensus=True)
             if not lead["duplicate"] and not lead["enriched"]
         ]
-        audit(
-            self.connection,
-            "Enrich stage",
-            f"queues {len(leads)} enrich jobs, highest query consensus first",
-            "Postgres cell_jobs (job queue)",
-            run_id=self.run.run_id,
-            workers=2,
-        )
         enqueue_jobs(
             self.connection,
             self.run.run_id,
@@ -444,24 +466,8 @@ class Pipeline:
                     for row in read_raw_leads(connection, self.run.run_id)
                     if row["raw_lead_id"] == job.payload["lead"]
                 )
-                worker = f"Enrich worker (job {job.job_id})"
-                audit(
-                    connection,
-                    worker,
-                    f"claims {lead['business_name']!r}",
-                    "Postgres cell_jobs",
-                    run_id=self.run.run_id,
-                    attempt=job.attempts,
-                )
                 # Existing contact details do not need paid enrichment.
                 if lead["website"] and not (lead["phone"] or lead["email"]):
-                    audit(
-                        connection,
-                        worker,
-                        f"asks for phone and email of {lead['website']}",
-                        "BlitzAPI",
-                        run_id=self.run.run_id,
-                    )
                     if not self.settings.blitz_api_key:
                         raise ValueError("BLITZ_API_KEY is not set")
                     with paid_operation(
@@ -486,33 +492,24 @@ class Pipeline:
                         )
                         audit(
                             connection,
-                            "BlitzAPI",
-                            "returns contact details",
-                            worker,
+                            BLITZ_ENRICHMENT,
+                            f"looks up phone and email of {lead['website']}: "
+                            f"{'phone' if result.phone else 'no phone'}, "
+                            f"{'email' if result.email else 'no email'}",
+                            lead["business_name"],
                             run_id=self.run.run_id,
                             found_phone=bool(result.phone),
                             found_email=bool(result.email),
+                            from_cache=result.from_cache,
+                            cost_usd=(
+                                Decimal(0)
+                                if result.from_cache
+                                else self.settings.blitz_usd_per_record * result.records_used
+                            ),
                         )
-                else:
-                    audit(
-                        connection,
-                        worker,
-                        "skips the paid lookup (contact already known or no website)",
-                        "BlitzAPI",
-                        run_id=self.run.run_id,
-                        has_phone=bool(lead["phone"]),
-                        has_email=bool(lead["email"]),
-                    )
                 connection.execute(
                     "UPDATE raw_leads SET enriched=true WHERE raw_lead_id=%s",
                     (lead["raw_lead_id"],),
-                )
-                audit(
-                    connection,
-                    worker,
-                    "marks the lead enriched and completes the job",
-                    "Postgres raw_leads + cell_jobs",
-                    run_id=self.run.run_id,
                 )
             return {"enriched": True}
 
@@ -538,15 +535,6 @@ class Pipeline:
         ]
         # A resumed run retries leads whose earlier attempt failed (its paid calls are reconciled).
         requeue_failed_jobs(self.connection, self.run.run_id, "qualify")
-        audit(
-            self.connection,
-            "Qualify stage",
-            f"queues {len(leads)} qualify jobs, highest query consensus first",
-            "Postgres cell_jobs (job queue)",
-            run_id=self.run.run_id,
-            workers=4,
-            order=[f"{lead['business_name']} (x{lead['query_consensus']})" for lead in leads],
-        )
         enqueue_jobs(
             self.connection,
             self.run.run_id,
@@ -566,17 +554,6 @@ class Pipeline:
                 )
                 if lead["qualification"]:
                     return {"already_judged": True}
-                worker = f"Qualify worker (job {job.job_id})"
-                audit(
-                    connection,
-                    worker,
-                    f"claims {lead['business_name']!r} ({lead['source']}, "
-                    f"query consensus {lead['query_consensus']})",
-                    "Postgres cell_jobs",
-                    run_id=self.run.run_id,
-                    website=lead["website"],
-                    attempt=job.attempts,
-                )
                 row = connection.execute(
                     "SELECT name,state FROM markets WHERE market_id=%s", (lead["market_id"],)
                 ).fetchone()
@@ -597,15 +574,6 @@ class Pipeline:
                         + (f":attempt{job.attempts}" if job.attempts > 1 else ""),
                     )
                     evidence = gather_evidence(lead, market, web, config, category=self.category)
-                audit(
-                    connection,
-                    worker,
-                    f"gathers {len(evidence)} evidence sources "
-                    f"({sum(len(text) for text in evidence.values())} characters)",
-                    "Claude judge",
-                    run_id=self.run.run_id,
-                    sources=list(evidence),
-                )
                 judgment = judge_lead(
                     connection,
                     self.run.run_id,
@@ -623,13 +591,6 @@ class Pipeline:
                     verdict = self.research_inline(
                         connection, lead["raw_lead_id"], market, evidence
                     )
-                audit(
-                    connection,
-                    worker,
-                    f"saves verdict {verdict} and completes the job",
-                    "Postgres raw_leads + eval_records + cell_jobs",
-                    run_id=self.run.run_id,
-                )
                 return {"verdict": verdict, "researched": judgment.verdict == "review"}
 
         async def handler(job):
@@ -655,9 +616,9 @@ class Pipeline:
         )
         audit(
             connection,
-            "Qualify worker",
-            f"escalates {lead['business_name']!r} to the research agent (tier 1 said review)",
-            "Agent SDK (research agent)",
+            SDK_RESEARCH_AGENT,
+            "starts research (tier 1 said review)",
+            lead["business_name"],
             run_id=self.run.run_id,
             reason=lead["qualification"]["reason"],
         )
@@ -706,14 +667,6 @@ class Pipeline:
                     source_url=judgment["source_url"],
                 )
             )
-        audit(
-            self.connection,
-            "CRM stage",
-            f"sends {len(qualified)} qualified leads to the CRM write",
-            "CRM writer",
-            run_id=self.run.run_id,
-            leads=[lead.business_name for lead in qualified],
-        )
         report = write_qualified_leads(
             self.connection,
             self.run.run_id,
@@ -722,11 +675,12 @@ class Pipeline:
         )
         audit(
             self.connection,
-            "CRM writer",
+            CRM_UPLOAD,
             f"inserts {report.inserted}, skips {len(report.skipped_no_contact)} without contact, "
             f"{len(report.conflicts)} conflicts",
-            "Postgres crm_leads",
+            f"{len(qualified)} qualified leads",
             run_id=self.run.run_id,
+            leads=[lead.business_name for lead in qualified],
         )
         return {
             "inserted": report.inserted,
@@ -780,6 +734,8 @@ async def run_plan(
     hook = budget_hook(connection, run.run_id, plan_id)
 
     stage_failure = None
+    # The orchestrator session's final usage, filed on the run's closing audit row.
+    session = {}
 
     @tool("run_stage", "Run the next approved pipeline stage", {"stage": str})
     async def run_stage(arguments):
@@ -791,10 +747,11 @@ async def run_plan(
         try:
             audit(
                 connection,
-                "leadgen MCP tool run_stage",
-                f"executes stage {arguments['stage']}",
-                "Pipeline runner",
+                SDK_TOOL_CALL,
+                f"calls run_stage({arguments['stage']!r})",
+                arguments["stage"],
                 run_id=run.run_id,
+                model=settings.leadgen_model,
             )
             result = await pipeline.execute(arguments["stage"])
         except Exception as error:
@@ -839,23 +796,19 @@ async def run_plan(
             remaining_stages = [
                 stage for stage in STAGES if stage not in completed_stages(connection, run.run_id)
             ]
-            audit(
-                connection,
-                "Runner (leadgen run)",
-                f"opens an Agent SDK session (model {settings.leadgen_model}, tool: run_stage)",
-                "Agent SDK",
-                run_id=run.run_id,
-                remaining_stages=remaining_stages,
-                max_turns=settings.leadgen_max_turns,
-                session_cap_usd=ceiling,
-            )
             async for message in query_fn(
                 prompt=f"Plan {plan_id}: run remaining stages: {', '.join(remaining_stages)}.",
                 options=options,
             ):
-                audit_sdk_message(connection, run.run_id, "orchestrator", message)
                 if isinstance(message, ResultMessage):
                     result_seen = True
+                    session = {
+                        "session_subtype": getattr(message, "subtype", None),
+                        "session_turns": getattr(message, "num_turns", None),
+                        "session_duration_ms": getattr(message, "duration_ms", None),
+                        "session_usage": getattr(message, "usage", None),
+                        "cost_usd": Decimal(str(message.total_cost_usd or 0)),
+                    }
                     record_cost(
                         connection,
                         run.run_id,
@@ -872,9 +825,9 @@ async def run_plan(
                 raise ValueError("Agent did not report its final usage; reconciliation required")
         if len(completed_stages(connection, run.run_id)) != len(STAGES):
             raise ValueError(stage_failure or "Agent ended before all pipeline stages completed")
-        finish_run(connection, run.run_id, "finished")
+        finish_run(connection, run.run_id, "finished", **session)
     except Exception:
-        finish_run(connection, run.run_id, "failed")
+        finish_run(connection, run.run_id, "failed", **session)
         raise
     return {
         "run_id": str(run.run_id),

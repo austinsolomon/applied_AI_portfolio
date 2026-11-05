@@ -15,6 +15,7 @@ import streamlit
 from pydantic import ValidationError
 
 from leadgen import data_model, run_status
+from leadgen.audit import ACTORS
 from leadgen.category_config import load_category_config
 from leadgen.database import connect
 from leadgen.eval_review_view import render_eval_review
@@ -373,9 +374,8 @@ def render_audit(connection: psycopg.Connection) -> None:
     events = run_status.read_audit_events(connection, plan_id)
     table = audit_table(events)
     controls = streamlit.columns([2, 2, 1])
-    actors = controls[0].multiselect(
-        "Who (X)", sorted(table["Who (X)"].unique()), key="audit_actors"
-    )
+    # The 19 audit actors in pipeline order, whether or not this plan's trail has them yet.
+    actors = controls[0].multiselect("Who (X)", list(ACTORS), key="audit_actors")
     search = controls[1].text_input("Search actions and details", key="audit_search")
     newest_first = controls[2].toggle("Newest first", value=True, key="audit_newest")
     shown = table

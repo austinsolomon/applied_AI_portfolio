@@ -7,7 +7,7 @@ from decimal import Decimal
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, create_sdk_mcp_server, query, tool
 from psycopg.types.json import Jsonb
 
-from leadgen.audit import audit, audit_sdk_message
+from leadgen.audit import SDK_RESEARCH_AGENT, audit
 from leadgen.budget import paid_operation, record_cost
 from leadgen.qualification import QualificationError, judge_lead
 
@@ -28,20 +28,16 @@ async def research_lead(
     if not lead.get("qualification") or lead["qualification"]["verdict"] != "review":
         return lead.get("qualification")
     gathered = dict(evidence)
-    calls = 0
+    calls = denied = 0
+    # The session's final usage, reported on the research agent's result row.
+    session = {}
 
     @tool("search", "Find evidence of this business's services and service area", {"query": str})
     async def search_tool(arguments):
-        nonlocal calls
+        nonlocal calls, denied
         calls += 1
         if calls > 4:
-            audit(
-                connection,
-                "research search tool",
-                "denies the call (four-call limit reached)",
-                "Claude (research agent)",
-                run_id=run_id,
-            )
+            denied += 1
             return {
                 "content": [{"type": "text", "text": "Research tool limit reached"}],
                 "isError": True,
@@ -53,16 +49,10 @@ async def research_lead(
 
     @tool("fetch_page", "Read a previously found evidence URL", {"url": str})
     async def fetch_tool(arguments):
-        nonlocal calls
+        nonlocal calls, denied
         calls += 1
         if calls > 4 or arguments["url"] not in gathered:
-            audit(
-                connection,
-                "research fetch_page tool",
-                f"denies {arguments['url']} (not found earlier, or tool limit reached)",
-                "Claude (research agent)",
-                run_id=run_id,
-            )
+            denied += 1
             return {
                 "content": [{"type": "text", "text": "URL or tool limit denied"}],
                 "isError": True,
@@ -107,14 +97,18 @@ async def research_lead(
                 )
             ) as messages:
                 async for message in messages:
-                    audit_sdk_message(connection, run_id, "research agent", message)
                     if isinstance(message, ResultMessage):
                         result_seen = True
+                        session = {
+                            "session_subtype": getattr(message, "subtype", None),
+                            "session_turns": getattr(message, "num_turns", None),
+                            "cost_usd": Decimal(str(message.total_cost_usd or 0)),
+                        }
                         record_cost(
                             connection,
                             run_id,
                             "claude",
-                            Decimal(str(message.total_cost_usd or 0)),
+                            session["cost_usd"],
                             model=settings.leadgen_model,
                             endpoint="research-agent",
                             input_tokens=(message.usage or {}).get("input_tokens", 0),
@@ -141,6 +135,18 @@ async def research_lead(
     )
     connection.execute(
         "UPDATE raw_leads SET researched=true WHERE raw_lead_id=%s", (lead["raw_lead_id"],)
+    )
+    audit(
+        connection,
+        SDK_RESEARCH_AGENT,
+        f"finishes research with verdict {result.verdict} "
+        f"({len(gathered)} evidence sources, {calls} tool calls)",
+        lead["business_name"],
+        run_id=run_id,
+        tool_calls=calls,
+        denied_tool_calls=denied,
+        reused_earlier_evidence=not session,
+        **session,
     )
     return result
 

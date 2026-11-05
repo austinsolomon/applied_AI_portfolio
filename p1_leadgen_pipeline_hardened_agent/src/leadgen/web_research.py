@@ -42,7 +42,7 @@ import psycopg
 import trafilatura
 from psycopg.rows import class_row
 
-from leadgen.audit import audit
+from leadgen.audit import EXA_CONTENTS, EXA_SEARCH, FIRECRAWL_RENDER, audit
 from leadgen.public_urls import validate_public_url
 from leadgen.settings import Settings
 
@@ -52,6 +52,10 @@ USER_AGENT = "leadgen-agent/0.1 (+https://github.com/austinsolomon/applied_AI_po
 
 PAGE_CACHE_MAX_AGE = timedelta(days=7)
 BACKEND_LABELS = {"exa": "Exa API", "firecrawl": "Firecrawl API", "free": "Free web (httpx)"}
+# The audit actor for each backend's searches and page reads. Exa searches and reads pages;
+# Firecrawl renders the pages Exa cannot read. The free backend is not a paid call: no row.
+SEARCH_AUDIT_ACTORS = {"exa": EXA_SEARCH}
+FETCH_AUDIT_ACTORS = {"exa": EXA_CONTENTS, "firecrawl": FIRECRAWL_RENDER}
 DEFAULT_SEARCH_LIMIT = 5
 REQUEST_TIMEOUT_SECONDS = 30.0
 # Stored page text is capped so one oversized page cannot bloat the cache or a later prompt.
@@ -581,29 +585,35 @@ class WebResearcher:
         self, query: str, *, limit: int = DEFAULT_SEARCH_LIMIT, site: str | None = None
     ) -> list[SearchResult]:
         """Web results for `query`, or only pages on `site` (a domain) when it is given."""
-        self._audit(
-            f"sends search {query!r}" + (f" restricted to {site}" if site else ""),
-            BACKEND_LABELS.get(self.backend.name, self.backend.name),
-            limit=limit,
-        )
+        backend = self.backend
+        fell_back_from = None
         try:
-            response = self.backend.search(query, limit=limit, site=site)
+            response = backend.search(query, limit=limit, site=site)
         except WebBackendUnavailable as failure:
             if (
                 self.fallback is None
                 or not self.fallback_searches
                 or not isinstance(failure, self.fallback_on)
             ):
-                self._audit(f"search failed: {failure}", "Qualify/research web tools")
+                self._audit(
+                    SEARCH_AUDIT_ACTORS.get(backend.name),
+                    f"search fails: {failure}",
+                    query,
+                    site=site,
+                )
                 raise
-            self._audit(f"search failed ({failure}); retries on fallback", self.fallback.name)
-            response = self.fallback.search(query, limit=limit, site=site)
-        self._record_charge(response.charge)
+            fell_back_from, backend = backend.name, self.fallback
+            response = backend.search(query, limit=limit, site=site)
+        cost = self._record_charge(response.charge)
         self._audit(
-            f"returns {len(response.results)} search results",
-            "Qualify/research web tools",
-            actor=BACKEND_LABELS.get(self.backend.name, self.backend.name),
+            SEARCH_AUDIT_ACTORS.get(backend.name),
+            f"{'on-site' if site else 'web'} search returns {len(response.results)} results",
+            query,
+            site=site,
+            limit=limit,
             urls=[result.url for result in response.results],
+            cost_usd=cost,
+            fell_back_from=fell_back_from,
         )
         return response.results
 
@@ -611,32 +621,32 @@ class WebResearcher:
         cache_key = normalize_page_url(url)
         cached = self._read_cache(cache_key)
         if cached is not None:
-            self._audit(
-                f"reads {cache_key} from cache (no paid call)",
-                "Postgres page_cache",
-                cached_from=cached.backend,
-                characters=len(cached.text),
-            )
+            # A cached page costs nothing and is not an audit row of its own.
             return cached
-        self._audit(
-            f"cache miss; fetches {cache_key}",
-            BACKEND_LABELS.get(self.backend.name, self.backend.name),
-        )
         try:
             response = self._fetch_uncached(cache_key)
         except PageFetchFailed as failure:
             # A dead or forbidden page still cost a credit on the paid backend; ledger it so the
             # run's spend matches the provider's usage, then report the failure as before.
-            self._record_charge(failure.charge)
-            self._audit(f"page unreadable: {failure}", "Qualify/research web tools", actor="Web")
+            cost = self._record_charge(failure.charge)
+            self._audit(
+                FETCH_AUDIT_ACTORS.get(
+                    failure.charge.service if failure.charge else self.backend.name
+                ),
+                f"cannot read the page: {failure}",
+                cache_key,
+                cost_usd=cost,
+            )
             raise
-        self._record_charge(response.charge)
+        cost = self._record_charge(response.charge)
         self._write_cache(response.page)
         self._audit(
+            FETCH_AUDIT_ACTORS.get(response.page.backend),
             f"returns {len(response.page.text)} characters of page text",
-            "Qualify/research web tools",
-            actor=BACKEND_LABELS.get(response.page.backend, response.page.backend),
-            url=cache_key,
+            cache_key,
+            final_url=response.page.final_url,
+            cost_usd=cost,
+            from_cache=False,
         )
         return response.page
 
@@ -647,11 +657,13 @@ class WebResearcher:
             if self.fallback is None or not isinstance(failure, self.fallback_on):
                 raise
             # The primary may have billed the attempt (Exa charges for an empty page).
-            self._record_charge(getattr(failure, "charge", None))
+            cost = self._record_charge(getattr(failure, "charge", None))
             self._audit(
-                f"{failure}; hands the page to the fallback",
-                BACKEND_LABELS.get(self.fallback.name, self.fallback.name),
-                actor=BACKEND_LABELS.get(self.backend.name, self.backend.name),
+                FETCH_AUDIT_ACTORS.get(self.backend.name),
+                f"cannot read the page ({failure}); hands it to "
+                + BACKEND_LABELS.get(self.fallback.name, self.fallback.name),
+                cache_key,
+                cost_usd=cost,
             )
             return self.fallback.fetch_page(cache_key)
 
@@ -671,14 +683,15 @@ class WebResearcher:
     def _write_cache(self, page: FetchedPage) -> None:
         write_cached_page(self.connection, page)
 
-    def _audit(
-        self, action: str, target: str, *, actor: str = "Qualify/research web tools", **detail
-    ) -> None:
-        audit(self.connection, actor, action, target, run_id=self.run_id, **detail)
+    def _audit(self, actor: str | None, action: str, target: str, **detail) -> None:
+        """One audit row for a paid backend's call; a backend with no audit actor has none."""
+        if actor is not None:
+            audit(self.connection, actor, action, target, run_id=self.run_id, **detail)
 
-    def _record_charge(self, charge: Charge | None) -> None:
+    def _record_charge(self, charge: Charge | None) -> Decimal | None:
+        """Ledger one call's charge and return its cost for the call's audit row."""
         if charge is None:
-            return
+            return None
         # A non-Claude ledger row names its endpoint and the provider's own units (credits here)
         # and has no model; the token columns keep their zero defaults. Call numbers are unique
         # per run; the next one is read in the same statement.
@@ -703,12 +716,7 @@ class WebResearcher:
                     "cost_basis": charge.cost_basis,
                 },
             )
-        self._audit(
-            f"records ${charge.cost_usd} ({charge.cost_basis}, {charge.endpoint})",
-            "Postgres cost_ledger",
-            actor=f"{charge.service} call",
-            units=charge.credits,
-        )
+        return charge.cost_usd
 
 
 def build_web_researcher(

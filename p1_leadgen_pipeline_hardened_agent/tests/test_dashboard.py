@@ -8,6 +8,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from leadgen import dashboard as dashboard_module
+from leadgen.audit import ACTORS
 from leadgen.demo_seed import seed_demo_data
 from leadgen.settings import get_settings
 
@@ -184,8 +185,8 @@ def test_audit_log_reads_who_does_what_to_whom(
 ) -> None:
     plan, run = seed_blocked_run(migrated_connection)
     for actor, action, target in [
-        ("Runner (leadgen run)", "starts run", "Postgres runs (state: running)"),
-        ("Exa stage", "sends company search 'private chef in Phoenix'", "Exa API"),
+        ("Postgres (State machine)", "run started", f"plan {plan.plan_id}"),
+        ("Exa API (Search)", "company search returns 5 results", "private chef in Phoenix"),
     ]:
         migrated_connection.execute(
             "INSERT INTO audit_events (run_id, plan_id, actor, action, target) "
@@ -199,6 +200,9 @@ def test_audit_log_reads_who_does_what_to_whom(
     assert list(audit.columns) == ["#", "Time", "+s", "Who (X)", "Does (Y)", "To (Z)", "Details"]
     # Newest first by default.
     assert audit[["Who (X)", "To (Z)"]].values.tolist() == [
-        ["Exa stage", "Exa API"],
-        ["Runner (leadgen run)", "Postgres runs (state: running)"],
+        ["Exa API (Search)", "private chef in Phoenix"],
+        ["Postgres (State machine)", f"plan {plan.plan_id}"],
     ]
+    # The actor filter offers the 19 actors in pipeline order.
+    actor_filter = next(widget for widget in app.multiselect if widget.label == "Who (X)")
+    assert list(actor_filter.options) == list(ACTORS)
