@@ -169,7 +169,6 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
         "Dedupe",
         "Enrich contacts",
         "Qualify",
-        "Research",
         "Write to CRM",
     ]
     assert "done" in stage_rows["Exa search"]

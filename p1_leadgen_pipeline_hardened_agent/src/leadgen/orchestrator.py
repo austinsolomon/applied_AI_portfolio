@@ -43,7 +43,7 @@ from leadgen.sourcing_exa import EXA_CEILING_PER_CALL, exa_client, exa_queries, 
 from leadgen.sourcing_maps import grade_sample, maps_client, source_maps
 from leadgen.web_research import EXA_WEB_CEILING_PER_CALL, PageFetchFailed, build_web_researcher
 
-STAGES = ("maps", "exa", "extract", "dedupe", "enrich", "qualify", "research", "crm")
+STAGES = ("maps", "exa", "extract", "dedupe", "enrich", "qualify", "crm")
 TOOL_NAME = "mcp__leadgen__run_stage"
 
 
@@ -204,10 +204,14 @@ class GuardedWeb:
 
 
 class Pipeline:
-    def __init__(self, connection, run, settings, *, maps=None, exa=None, judge=None):
+    def __init__(
+        self, connection, run, settings, *, maps=None, exa=None, judge=None, research_query=None
+    ):
         self.connection, self.run, self.settings = connection, run, settings
         self.category = load_category_config(settings.category_config_path)
         self.maps, self.exa, self.judge = maps, exa, judge
+        # The Agent SDK entry point for inline research; tests replace it.
+        self.research_query = research_query or query
 
     async def execute(self, stage):
         connection, run_id = self.connection, self.run.run_id
@@ -612,14 +616,21 @@ class Pipeline:
                     self.settings,
                     client=self.judge,
                 )
+                verdict = judgment.verdict
+                if verdict == "review":
+                    # Not confident: escalate this lead to bounded research now, inside the same
+                    # job, starting from the evidence tier 1 already gathered.
+                    verdict = self.research_inline(
+                        connection, lead["raw_lead_id"], market, evidence
+                    )
                 audit(
                     connection,
                     worker,
-                    f"saves verdict {judgment.verdict} and completes the job",
+                    f"saves verdict {verdict} and completes the job",
                     "Postgres raw_leads + eval_records + cell_jobs",
                     run_id=self.run.run_id,
                 )
-                return {"verdict": judgment.verdict}
+                return {"verdict": verdict, "researched": judgment.verdict == "review"}
 
         async def handler(job):
             return await asyncio.to_thread(qualify_one, job)
@@ -635,46 +646,40 @@ class Pipeline:
             raise ValueError("Qualification jobs failed; inspect cell_jobs and provider usage")
         return {"judged": report.succeeded}
 
-    async def run_research(self):
-        count = 0
-        for lead in read_raw_leads(self.connection, self.run.run_id, by_consensus=True):
-            if (
-                lead["duplicate"]
-                or lead["researched"]
-                or not lead["qualification"]
-                or lead["qualification"]["verdict"] != "review"
-            ):
-                continue
-            audit(
-                self.connection,
-                "Research stage",
-                f"opens a bounded research agent for {lead['business_name']!r} (verdict: review)",
-                "Agent SDK (research agent)",
-                run_id=self.run.run_id,
-                reason=lead["qualification"]["reason"],
+    def research_inline(self, connection, raw_lead_id, market, evidence):
+        """Run the research agent for one review lead and return its final verdict."""
+        lead = next(
+            row
+            for row in read_raw_leads(connection, self.run.run_id)
+            if row["raw_lead_id"] == raw_lead_id
+        )
+        audit(
+            connection,
+            "Qualify worker",
+            f"escalates {lead['business_name']!r} to the research agent (tier 1 said review)",
+            "Agent SDK (research agent)",
+            run_id=self.run.run_id,
+            reason=lead["qualification"]["reason"],
+        )
+        with build_web_researcher(connection, self.settings, run_id=self.run.run_id) as researcher:
+            web = GuardedWeb(
+                connection, self.run.run_id, researcher, self.settings, f"tier2:{raw_lead_id}"
             )
-            with build_web_researcher(
-                self.connection, self.settings, run_id=self.run.run_id
-            ) as researcher:
-                web = GuardedWeb(
-                    self.connection,
-                    self.run.run_id,
-                    researcher,
-                    self.settings,
-                    f"tier2:{lead['raw_lead_id']}",
-                )
-                await research_lead(
-                    self.connection,
+            result = asyncio.run(
+                research_lead(
+                    connection,
                     self.run.run_id,
                     lead,
-                    self.market_label(lead["market_id"]),
-                    {},
+                    market,
+                    evidence,
                     self.category,
                     self.settings,
                     web,
+                    query_fn=self.research_query,
+                    judge_client=self.judge,
                 )
-            count += 1
-        return {"researched": count}
+            )
+        return result.verdict if hasattr(result, "verdict") else result["verdict"]
 
     async def run_crm(self):
         qualified = []
