@@ -6,7 +6,7 @@ from urllib.parse import urljoin
 
 from anthropic import Anthropic, AnthropicError
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from leadgen.audit import audit
 from leadgen.budget import paid_operation, record_cost
@@ -149,60 +149,83 @@ def judge_lead(
                 raise QualificationError(
                     "Anthropic qualification failed. Check the key, workspace and credit balance."
                 ) from error
-            usage = response.usage
-            tokens = TokenUsage(
-                usage.input_tokens,
-                getattr(usage, "cache_creation_input_tokens", 0) or 0,
-                getattr(usage, "cache_read_input_tokens", 0) or 0,
-                usage.output_tokens,
-            )
-            record_cost(
-                connection,
-                run_id,
-                "claude",
-                call_cost_usd(settings.leadgen_model, tokens),
-                model=settings.leadgen_model,
-                endpoint=f"qualification-tier-{tier}",
-                input_tokens=tokens.input_tokens,
-                output_tokens=tokens.output_tokens,
-                request_id=response.id,
-            )
-            if response.parsed_output is None:
+            except ValidationError:
+                # The reply was billed but its JSON was cut off or malformed, so the SDK raised
+                # before returning usage. Keep the lead for review and ledger the ceiling.
+                record_cost(
+                    connection,
+                    run_id,
+                    "claude",
+                    ceiling,
+                    model=settings.leadgen_model,
+                    endpoint=f"qualification-tier-{tier}",
+                    cost_basis="estimated",
+                )
+                response = None
+            if response is None:
                 judgment = Judgment(
                     verdict="review",
-                    reason="Judge returned no complete decision",
+                    reason="Judge returned incomplete JSON; kept for human review",
                     evidence_quote="",
                     source_url="",
                     eligible_services=[],
                     serves_market="unclear",
                 )
             else:
-                proposed = response.parsed_output
-                audit(
-                    connection,
-                    f"Claude API ({settings.leadgen_model})",
-                    f"returns verdict {proposed.verdict}: {proposed.reason}",
-                    "Claude judge",
-                    run_id=run_id,
-                    quote=proposed.evidence_quote,
-                    source_url=proposed.source_url,
-                    serves_market=proposed.serves_market,
-                    input_tokens=usage.input_tokens,
-                    output_tokens=usage.output_tokens,
+                usage = response.usage
+                tokens = TokenUsage(
+                    usage.input_tokens,
+                    getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                    getattr(usage, "cache_read_input_tokens", 0) or 0,
+                    usage.output_tokens,
                 )
-                judgment = validate_judgment(proposed, evidence, category)
-                audit(
+                record_cost(
                     connection,
-                    "Citation check (code)",
-                    (
-                        f"accepts {judgment.verdict}: quote found in the cited source"
-                        if judgment.verdict == proposed.verdict
-                        else f"changes {proposed.verdict} to {judgment.verdict}: quote, source, "
-                        "service or market could not be verified"
-                    ),
-                    "Postgres raw_leads",
-                    run_id=run_id,
+                    run_id,
+                    "claude",
+                    call_cost_usd(settings.leadgen_model, tokens),
+                    model=settings.leadgen_model,
+                    endpoint=f"qualification-tier-{tier}",
+                    input_tokens=tokens.input_tokens,
+                    output_tokens=tokens.output_tokens,
+                    request_id=response.id,
                 )
+                if response.parsed_output is None:
+                    judgment = Judgment(
+                        verdict="review",
+                        reason="Judge returned no complete decision",
+                        evidence_quote="",
+                        source_url="",
+                        eligible_services=[],
+                        serves_market="unclear",
+                    )
+                else:
+                    proposed = response.parsed_output
+                    audit(
+                        connection,
+                        f"Claude API ({settings.leadgen_model})",
+                        f"returns verdict {proposed.verdict}: {proposed.reason}",
+                        "Claude judge",
+                        run_id=run_id,
+                        quote=proposed.evidence_quote,
+                        source_url=proposed.source_url,
+                        serves_market=proposed.serves_market,
+                        input_tokens=usage.input_tokens,
+                        output_tokens=usage.output_tokens,
+                    )
+                    judgment = validate_judgment(proposed, evidence, category)
+                    audit(
+                        connection,
+                        "Citation check (code)",
+                        (
+                            f"accepts {judgment.verdict}: quote found in the cited source"
+                            if judgment.verdict == proposed.verdict
+                            else f"changes {proposed.verdict} to {judgment.verdict}: quote, "
+                            "source, service or market could not be verified"
+                        ),
+                        "Postgres raw_leads",
+                        run_id=run_id,
+                    )
     with connection.transaction():
         connection.execute(
             "UPDATE raw_leads SET qualification=%s WHERE raw_lead_id=%s",

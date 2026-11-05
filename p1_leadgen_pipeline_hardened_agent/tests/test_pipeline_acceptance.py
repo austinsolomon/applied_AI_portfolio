@@ -847,3 +847,37 @@ def test_audit_trail_is_off_unless_asked_for(approved, empty_database_url, monke
     test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_url, monkeypatch)
     connection, _plan = approved
     assert connection.execute("SELECT count(*) FROM audit_events").fetchone()[0] == 0
+
+
+def test_malformed_judge_json_becomes_review_without_stopping_the_run(running):
+    from pydantic import ValidationError
+
+    connection, plan, run = running
+    persist_leads(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        "google_maps",
+        [RawLead("cedar", "Cedar Massage", phone="3105550142")],
+    )
+    lead = read_raw_leads(connection, run.run_id)[0]
+    try:
+        Judgment.model_validate_json('{"verdict":"review","eligible_services":["mobile mass')
+    except ValidationError as cut_off:
+        malformed = cut_off
+    client = Mock()
+    client.messages.parse.side_effect = malformed
+    result = judge_lead(
+        connection,
+        run.run_id,
+        lead,
+        "Los Angeles",
+        {"https://cedar.example": "Mobile"},
+        load_category_config(),
+        Settings(),
+        client=client,
+        tier=2,
+    )
+    assert result.verdict == "review" and "incomplete JSON" in result.reason
+    assert connection.execute("SELECT status FROM budget_reservations").fetchone() == ("succeeded",)
+    assert connection.execute("SELECT cost_basis FROM cost_ledger").fetchone() == ("estimated",)
