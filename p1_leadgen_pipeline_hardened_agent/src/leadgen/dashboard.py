@@ -6,6 +6,7 @@ runner use (`gaps.py`, `run_status.py`, `eval_review.py`), so the page and the p
 the same numbers. Only the Eval review tab writes, and only labels.
 """
 
+import html
 import json
 
 import altair
@@ -34,12 +35,20 @@ DISTANCE_BANDS = [
     (0, "Far (under 40%)", "#8EA3F6"),
 ]
 
-STAGE_BADGES = {
-    run_status.STAGE_DONE: ":green-badge[:material/check: done]",
-    run_status.STAGE_RUNNING: ":blue-badge[:material/progress_activity: running]",
-    run_status.STAGE_FAILED: ":red-badge[:material/error: failed]",
-    run_status.STAGE_BLOCKED: ":orange-badge[:material/pan_tool: needs a human]",
-    run_status.STAGE_WAITING: ":gray-badge[waiting]",
+# Stage track colours: gray until a stage finishes, Exa blue once done.
+STAGE_COLOURS = {
+    run_status.STAGE_DONE: ("#1840ED", "#FFFFFF"),
+    run_status.STAGE_RUNNING: ("#C9D4FB", "#0A1A66"),
+    run_status.STAGE_FAILED: ("#D93025", "#FFFFFF"),
+    run_status.STAGE_BLOCKED: ("#F29900", "#FFFFFF"),
+    run_status.STAGE_WAITING: ("#E3E5EA", "#5F6368"),
+}
+STAGE_STATUS_WORDS = {
+    run_status.STAGE_DONE: "done",
+    run_status.STAGE_RUNNING: "running",
+    run_status.STAGE_FAILED: "failed",
+    run_status.STAGE_BLOCKED: "needs a human",
+    run_status.STAGE_WAITING: "waiting",
 }
 DATABASE_URL_HELP = (
     "DATABASE_URL is missing or malformed. Copy .env.example to .env, or export "
@@ -157,6 +166,28 @@ def stage_result_text(result: dict | None) -> str:
     return " · ".join(f"{key} {value}" for key, value in result.items())
 
 
+def stage_track_html(detail) -> str:
+    """The seven stages left to right, each gray until it finishes and blue once done."""
+    cells = []
+    for number, stage in enumerate(detail.stages, start=1):
+        background, colour = STAGE_COLOURS[stage.status]
+        progress = detail.jobs.get(stage.stage)
+        text = stage_result_text(stage.result)
+        if progress and stage.status != run_status.STAGE_DONE:
+            text = " · ".join(f"{count} {status}" for status, count in sorted(progress.items()))
+        cells.append(
+            '<div style="flex:1;min-width:0">'
+            f'<div style="background:{background};color:{colour};border-radius:8px;'
+            'padding:10px 8px;text-align:center;font-weight:600">'
+            f"{number}. {html.escape(stage.label)}"
+            f'<div style="font-size:0.75rem;font-weight:400">'
+            f"{STAGE_STATUS_WORDS[stage.status]}</div></div>"
+            '<div style="font-size:0.75rem;color:#5F6368;padding:6px 2px;text-align:center">'
+            f"{html.escape(text or '—')}</div></div>"
+        )
+    return '<div style="display:flex;gap:6px;align-items:flex-start">' + "".join(cells) + "</div>"
+
+
 def render_run(connection: psycopg.Connection) -> None:
     runs = run_status.list_runs(connection)
     if not runs:
@@ -169,20 +200,10 @@ def render_run(connection: psycopg.Connection) -> None:
         "Run", list(labels), format_func=labels.get, key="run_choice", help="Newest first"
     )
     detail = run_status.read_run_detail(connection, run_id)
-    summary = streamlit.columns(4)
-    summary[0].metric("Market", detail.market)
-    summary[1].metric("Status", detail.status)
-    budget = detail.budget_usd
-    summary[2].metric(
-        "Spent", usd(detail.spend_usd), help="Ledger total, all services, all attempts"
-    )
-    summary[3].metric("Budget", usd(budget), help="Approved for this plan")
-    if budget:
-        streamlit.progress(
-            min(float(detail.spend_usd / budget), 1.0),
-            text=f"{percent(detail.spend_usd / budget)} of budget spent, "
-            f"{usd(detail.held_usd)} held by unresolved calls",
-        )
+    # The same one-line summary as the Run history tab, for this run only.
+    summary = [row for row in run_status.read_run_history(connection) if row["run_id"] == run_id]
+    if summary:
+        streamlit.dataframe(history_table(summary), hide_index=True)
 
     if detail.needs_a_human:
         streamlit.warning(
@@ -192,45 +213,16 @@ def render_run(connection: psycopg.Connection) -> None:
         )
 
     streamlit.subheader("Stages")
-    for stage in detail.stages:
-        row = streamlit.columns([2, 2, 5])
-        row[0].markdown(f"**{stage.label}**")
-        row[1].markdown(STAGE_BADGES[stage.status])
-        progress = detail.jobs.get(stage.stage)
-        text = stage_result_text(stage.result)
-        if progress and stage.status != run_status.STAGE_DONE:
-            text = " · ".join(f"{count} {status}" for status, count in sorted(progress.items()))
-        row[2].markdown(text or "—")
+    streamlit.markdown(stage_track_html(detail), unsafe_allow_html=True)
 
-    columns = streamlit.columns(2)
-    with columns[0]:
-        streamlit.subheader("Spend by service")
-        spend = pandas.DataFrame(
-            [
-                {"Service": key, "USD": float(value)}
-                for key, value in detail.spend_by_service.items()
-            ]
-        )
-        if spend.empty:
-            streamlit.caption("No paid calls yet.")
-        else:
-            streamlit.dataframe(spend, hide_index=True)
-    with columns[1]:
-        streamlit.subheader("Recent events")
-        events = pandas.DataFrame(
-            [
-                {
-                    "Time": event["created_at"].strftime("%H:%M:%S"),
-                    "Step": event["operation"],
-                    "Outcome": event["outcome"],
-                }
-                for event in detail.recent_events
-            ]
-        )
-        if events.empty:
-            streamlit.caption("No events recorded.")
-        else:
-            streamlit.dataframe(events, hide_index=True)
+    streamlit.subheader("Spend by service")
+    spend = pandas.DataFrame(
+        [{"Service": key, "USD": float(value)} for key, value in detail.spend_by_service.items()]
+    )
+    if spend.empty:
+        streamlit.caption("No paid calls yet.")
+    else:
+        streamlit.dataframe(spend, hide_index=True)
 
 
 def history_table(rows: list[dict]) -> pandas.DataFrame:

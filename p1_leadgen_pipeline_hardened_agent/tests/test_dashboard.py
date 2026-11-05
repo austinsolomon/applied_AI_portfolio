@@ -157,13 +157,8 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
 
     app = render_dashboard()
 
-    markdown = [element.value for element in app.markdown]
-    stage_rows = {
-        markdown[index].strip("*"): markdown[index + 1]
-        for index in range(len(markdown) - 1)
-        if markdown[index].startswith("**") and "badge" in markdown[index + 1]
-    }
-    assert list(stage_rows) == [
+    track = next(element.value for element in app.markdown if "display:flex" in element.value)
+    labels = [
         "Google Maps",
         "Exa search",
         "Extract contacts",
@@ -172,12 +167,18 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
         "Qualify",
         "Write to CRM",
     ]
-    assert "done" in stage_rows["Exa search"]
-    assert "needs a human" in stage_rows["Extract contacts"]
-    assert "waiting" in stage_rows["Write to CRM"]
+    positions = [track.index(f"{number}. {label}") for number, label in enumerate(labels, 1)]
+    assert positions == sorted(positions), "stages run left to right in pipeline order"
+    stage_cells = track.split('<div style="flex:1')[1:]
+    assert "#1840ED" in stage_cells[1] and "done" in stage_cells[1]  # Exa search: blue
+    assert "needs a human" in stage_cells[2]
+    assert "#E3E5EA" in stage_cells[6] and "waiting" in stage_cells[6]  # CRM: still gray
     assert f"--plan {plan.plan_id} --resume" in app.warning[0].value
-    metrics = {metric.label: metric.value for metric in app.metric}
-    assert (metrics["Status"], metrics["Spent"], metrics["Budget"]) == ("failed", "$0.021", "$3")
+    summary = next(
+        frame.value for frame in app.dataframe if "Per qualified" in frame.value.columns
+    ).iloc[0]
+    assert (summary["Status"], summary["Spend"], summary["Budget"]) == ("failed", "$0.021", "$3")
+    assert "Recent events" not in [header.value for header in app.subheader]
 
 
 def test_audit_log_reads_who_does_what_to_whom(
