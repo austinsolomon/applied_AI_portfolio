@@ -57,13 +57,7 @@ def offline_settings(database_url, **overrides):
     )
 
 
-@pytest.fixture
-def fake_providers(monkeypatch):
-    """Apify, Exa, the web and the judge answer offline; the SDK replays every stage in order."""
-    from datetime import UTC, datetime
-
-    from leadgen.web_research import FetchedPage, WebResearcher
-
+def offline_judge():
     judge = Mock()
     judge.messages.parse.return_value = SimpleNamespace(
         id="offline",
@@ -77,6 +71,17 @@ def fake_providers(monkeypatch):
             serves_market="yes",
         ),
     )
+    return judge
+
+
+@pytest.fixture
+def fake_providers(monkeypatch):
+    """Apify, Exa, the web and the judge answer offline; the SDK replays every stage in order."""
+    from datetime import UTC, datetime
+
+    from leadgen.web_research import FetchedPage, WebResearcher
+
+    judge = offline_judge()
 
     def page(_self, url):
         return FetchedPage(
@@ -191,11 +196,108 @@ def test_unreconciled_paid_call_blocks_the_next_run(demo, empty_database_url):
     plan = create_plan(demo, [PlannedCell(1, "Phoenix, AZ", "financial planner", 1, Decimal("1"))])
     approve_plan(demo, plan.plan_id, Decimal("3"), "operator")
     run = start_run(demo, plan.plan_id)
-    reserve(demo, run.run_id, "exa:uncertain", Decimal("0.03"))
+    # An Apify actor may still be running after its call failed: only an operator can say.
+    reserve(demo, run.run_id, "maps:1:sample", Decimal("0.03"))
     demo.execute("UPDATE budget_reservations SET status='uncertain'")
     finish_run(demo, run.run_id, "failed")
     exit_code, summary = weekly(demo, offline_settings(empty_database_url), policy())
-    assert exit_code == EXIT_NEEDS_HUMAN and "reconciled" in summary["reason"]
+    assert exit_code == EXIT_NEEDS_HUMAN and "Apify actor may still be running" in summary["reason"]
+    assert demo.execute("SELECT status FROM budget_reservations").fetchone() == ("uncertain",)
+
+
+def leftover_run(connection, operation, status="finished"):
+    """A run that already ended but left one paid call with an unknown outcome."""
+    from leadgen.budget import reserve
+    from leadgen.plans import PlannedCell, approve_plan, create_plan, finish_run, start_run
+
+    plan = create_plan(
+        connection, [PlannedCell(1, "Phoenix, AZ", "financial planner", 1, Decimal("1"))]
+    )
+    approve_plan(connection, plan.plan_id, Decimal("5"), "operator")
+    run = start_run(connection, plan.plan_id)
+    reserve(connection, run.run_id, operation, Decimal("0.0232"))
+    connection.execute("UPDATE budget_reservations SET status='uncertain'")
+    finish_run(connection, run.run_id, status)
+    return run
+
+
+@pytest.mark.parametrize("status", ["finished", "failed"])
+def test_unpriced_call_left_by_an_ended_run_never_blocks_the_next(
+    demo, empty_database_url, fake_providers, status
+):
+    run = leftover_run(demo, "web:tier1:29:1:fetch_page", status)
+    exit_code, summary = weekly(
+        demo, offline_settings(empty_database_url), policy(), **fake_providers
+    )
+    assert exit_code == EXIT_OK, summary
+    assert demo.execute(
+        "SELECT status FROM budget_reservations WHERE run_id=%s", (run.run_id,)
+    ).fetchone() == ("succeeded",)
+    assert demo.execute(
+        "SELECT service, cost_usd, cost_basis, endpoint FROM cost_ledger WHERE run_id=%s",
+        (run.run_id,),
+    ).fetchall() == [("firecrawl", Decimal("0.023200"), "estimated", "unknown-outcome")]
+
+
+def test_dry_run_previews_the_settlement_without_writing(demo, empty_database_url):
+    run = leftover_run(demo, "web:tier1:29:1:fetch_page")
+    exit_code, summary = weekly(demo, offline_settings(empty_database_url), policy(), dry_run=True)
+    assert exit_code == EXIT_OK and summary["status"] == "dry run: would run"
+    assert demo.execute(
+        "SELECT status FROM budget_reservations WHERE run_id=%s", (run.run_id,)
+    ).fetchone() == ("uncertain",)
+
+
+def swallowing_pipeline(judge, operation):
+    """A pipeline whose CRM stage makes one paid call that raises and is then skipped, the way
+    evidence gathering skips an unreadable page."""
+    from leadgen.budget import paid_operation
+
+    class Swallowing(Pipeline):
+        async def run_crm(self):
+            try:
+                with paid_operation(self.connection, self.run.run_id, operation, Decimal("0.01")):
+                    raise TimeoutError("provider timed out")
+            except TimeoutError:
+                pass
+            return await super().run_crm()
+
+    return lambda connection, run, settings: Swallowing(connection, run, settings, judge=judge)
+
+
+def test_run_settles_a_skipped_unpriced_call_before_it_reports_finished(
+    demo, empty_database_url, fake_providers
+):
+    judge = offline_judge()
+    exit_code, summary = weekly(
+        demo,
+        offline_settings(empty_database_url),
+        policy(),
+        query_fn=fake_providers["query_fn"],
+        pipeline_factory=swallowing_pipeline(judge, "web:crm:1:fetch_page"),
+    )
+    assert exit_code == EXIT_OK and summary["status"] == "finished", summary
+    assert demo.execute(
+        "SELECT count(*) FROM budget_reservations WHERE status IN ('started','uncertain')"
+    ).fetchone() == (0,)
+    assert demo.execute(
+        "SELECT cost_usd FROM cost_ledger WHERE endpoint='unknown-outcome'"
+    ).fetchone() == (Decimal("0.010000"),)
+
+
+def test_run_that_leaves_an_apify_actor_open_is_never_reported_finished(
+    demo, empty_database_url, fake_providers
+):
+    judge = offline_judge()
+    exit_code, summary = weekly(
+        demo,
+        offline_settings(empty_database_url),
+        policy(),
+        query_fn=fake_providers["query_fn"],
+        pipeline_factory=swallowing_pipeline(judge, "maps:99:sample"),
+    )
+    assert exit_code == EXIT_ERROR and summary["status"] == "failed"
+    assert "Run is not complete" in summary["error"] and "maps:99:sample" in summary["error"]
 
 
 def test_run_still_marked_running_blocks_the_next_run(demo, empty_database_url):
@@ -242,7 +344,7 @@ def test_failed_pipeline_reports_error_with_spend(demo, empty_database_url, fake
         query_fn=broken,
         pipeline_factory=fake_providers["pipeline_factory"],
     )
-    assert exit_code == EXIT_ERROR and summary["status"] == "failed"
+    assert exit_code == EXIT_ERROR and summary["status"] == "failed", summary.get("error")
     assert "SDK session ended" in summary["error"]
 
 

@@ -50,9 +50,15 @@ from leadgen.plans import (
 from leadgen.qualification import gather_evidence, judge_lead
 from leadgen.raw_leads import read_raw_leads
 from leadgen.research_agent import research_lead, sdk_environment
+from leadgen.run_closeout import close_out_run, settle_unknown_outcomes, web_service_for
 from leadgen.sourcing_exa import EXA_CEILING_PER_CALL, exa_client, exa_queries, source_exa
 from leadgen.sourcing_maps import grade_sample, maps_client, source_maps
-from leadgen.web_research import EXA_WEB_CEILING_PER_CALL, PageFetchFailed, build_web_researcher
+from leadgen.web_research import (
+    EXA_WEB_CEILING_PER_CALL,
+    PageFetchFailed,
+    WebBackendUnavailable,
+    build_web_researcher,
+)
 
 STAGES = ("maps", "exa", "extract", "dedupe", "enrich", "qualify", "crm")
 TOOL_NAME = "mcp__leadgen__run_stage"
@@ -199,6 +205,26 @@ class GuardedWeb:
                         endpoint="uncertain-fetch",
                         cost_basis="estimated",
                     )
+            except WebBackendUnavailable as error:
+                # A timeout or 5xx: the request is over, only its charge is unknown. Book the
+                # whole reserved ceiling so the reservation settles instead of staying uncertain
+                # (callers such as evidence gathering skip the page and carry on).
+                failure = error
+                shares = (
+                    {"exa": EXA_WEB_CEILING_PER_CALL, "firecrawl": cost - EXA_WEB_CEILING_PER_CALL}
+                    if primary == "exa"
+                    else {"firecrawl": cost}
+                )
+                for service, share in shares.items():
+                    if share > 0:
+                        record_cost(
+                            self.connection,
+                            self.run_id,
+                            service,
+                            share,
+                            endpoint="unavailable-call",
+                            cost_basis="estimated",
+                        )
             else:
                 if (
                     primary == "firecrawl"
@@ -881,9 +907,27 @@ async def run_plan(
                 raise ValueError("Agent did not report its final usage; reconciliation required")
         if len(completed_stages(connection, run.run_id)) != len(STAGES):
             raise ValueError(stage_failure or "Agent ended before all pipeline stages completed")
+        # The completion check: a run is finished only when it leaves nothing open behind it.
+        close_out_run(
+            connection,
+            run.run_id,
+            STAGES,
+            web_service=web_service_for(settings),
+            claude_model=settings.leadgen_model,
+        )
         finish_run(connection, run.run_id, "finished", **session)
     except Exception:
-        finish_run(connection, run.run_id, "failed", **session)
+        try:
+            # Calls that are over but unpriced settle even when the run fails; only an Apify
+            # actor that may still be running is left for the operator.
+            settle_unknown_outcomes(
+                connection,
+                run.run_id,
+                web_service=web_service_for(settings),
+                claude_model=settings.leadgen_model,
+            )
+        finally:
+            finish_run(connection, run.run_id, "failed", **session)
         raise
     return {
         "run_id": str(run.run_id),

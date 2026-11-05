@@ -126,6 +126,40 @@ def test_unsupported_site_records_conservative_cost_without_blocking_resume(runn
     )
 
 
+@pytest.mark.parametrize("failure", ["503", "timeout"])
+def test_unavailable_page_settles_its_reservation_at_the_ceiling(running, failure):
+    """A Firecrawl 5xx or timeout is skipped by evidence gathering, so it must not leave an
+    uncertain reservation behind to block the next run (2026-11-05, reservation 185)."""
+    import httpx
+    import respx
+
+    from leadgen.orchestrator import GuardedWeb
+    from leadgen.web_research import FirecrawlBackend, WebBackendUnavailable, WebResearcher
+
+    connection, _plan, run = running
+    settings = Settings()
+    with respx.mock() as mock, httpx.Client() as http:
+        route = mock.post("https://api.firecrawl.dev/v2/scrape")
+        if failure == "503":
+            route.respond(503, json={"error": "busy"})
+        else:
+            route.side_effect = httpx.ReadTimeout("timed out")
+        backend = FirecrawlBackend(
+            api_key="test-only",
+            usd_per_credit=settings.firecrawl_usd_per_credit,
+            http_client=http,
+        )
+        web = GuardedWeb(
+            connection, run.run_id, WebResearcher(connection, backend, run.run_id), settings, "test"
+        )
+        with pytest.raises(WebBackendUnavailable):
+            web.fetch_page("https://example.com")
+    assert connection.execute("SELECT status FROM budget_reservations").fetchone() == ("succeeded",)
+    assert connection.execute("SELECT service,cost_usd,cost_basis FROM cost_ledger").fetchall() == [
+        ("firecrawl", settings.firecrawl_usd_per_credit, "estimated")
+    ]
+
+
 def test_exa_page_reserves_exa_ceiling_plus_one_firecrawl_render(running):
     from leadgen.orchestrator import GuardedWeb
     from leadgen.web_research import (

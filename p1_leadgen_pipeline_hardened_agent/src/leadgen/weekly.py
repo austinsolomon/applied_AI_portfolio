@@ -28,6 +28,7 @@ from leadgen.gaps import read_gaps
 from leadgen.migrate import MigrationError, _check_history, discover_migrations
 from leadgen.orchestrator import Pipeline, build_plan, exa_ceiling, run_plan
 from leadgen.plans import approve_plan
+from leadgen.run_closeout import settle_ended_runs, settles_by_estimate, web_service_for
 from leadgen.run_status import _market_label
 
 EXIT_OK = 0
@@ -83,8 +84,18 @@ def load_policy(path: Path = DEFAULT_POLICY_PATH) -> tuple[WeeklyPolicy, str]:
         raise PolicyError(f"{path} is not a valid policy: {error}") from error
 
 
-def check_ready(connection: psycopg.Connection) -> None:
-    """Refuse to start anything a person has to look at first. Never migrates by itself."""
+def check_ready(
+    connection: psycopg.Connection,
+    *,
+    web_service: str = "firecrawl",
+    claude_model: str = "unknown",
+    settle: bool = True,
+) -> None:
+    """Refuse to start anything a person has to look at first. Never migrates by itself.
+
+    Paid calls an ended run left unpriced are booked at their ceilings first (`settle=False`, the
+    dry run, only previews that), so a finished run never blocks the next one. An Apify actor
+    that may still be running does block: only an operator can confirm it stopped."""
     migrations = discover_migrations()
     try:
         applied = dict(
@@ -102,15 +113,22 @@ def check_ready(connection: psycopg.Connection) -> None:
             f"Run {running[0][0]} is still marked running. If no process is executing it, "
             "reconcile its paid calls (docs/operations.md) before starting another."
         )
-    unresolved = connection.execute(
-        "SELECT plan_id, count(*) FROM budget_reservations "
-        "WHERE status IN ('started','uncertain') GROUP BY plan_id ORDER BY plan_id"
+    if settle:
+        settle_ended_runs(connection, web_service=web_service, claude_model=claude_model)
+    open_calls = connection.execute(
+        "SELECT plan_id, operation, status FROM budget_reservations "
+        "WHERE status IN ('started','uncertain') ORDER BY plan_id, reservation_id"
     ).fetchall()
-    if unresolved:
-        listed = ", ".join(f"plan {plan_id}: {count}" for plan_id, count in unresolved)
+    blocking = [
+        (plan_id, operation)
+        for plan_id, operation, status in open_calls
+        if status == "started" or not settles_by_estimate(operation)
+    ]
+    if blocking:
+        listed = ", ".join(f"plan {plan_id}: {operation}" for plan_id, operation in blocking)
         raise NeedsHuman(
-            f"Paid calls with unknown outcomes ({listed}) must be reconciled first "
-            "(docs/operations.md)."
+            f"An Apify actor may still be running ({listed}). Confirm in Apify that it stopped, "
+            "then reconcile it (docs/operations.md)."
         )
 
 
@@ -204,7 +222,12 @@ async def run_weekly(
     pipeline_factory=Pipeline,
 ) -> tuple[int, dict]:
     try:
-        check_ready(connection)
+        check_ready(
+            connection,
+            web_service=web_service_for(settings),
+            claude_model=settings.leadgen_model,
+            settle=not dry_run,
+        )
     except NeedsHuman as reason:
         return EXIT_NEEDS_HUMAN, {"status": "needs a human", "reason": str(reason)}
     recent = recent_policy_approval(connection, policy.min_days_between_runs)

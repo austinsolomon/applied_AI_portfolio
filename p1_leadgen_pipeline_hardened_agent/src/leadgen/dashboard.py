@@ -16,7 +16,7 @@ import streamlit
 from pydantic import ValidationError
 
 from leadgen import data_model, run_status
-from leadgen.audit import ACTORS
+from leadgen.audit import ACTORS, STATE_MACHINE
 from leadgen.category_config import load_category_config
 from leadgen.database import connect
 from leadgen.eval_review_view import render_eval_review
@@ -205,13 +205,6 @@ def render_run(connection: psycopg.Connection) -> None:
     if summary:
         streamlit.dataframe(history_table(summary), hide_index=True)
 
-    if detail.needs_a_human:
-        streamlit.warning(
-            f"{len(detail.needs_reconciliation)} paid calls ended without a known outcome. "
-            "Check the provider's usage records, reconcile each reservation, then resume with "
-            f"`leadgen run --plan {detail.plan_id} --resume` (see docs/operations.md)."
-        )
-
     streamlit.subheader("Stages")
     streamlit.markdown(stage_track_html(detail), unsafe_allow_html=True)
 
@@ -223,6 +216,15 @@ def render_run(connection: psycopg.Connection) -> None:
         streamlit.caption("No paid calls yet.")
     else:
         streamlit.dataframe(spend, hide_index=True)
+
+    if detail.needs_a_human:
+        # Close-out books every finished call; only an Apify actor that may still be running is
+        # left open, so this note is rare and stays out of the way below the run's numbers.
+        streamlit.caption(
+            f"{len(detail.needs_reconciliation)} paid call(s) still open: "
+            f"{', '.join(detail.needs_reconciliation)}. Confirm the outcome with the provider, "
+            "then reconcile (docs/operations.md)."
+        )
 
 
 def history_table(rows: list[dict]) -> pandas.DataFrame:
@@ -341,20 +343,44 @@ def audit_summary(action: str, target: str | None) -> str:
     return sentence
 
 
+PLAN_PHASE = "Plan & approve"
+CLOSE_OUT_PHASE = "Close-out"
+
+
+def audit_stages(events: list[dict]) -> list[str]:
+    """The pipeline stage each event (in recorded order) ran within. Rows before the first stage
+    are planning and approval; rows after the last stage finished are the run's close-out. The
+    SDK tool call and hook rows that open a stage name it as their target, so they count in it."""
+    stage_for_target = {stage: label for stage, label in run_status.STAGE_LABELS.items()}
+    stage_for_target.update(
+        {f"run_stage {stage}": label for stage, label in run_status.STAGE_LABELS.items()}
+    )
+    last_stage = list(run_status.STAGE_LABELS)[-1]
+    current, phases = PLAN_PHASE, []
+    for event in events:
+        if event["target"] in stage_for_target:
+            current = stage_for_target[event["target"]]
+        phases.append(current)
+        if event["actor"] == STATE_MACHINE and event["action"].startswith(
+            f"stage {last_stage} finished"
+        ):
+            current = CLOSE_OUT_PHASE
+    return phases
+
+
 def audit_table(events: list[dict]) -> pandas.DataFrame:
-    started = events[0]["recorded_at"] if events else None
     return pandas.DataFrame(
         [
             {
                 "#": index,
                 "Time": event["recorded_at"].strftime("%H:%M:%S.%f")[:-3],
-                "+s": round((event["recorded_at"] - started).total_seconds(), 1),
-                "Who (X)": event["actor"],
+                "Stage": stage,
+                "Subcomponent": event["actor"],
                 "Summary": audit_summary(event["action"], event["target"]),
-                # Everything recorded, including what the action was applied to.
-                "Details": json.dumps({"target": event["target"], **(event["detail"] or {})}),
             }
-            for index, event in enumerate(events, start=1)
+            for index, (event, stage) in enumerate(
+                zip(events, audit_stages(events), strict=True), start=1
+            )
         ]
     )
 
@@ -376,12 +402,12 @@ def render_audit(connection: psycopg.Connection) -> None:
     table = audit_table(events)
     controls = streamlit.columns([2, 2, 1])
     # The 19 audit actors in pipeline order, whether or not this plan's trail has them yet.
-    actors = controls[0].multiselect("Who (X)", list(ACTORS), key="audit_actors")
-    search = controls[1].text_input("Search summaries and details", key="audit_search")
+    actors = controls[0].multiselect("Subcomponent", list(ACTORS), key="audit_actors")
+    search = controls[1].text_input("Search stages and summaries", key="audit_search")
     newest_first = controls[2].toggle("Newest first", value=True, key="audit_newest")
     shown = table
     if actors:
-        shown = shown[shown["Who (X)"].isin(actors)]
+        shown = shown[shown["Subcomponent"].isin(actors)]
     if search:
         needle = search.lower()
         shown = shown[
@@ -390,15 +416,14 @@ def render_audit(connection: psycopg.Connection) -> None:
     if newest_first:
         shown = shown.iloc[::-1]
     streamlit.caption(
-        f"{len(shown)} of {len(table)} events. Each row: who (X) did it, a plain-language "
-        "summary, and the recorded details. Refreshes every 5 seconds."
+        f"{len(shown)} of {len(table)} events. Each row: the pipeline stage it ran in, the "
+        "subcomponent that did it, and a plain-language summary. Refreshes every 5 seconds."
     )
     streamlit.dataframe(
         shown,
         hide_index=True,
         column_config={
             "Summary": streamlit.column_config.TextColumn(width="large"),
-            "Details": streamlit.column_config.TextColumn(width="medium"),
         },
     )
     streamlit.download_button(
