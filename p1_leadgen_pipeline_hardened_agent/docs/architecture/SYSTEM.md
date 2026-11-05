@@ -451,15 +451,16 @@ Steps:
 
 Let an operator label recorded decisions and contradictions.
 
-All judge decisions are captured, not just the successful ones. A Streamlit review page records correct/incorrect labels and notes. Phoenix ended with 24 review decisions. Human labels do not automatically retrain or change the model.
+All judge decisions are captured, not just the successful ones. Following Hamel Husain's "Your AI Product Needs Evals", the Streamlit review page shows one decision at a time beside its evidence page with the quote highlighted, hides the judge's verdict in blind mode, and records a pass/fail label with a critique, the correct verdict and failure-mode tags. A judge-alignment panel reports per-verdict precision and recall. Phoenix ended with 24 review decisions. Human labels do not automatically retrain or change the model.
 
 Source: [src/leadgen/eval_review.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/eval_review.py).
 
 Steps:
 
-1. **Inspect evidence** — Read the saved decision and sources.
-2. **Label** — Mark correct or incorrect with a note.
-3. **Export** — Prepare reviewed fixtures for offline regression.
+1. **Inspect evidence** — Read one decision beside its page, quote highlighted; blind mode first.
+2. **Label** — Pass or fail; a fail takes a critique, the correct verdict and failure-mode tags.
+3. **Measure** — Confusion matrix and per-verdict precision and recall against the labels.
+4. **Export** — Prepare reviewed fixtures for offline regression.
 
 ### FX · Replay fixtures
 
