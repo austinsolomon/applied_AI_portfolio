@@ -485,8 +485,9 @@ def render_decision(
         blind_pick = streamlit.session_state.get(blind_pick_key(record.eval_record_id))
     revealed = not blind_mode or record.is_labeled or blind_pick is not None
 
-    left, right = streamlit.columns([2, 3], gap="large")
-    with left:
+    # Evidence on the left, the decision and the labeling on the right.
+    evidence_column, labeling_column = streamlit.columns([3, 2], gap="large")
+    with labeling_column:
         if not revealed:
             streamlit.markdown("**Blind first: what would you decide?**")
             streamlit.radio(
@@ -524,7 +525,7 @@ def render_decision(
                 failure_modes=failure_modes,
                 next_record_id=next_ids[0] if next_ids else None,
             )
-    with right:
+    with evidence_column:
         render_evidence(record, revealed)
 
 
