@@ -29,7 +29,7 @@ from leadgen.audit import (
 )
 from leadgen.budget import BudgetBlocked, paid_operation, plan_spend, record_cost, trace
 from leadgen.category_config import load_category_config
-from leadgen.contacts import BlitzClient, enrich_contact
+from leadgen.contacts import BlitzClient, BlitzRequestRejected, enrich_contact
 from leadgen.crm_write import QualifiedLead, write_qualified_leads
 from leadgen.database import connect
 from leadgen.dedupe import IncomingLead, dedupe_against_crm
@@ -482,13 +482,28 @@ class Pipeline:
                         with BlitzClient(
                             self.settings.blitz_api_key.get_secret_value(), max_retries=0
                         ) as client:
-                            result = enrich_contact(
-                                lead["website"],
-                                connection=connection,
-                                client=client,
-                                run_id=self.run.run_id,
-                                usd_per_record=self.settings.blitz_usd_per_record,
-                            )
+                            try:
+                                result = enrich_contact(
+                                    lead["website"],
+                                    connection=connection,
+                                    client=client,
+                                    run_id=self.run.run_id,
+                                    usd_per_record=self.settings.blitz_usd_per_record,
+                                )
+                            except BlitzRequestRejected as rejection:
+                                # BlitzAPI refused this lead's input (e.g. an invalid domain)
+                                # before doing any work, so nothing was billed: the lead simply
+                                # has no looked-up contact, and the stage carries on.
+                                result = None
+                                audit(
+                                    connection,
+                                    BLITZ_ENRICHMENT,
+                                    f"rejects {lead['website']}: {rejection}",
+                                    lead["business_name"],
+                                    run_id=self.run.run_id,
+                                    cost_usd=Decimal(0),
+                                )
+                    if result is not None:
                         connection.execute(
                             "UPDATE raw_leads SET phone=%s,email=%s WHERE raw_lead_id=%s",
                             (result.phone, result.email, lead["raw_lead_id"]),

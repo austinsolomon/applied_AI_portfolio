@@ -254,6 +254,16 @@ def normalize_domain(website: str | None) -> str | None:
     return text or None
 
 
+# A public hostname: dot-separated labels ending in an alphabetic top-level domain.
+PUBLIC_DOMAIN = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+def is_public_domain(domain: str | None) -> bool:
+    """False for hosts no business can own, such as "chefanthonyserrano." (no top-level domain),
+    which Exa returned in a live run and BlitzAPI then rejected."""
+    return bool(domain) and bool(PUBLIC_DOMAIN.match(domain))
+
+
 def enrich_contact(
     website: str,
     *,
