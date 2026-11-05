@@ -40,7 +40,7 @@ def running(migrated_connection):
     connection = migrated_connection
     market_id = add_market(connection)
     plan = create_plan(
-        connection, [PlannedCell(market_id, "Phoenix, AZ", "mobile massage", 30, Decimal("1"))]
+        connection, [PlannedCell(market_id, "Phoenix, AZ", "private chef", 30, Decimal("1"))]
     )
     approve_plan(connection, plan.plan_id, Decimal("3"), "test operator")
     return connection, plan, start_run(connection, plan.plan_id)

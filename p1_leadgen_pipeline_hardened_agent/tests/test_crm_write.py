@@ -2,10 +2,12 @@
 
 import logging
 import uuid
+from pathlib import Path
 
 import psycopg
 import pytest
 
+from leadgen.category_config import load_category_config
 from leadgen.crm_write import (
     QualifiedLead,
     clean_email,
@@ -19,14 +21,12 @@ from tests.crm_builders import add_lead, add_market
 RUN_ID = uuid.UUID("11111111-2222-4333-8444-555555555555")
 
 
-def qualified(
-    market_id: int, name: str = "Cedar Mobile Massage", **columns: object
-) -> QualifiedLead:
+def qualified(market_id: int, name: str = "Cedar Private Chef", **columns: object) -> QualifiedLead:
     values: dict[str, object] = {
         "source": "google_maps",
         "qualification_reason": "Therapists travel to the client's home across the county.",
         "evidence_quote": "We come to you.",
-        "source_url": "https://cedar-massage.example/services",
+        "source_url": "https://cedar-table.example/services",
         **columns,
     }
     return QualifiedLead(market_id=market_id, business_name=name, **values)  # type: ignore[arg-type]
@@ -47,12 +47,12 @@ def crm_rows(connection: psycopg.Connection) -> list[tuple]:
 @pytest.mark.parametrize(
     "email",
     [
-        "noreply@cedar-massage.com",
-        "No-Reply@cedar-massage.com",
-        "donotreply@cedar-massage.com",
-        "DoNotReply@cedar-massage.com",
-        "mailer-daemon@cedar-massage.com",
-        "postmaster@cedar-massage.com",
+        "noreply@cedar-table.com",
+        "No-Reply@cedar-table.com",
+        "donotreply@cedar-table.com",
+        "DoNotReply@cedar-table.com",
+        "mailer-daemon@cedar-table.com",
+        "postmaster@cedar-table.com",
         "hello@example.com",
         "hello@mail.example.org",
         "hello@EXAMPLE.NET",
@@ -67,10 +67,10 @@ def test_junk_emails_are_recognized(email: str) -> None:
 @pytest.mark.parametrize(
     "email",
     [
-        "hello@cedar-massage.com",
+        "hello@cedar-table.com",
         "hello@cedar.example",  # the reserved .example TLD: the demo seed uses it on purpose
-        "replies@cedar-massage.com",  # "replies" is not "reply"-prefixed junk
-        "booking@examplemassage.com",  # a real host that merely contains "example"
+        "replies@cedar-table.com",  # "replies" is not "reply"-prefixed junk
+        "booking@examplechef.com",  # a real host that merely contains "example"
     ],
 )
 def test_real_emails_are_kept(email: str) -> None:
@@ -107,8 +107,8 @@ def test_qualified_leads_are_written_with_their_evidence(
 ) -> None:
     market_id = add_market(migrated_connection)
     leads = [
-        qualified(market_id, "Cedar Mobile Massage", phone="(310) 555-0142"),
-        qualified(market_id, "Harbor Home Massage", email="book@harbor.example"),
+        qualified(market_id, "Cedar Private Chef", phone="(310) 555-0142"),
+        qualified(market_id, "Harbor Home Chef", email="book@harbor.example"),
     ]
 
     report = write_qualified_leads(migrated_connection, RUN_ID, leads)
@@ -118,20 +118,20 @@ def test_qualified_leads_are_written_with_their_evidence(
     assert report.skipped_no_contact == []
     assert crm_rows(migrated_connection) == [
         (
-            "Cedar Mobile Massage",
+            "Cedar Private Chef",
             "(310) 555-0142",
             None,
             "Therapists travel to the client's home across the county.",
             "We come to you.",
-            "https://cedar-massage.example/services",
+            "https://cedar-table.example/services",
         ),
         (
-            "Harbor Home Massage",
+            "Harbor Home Chef",
             None,
             "book@harbor.example",
             "Therapists travel to the client's home across the county.",
             "We come to you.",
-            "https://cedar-massage.example/services",
+            "https://cedar-table.example/services",
         ),
     ]
 
@@ -212,26 +212,38 @@ def test_the_batch_is_one_transaction(migrated_connection: psycopg.Connection) -
 # --- the contradiction scan -------------------------------------------------------------------
 
 
+CHEF_DISQUALIFIERS = load_category_config(
+    Path(__file__).resolve().parents[1] / "config" / "category.yaml"
+).disqualifier_phrases
+
+
 @pytest.mark.parametrize(
     ("reason", "expected_phrases"),
     [
-        ("Operates a massage school and offers outcall sessions.", ["massage school"]),
-        ("Listed on a booking marketplace; therapists travel to clients.", ["booking marketplace"]),
-        ("The business is not a massage school; therapists travel to homes.", []),
-        ("Not a booking marketplace, a real provider that comes to you.", []),
-        ("A mobile provider rather than a massage school.", []),
-        ("Therapists travel; there is no mention of a franchise locator.", []),
-        ("Operates a massage school, not a directory site.", ["massage school"]),
-        ("Serves clients only at its own premises.", ["only at its own premises"]),
+        ("Owns a restaurant and also cooks private dinners.", ["owns a restaurant"]),
+        ("Listed on a chef marketplace; cooks in clients' homes.", ["chef marketplace"]),
+        ("Does not work for a catering company; cooks in clients' homes.", []),
+        ("Not part of a restaurant group, an independent chef.", []),
+        ("An independent private chef rather than a catering company.", []),
+        ("Cooks in homes; there is no mention of a ghost kitchen.", []),
+        ("Owns a restaurant, not a food truck.", ["owns a restaurant"]),
+        ("Runs a meal delivery service across the city.", ["meal delivery"]),
         (
-            "Isn't a massage school. Does sell equipment: sells equipment online.",
-            ["sells equipment"],
+            "Isn't a cooking school. Runs a food truck on weekends.",
+            ["food truck"],
         ),
-        ("Mobile massage across the city.", []),
+        ("Private chef across the city.", []),
     ],
 )
 def test_contradiction_scan_is_negation_aware(reason: str, expected_phrases: list[str]) -> None:
-    assert [phrase for phrase, _clause in find_contradictions(reason)] == expected_phrases
+    found = find_contradictions(reason, CHEF_DISQUALIFIERS)
+    assert [phrase for phrase, _clause in found] == expected_phrases
+
+
+def test_the_generic_default_list_needs_no_category() -> None:
+    assert [phrase for phrase, _ in find_contradictions("Listed in a business directory.")] == [
+        "business directory"
+    ]
 
 
 def test_contradictions_are_reported_and_never_block_the_write(
@@ -243,15 +255,17 @@ def test_contradictions_are_reported_and_never_block_the_write(
         market_id,
         "Suspicious",
         phone="310-555-0142",
-        qualification_reason="Runs a massage school but also sends therapists to homes.",
+        qualification_reason="Owns a restaurant but also cooks private dinners at home.",
     )
 
     with caplog.at_level(logging.WARNING, logger="leadgen.crm_write"):
-        report = write_qualified_leads(migrated_connection, RUN_ID, [suspicious])
+        report = write_qualified_leads(
+            migrated_connection, RUN_ID, [suspicious], CHEF_DISQUALIFIERS
+        )
 
     # No eval table exists in this database: the write still lands and the hit is in the report.
     assert report.inserted == 1
-    assert [hit.phrase for hit in report.contradictions] == ["massage school"]
+    assert [hit.phrase for hit in report.contradictions] == ["owns a restaurant"]
     assert report.contradictions[0].lead_id == report.inserted_lead_ids[0]
     assert report.contradictions_recorded is False
     assert "were not recorded in eval_records" in caplog.text
@@ -266,11 +280,13 @@ def test_contradictions_are_recorded_in_eval_records_when_the_table_exists(
         market_id,
         "Suspicious",
         phone="310-555-0142",
-        qualification_reason="Operates a massage school; outcall sessions are listed.",
+        qualification_reason="Owns a restaurant; private dinners are listed.",
     )
     clean = qualified(market_id, "Clean", phone="310-555-0143")
 
-    report = write_qualified_leads(migrated_connection, RUN_ID, [suspicious, clean])
+    report = write_qualified_leads(
+        migrated_connection, RUN_ID, [suspicious, clean], CHEF_DISQUALIFIERS
+    )
 
     assert report.contradictions_recorded is True
     rows = migrated_connection.execute(
@@ -282,7 +298,7 @@ def test_contradictions_are_recorded_in_eval_records_when_the_table_exists(
             "contradiction",
             report.inserted_lead_ids[0],
             "Suspicious",
-            "reason affirms 'massage school': Operates a massage school",
+            "reason affirms 'owns a restaurant': Owns a restaurant",
         )
     ]
 

@@ -1,5 +1,8 @@
 # Phoenix live sample — 2026-10-11
 
+> These runs used the earlier demo category, mobile and in-home massage. The demo category has
+> been independent private chefs since 2026-11-05; the numbers below are kept as recorded.
+
 One approved plan targeted 50 mobile-massage businesses in Phoenix, Arizona, using one city and
 one keyword. It finished with **12 qualified, 14 rejected and 24 review decisions**. Ten qualified
 businesses were inserted into the CRM; two lacked a usable phone or email and were skipped.

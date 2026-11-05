@@ -24,7 +24,7 @@ def review_database(
     sample_id = record_eval(
         migrated_connection,
         kind="sample_verdict",
-        subject="Phoenix, AZ · massage therapist",
+        subject="Phoenix, AZ · personal chef",
         verdict="RECONFIGURE",
         reason="purity 61%",
         evidence={"purity_pct": 61},
@@ -33,9 +33,9 @@ def review_database(
     record_eval(
         migrated_connection,
         kind="judge_decision",
-        subject="Cedar Massage",
+        subject="Cedar Private Chef",
         verdict="qualified",
-        reason="offers deep tissue massage in Phoenix",
+        reason="offers in-home dinners in Phoenix",
         evidence={"serves_market": "yes"},
         model="claude-haiku-5-5",
     )
@@ -70,8 +70,8 @@ def test_lists_decisions_newest_first_with_their_labels() -> None:
     ]
     rows = table[["Kind", "Subject", "Verdict", "Model", "Label"]].values.tolist()
     assert rows == [
-        ["judge_decision", "Cedar Massage", "qualified", "claude-haiku-5-5", "—"],
-        ["sample_verdict", "Phoenix, AZ · massage therapist", "RECONFIGURE", "—", "correct"],
+        ["judge_decision", "Cedar Private Chef", "qualified", "claude-haiku-5-5", "—"],
+        ["sample_verdict", "Phoenix, AZ · personal chef", "RECONFIGURE", "—", "correct"],
     ]
     metrics = {metric.label: metric.value for metric in app.metric}
     assert metrics == {"Records": "2", "Unlabeled": "1", "Correct": "1", "Incorrect": "0"}
@@ -84,7 +84,7 @@ def test_unlabeled_filter_hides_labeled_records() -> None:
     app.checkbox(key="unlabeled_only").check().run()
 
     assert not app.exception, app.exception
-    assert app.dataframe[0].value["Subject"].tolist() == ["Cedar Massage"]
+    assert app.dataframe[0].value["Subject"].tolist() == ["Cedar Private Chef"]
     assert app.metric[1].value == "1"
 
 
@@ -102,11 +102,11 @@ def test_saving_a_label_writes_it_and_updates_the_page(
     review_database: psycopg.Connection,
 ) -> None:
     app = render_page()
-    # The newest record (Cedar Massage, unlabeled) is selected by default.
+    # The newest record (Cedar Private Chef, unlabeled) is selected by default.
     (judge_id,) = [
         record.eval_record_id
         for record in read_eval_records(review_database)
-        if record.subject == "Cedar Massage"
+        if record.subject == "Cedar Private Chef"
     ]
 
     app.radio(key=f"label_{judge_id}").set_value("incorrect")

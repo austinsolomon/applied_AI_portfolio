@@ -35,7 +35,7 @@ def approved(migrated_connection):
     connection = migrated_connection
     market_id = add_market(connection)
     plan = create_plan(
-        connection, [PlannedCell(market_id, "Los Angeles, CA", "mobile massage", 50, Decimal("1"))]
+        connection, [PlannedCell(market_id, "Los Angeles, CA", "private chef", 50, Decimal("1"))]
     )
     approve_plan(connection, plan.plan_id, Decimal("5"), "test operator")
     return connection, plan
@@ -153,7 +153,7 @@ def test_exa_page_reserves_exa_ceiling_plus_one_firecrawl_render(running):
     )
     web = GuardedWeb(connection, run.run_id, researcher, settings, "test")
     web.fetch_page("https://cedar.example")
-    web.search("cedar massage")
+    web.search("cedar chef")
     assert connection.execute(
         "SELECT ceiling_usd FROM budget_reservations ORDER BY reservation_id"
     ).fetchall() == [
@@ -178,10 +178,10 @@ def test_hook_denies_unknown_tool_and_out_of_order_stage(running):
 def fake_maps():
     item = {
         "placeId": "place-cedar",
-        "title": "Cedar Mobile Massage",
+        "title": "Cedar Private Chef",
         "phone": "3105550142",
         "website": "https://cedar.example",
-        "categoryName": "Massage therapist",
+        "categoryName": "Personal chef service",
         "location": {"lat": 34.05, "lng": -118.24},
     }
     actor_run = {
@@ -214,7 +214,7 @@ def test_aborted_scraper_persists_and_repersist_adds_nothing(running):
 
 def test_grader_does_not_treat_unknown_coordinates_as_in_market(running):
     connection, plan, run = running
-    lead = RawLead("cedar", "Cedar", categories=["Massage therapist"])
+    lead = RawLead("cedar", "Cedar", categories=["Personal chef service"])
     assert grade_sample(connection, run.run_id, plan.cells[0], [lead]) == "RECONFIGURE"
 
 
@@ -224,7 +224,7 @@ def persist_consensus_mix(connection, run, market_id):
         run.run_id,
         market_id,
         "google_maps",
-        [RawLead("maps-1", "Maps Massage", phone="3105550101")],
+        [RawLead("maps-1", "Maps Chef", phone="3105550101")],
     )
     persist_leads(
         connection,
@@ -274,7 +274,7 @@ def test_exa_stage_runs_one_company_search_per_phrasing(running):
     connection, plan, run = running
     category = load_category_config()
     client = Mock()
-    client.search.return_value = exa_response(("https://desertmassage.com/", "Desert Massage"))
+    client.search.return_value = exa_response(("https://desertchef.com/", "Desert Chef"))
     assert exa_calls(plan, category) == len(category.exa_queries)
     result = asyncio.run(Pipeline(connection, run, Settings(), exa=client).run_exa())
     assert result == {"sourced": 1, "queries": len(category.exa_queries)}
@@ -297,7 +297,7 @@ def test_exa_counts_how_many_phrasings_found_a_business(running):
     connection, plan, run = running
     category = load_category_config()
     client = Mock()
-    client.search.return_value = exa_response(("https://desertmassage.com", "Desert Massage"))
+    client.search.return_value = exa_response(("https://desertchef.com", "Desert Chef"))
     leads = source_exa(
         connection, run.run_id, plan.cells[0].market_id, category, client, cities=["Phoenix, AZ"]
     )
@@ -311,11 +311,11 @@ def test_exa_drops_shared_and_aggregator_hosts(running):
     connection, plan, run = running
     client = Mock()
     client.search.return_value = exa_response(
-        ("https://www.yelp.com/search?find_desc=massage", "Best Massage in Phoenix"),
-        ("https://instagram.com/mobilemassage", "Mobile Massage"),
-        ("https://relax.glossgenius.com", "Relax Massage"),
-        ("https://desertmassage.com", "Desert Massage"),
-        ("https://desertmassage.com/about", "Desert Massage about"),
+        ("https://www.yelp.com/search?find_desc=private+chef", "Best Private Chefs in Phoenix"),
+        ("https://instagram.com/privatechef", "Private Chef"),
+        ("https://cedar.cozymeal.com", "Cedar Chef on Cozymeal"),
+        ("https://desertchef.com", "Desert Chef"),
+        ("https://desertchef.com/about", "Desert Chef about"),
         ("https://phoenixplumbing.com", "Phoenix Plumbing"),
     )
     leads = source_exa(
@@ -326,7 +326,7 @@ def test_exa_drops_shared_and_aggregator_hosts(running):
         client,
         cities=["Phoenix, AZ"],
     )
-    assert [lead.source_key for lead in leads] == ["desertmassage.com"]
+    assert [lead.source_key for lead in leads] == ["desertchef.com"]
 
 
 def test_exa_page_text_is_cached_for_qualification(running):
@@ -335,8 +335,8 @@ def test_exa_page_text_is_cached_for_qualification(running):
     connection, plan, run = running
     client = Mock()
     client.search.return_value = exa_response(
-        ("https://desertmassage.com", "Desert Massage"),
-        text="We travel to homes across Phoenix for mobile massage.",
+        ("https://desertchef.com", "Desert Chef"),
+        text="We travel to homes across Phoenix for private chef.",
     )
     source_exa(
         connection,
@@ -348,10 +348,10 @@ def test_exa_page_text_is_cached_for_qualification(running):
     )
     paid_backend = Mock()
     page = WebResearcher(connection, paid_backend, run_id=run.run_id).fetch_page(
-        "https://desertmassage.com/"
+        "https://desertchef.com/"
     )
     assert (page.from_cache, page.backend) == (True, "exa")
-    assert "mobile massage" in page.text
+    assert "private chef" in page.text
     paid_backend.fetch_page.assert_not_called()
 
 
@@ -392,25 +392,45 @@ def test_exa_blocked_when_budget_is_exhausted(running):
 @pytest.mark.parametrize(
     "quote,url,market,expected",
     [
-        ("We provide mobile massage in Los Angeles.", "https://cedar.example", "yes", "qualified"),
+        (
+            "We cook private dinners in homes across Los Angeles.",
+            "https://cedar.example",
+            "yes",
+            "qualified",
+        ),
         ("Invented quote", "https://cedar.example", "yes", "review"),
-        ("We provide mobile massage in Los Angeles.", "https://wrong.example", "yes", "review"),
-        ("We provide mobile massage in Los Angeles.", "https://cedar.example", "no", "rejected"),
-        ("We provide mobile massage in Los Angeles.", "https://cedar.example", "unclear", "review"),
+        (
+            "We cook private dinners in homes across Los Angeles.",
+            "https://wrong.example",
+            "yes",
+            "review",
+        ),
+        (
+            "We cook private dinners in homes across Los Angeles.",
+            "https://cedar.example",
+            "no",
+            "rejected",
+        ),
+        (
+            "We cook private dinners in homes across Los Angeles.",
+            "https://cedar.example",
+            "unclear",
+            "review",
+        ),
     ],
 )
 def test_judge_requires_real_quote_url_and_market(quote, url, market, expected):
     judgment = Judgment(
         verdict="qualified",
-        reason="Offers mobile massage",
+        reason="Offers private chef",
         evidence_quote=quote,
         source_url=url,
-        eligible_services=["mobile massage"],
+        eligible_services=["private chef"],
         serves_market=market,
     )
     result = validate_judgment(
         judgment,
-        {"https://cedar.example": "We provide mobile massage in Los Angeles."},
+        {"https://cedar.example": "We cook private dinners in homes across Los Angeles."},
         load_category_config(),
     )
     assert result.verdict == expected
@@ -423,7 +443,7 @@ def test_qualification_records_model_usage_and_evidence(running):
         run.run_id,
         plan.cells[0].market_id,
         "google_maps",
-        [RawLead("cedar", "Cedar Massage", phone="3105550142")],
+        [RawLead("cedar", "Cedar Private Chef", phone="3105550142")],
     )
     lead = read_raw_leads(connection, run.run_id)[0]
     client = Mock()
@@ -435,7 +455,7 @@ def test_qualification_records_model_usage_and_evidence(running):
             reason="Mobile service",
             evidence_quote="Mobile",
             source_url="https://cedar.example",
-            eligible_services=["mobile massage"],
+            eligible_services=["private chef"],
             serves_market="yes",
         ),
     )
@@ -476,7 +496,7 @@ def test_pipeline_dedupe_and_crm_share_real_schema(running):
     connection.execute(
         "UPDATE raw_leads SET qualification=%s::jsonb",
         (
-            '{"verdict":"qualified","reason":"Mobile massage","evidence_quote":"Mobile",'
+            '{"verdict":"qualified","reason":"Private chef","evidence_quote":"Mobile",'
             '"source_url":"https://cedar.example"}',
         ),
     )
@@ -558,9 +578,9 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
         parsed_output=Judgment(
             verdict="qualified",
             reason="Travels to homes in the market",
-            evidence_quote="Mobile massage in Los Angeles",
+            evidence_quote="Private chef in Los Angeles",
             source_url="https://cedar.example",
-            eligible_services=["mobile massage"],
+            eligible_services=["private chef"],
             serves_market="yes",
         ),
     )
@@ -570,7 +590,7 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
             url,
             "https://cedar.example",
             "Cedar",
-            "Mobile massage in Los Angeles",
+            "Private chef in Los Angeles",
             200,
             "free",
             datetime.now(UTC),
@@ -684,7 +704,7 @@ def test_truncated_judge_is_retained_for_review_without_retry(running):
         run.run_id,
         lead,
         "Phoenix",
-        {"https://cedar.example": "Mobile massage"},
+        {"https://cedar.example": "Private chef"},
         load_category_config(),
         Settings(),
         client=client,
@@ -727,19 +747,19 @@ def test_research_loop_rejudges_bounded_evidence(running, monkeypatch, subtype):
         run.run_id,
         plan.cells[0].market_id,
         "google_maps",
-        [RawLead("research", "Cedar Massage", phone="3105550142")],
+        [RawLead("research", "Cedar Private Chef", phone="3105550142")],
     )
     lead = read_raw_leads(connection, run.run_id)[0]
     lead["qualification"] = {"verdict": "review"}
     web = Mock()
     web.search.return_value = [
-        SimpleNamespace(url="https://cedar.example", description="Mobile massage")
+        SimpleNamespace(url="https://cedar.example", description="Private chef")
     ]
     monkeypatch.setattr(research, "create_sdk_mcp_server", lambda **kwargs: kwargs)
 
     async def replay(*, prompt, options):
         search, fetch = options.mcp_servers["research"]["tools"]
-        await search.handler({"query": "Cedar mobile massage"})
+        await search.handler({"query": "Cedar private chef"})
         denied = await fetch.handler({"url": "http://localhost/"})
         assert denied["isError"]
         yield ResultMessage(
@@ -761,10 +781,10 @@ def test_research_loop_rejudges_bounded_evidence(running, monkeypatch, subtype):
         usage=SimpleNamespace(input_tokens=100, output_tokens=30),
         parsed_output=Judgment(
             verdict="qualified",
-            reason="Offers mobile massage",
-            evidence_quote="Mobile massage",
+            reason="Offers private chef",
+            evidence_quote="Private chef",
             source_url="https://cedar.example",
-            eligible_services=["mobile massage"],
+            eligible_services=["private chef"],
             serves_market="yes",
         ),
     )
@@ -858,7 +878,7 @@ def test_malformed_judge_json_becomes_review_without_stopping_the_run(running):
         run.run_id,
         plan.cells[0].market_id,
         "google_maps",
-        [RawLead("cedar", "Cedar Massage", phone="3105550142")],
+        [RawLead("cedar", "Cedar Private Chef", phone="3105550142")],
     )
     lead = read_raw_leads(connection, run.run_id)[0]
     try:

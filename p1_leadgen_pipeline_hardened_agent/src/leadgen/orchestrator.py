@@ -262,7 +262,9 @@ class Pipeline:
                     limit=sample_limit,
                     ceiling=sample_budget,
                 )
-                verdict = grade_sample(self.connection, self.run.run_id, cell, leads)
+                verdict = grade_sample(
+                    self.connection, self.run.run_id, cell, leads, category=self.category
+                )
                 if verdict == "PROCEED" and len(leads) < cell.expected_raw_leads:
                     refreshed = next(
                         item
@@ -555,7 +557,7 @@ class Pipeline:
                         f"tier1:{lead['raw_lead_id']}"
                         + (f":attempt{job.attempts}" if job.attempts > 1 else ""),
                     )
-                    evidence = gather_evidence(lead, market, web, config)
+                    evidence = gather_evidence(lead, market, web, config, category=self.category)
                 audit(
                     connection,
                     worker,
@@ -672,7 +674,12 @@ class Pipeline:
             run_id=self.run.run_id,
             leads=[lead.business_name for lead in qualified],
         )
-        report = write_qualified_leads(self.connection, self.run.run_id, qualified)
+        report = write_qualified_leads(
+            self.connection,
+            self.run.run_id,
+            qualified,
+            disqualifier_phrases=self.category.disqualifier_phrases,
+        )
         audit(
             self.connection,
             "CRM writer",

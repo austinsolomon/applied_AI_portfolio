@@ -126,7 +126,7 @@ def seed_blocked_run(connection: psycopg.Connection):
         0
     ]
     plan = create_plan(
-        connection, [PlannedCell(market_id, "Phoenix, AZ", "mobile massage", 30, Decimal("1"))]
+        connection, [PlannedCell(market_id, "Phoenix, AZ", "private chef", 30, Decimal("1"))]
     )
     approve_plan(connection, plan.plan_id, Decimal("3"), "test operator")
     run = start_run(connection, plan.plan_id)
@@ -185,7 +185,7 @@ def test_audit_log_reads_who_does_what_to_whom(
     plan, run = seed_blocked_run(migrated_connection)
     for actor, action, target in [
         ("Runner (leadgen run)", "starts run", "Postgres runs (state: running)"),
-        ("Exa stage", "sends company search 'mobile massage in Phoenix'", "Exa API"),
+        ("Exa stage", "sends company search 'private chef in Phoenix'", "Exa API"),
     ]:
         migrated_connection.execute(
             "INSERT INTO audit_events (run_id, plan_id, actor, action, target) "
