@@ -123,7 +123,9 @@ def completed_stages(connection, run_id):
 
 
 def budget_hook(connection, run_id, plan_id):
-    async def hook(input_data, tool_use_id=None, context=None):
+    async def hook(input_data, tool_use_id=None, context=None, *, record_allow=True):
+        """`record_allow=False` is the handler's second check of a call the SDK's hook already
+        allowed and recorded: it records only a denial, so each tool call logs one decision."""
         reason = None
         arguments = input_data.get("tool_input", {})
         done = completed_stages(connection, run_id)
@@ -136,15 +138,16 @@ def budget_hook(connection, run_id, plan_id):
         elif not approval or plan_spend(connection, plan_id) >= approval.budget_usd:
             reason = "Approved budget is exhausted or missing"
         decision = "deny" if reason else "allow"
-        trace(connection, run_id, "PreToolUse", decision, {"reason": reason})
-        audit(
-            connection,
-            SDK_PRE_TOOL_USE_HOOK,
-            f"{decision}s the tool call ({reason or 'approved stage'})",
-            f"run_stage {arguments.get('stage')}",
-            run_id=run_id,
-            tool=input_data.get("tool_name"),
-        )
+        if reason or record_allow:
+            trace(connection, run_id, "PreToolUse", decision, {"reason": reason})
+            audit(
+                connection,
+                SDK_PRE_TOOL_USE_HOOK,
+                f"{decision}s the tool call ({reason or 'approved stage'})",
+                f"run_stage {arguments.get('stage')}",
+                run_id=run_id,
+                tool=input_data.get("tool_name"),
+            )
         return {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
@@ -741,7 +744,7 @@ async def run_plan(
     async def run_stage(arguments):
         nonlocal stage_failure
         # Enforce the hook's policy again at the handler boundary.
-        verdict = await hook({"tool_name": TOOL_NAME, "tool_input": arguments})
+        verdict = await hook({"tool_name": TOOL_NAME, "tool_input": arguments}, record_allow=False)
         if verdict["hookSpecificOutput"]["permissionDecision"] != "allow":
             raise BudgetBlocked(verdict["hookSpecificOutput"]["permissionDecisionReason"])
         try:
