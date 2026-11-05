@@ -411,13 +411,16 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
             ),
             TableGuide(
                 "eval_labels",
-                "A person's verdict on an automated decision (correct or incorrect, with a "
-                "note); labels become test fixtures.",
+                "A person's pass/fail on an automated decision; a fail also records the verdict "
+                "it should have been, a one-line critique and failure-mode tags, and labels "
+                "become test fixtures.",
                 [
                     {
                         "eval_record_id": 77,
-                        "label": "correct",
-                        "note": "Clear outcall wording",
+                        "label": "incorrect",
+                        "correct_verdict": "rejected",
+                        "failure_modes": ["national-firm branch advisor missed"],
+                        "critique": "The page says the advisor is with Edward Jones",
                         "labeled_by": "reviewer",
                     }
                 ],

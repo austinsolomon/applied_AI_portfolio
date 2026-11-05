@@ -15,6 +15,9 @@ from leadgen.contacts import normalize_domain
 from leadgen.eval_review import record_eval
 from leadgen.web_research import PageFetchFailed, WebBackendUnavailable
 
+# Put in front of the judge's reason when the citation check lowers a qualified verdict to review.
+UNVERIFIED_REASON_PREFIX = "Evidence or market eligibility could not be verified."
+
 
 class QualificationError(Exception):
     pass
@@ -79,15 +82,15 @@ def validate_judgment(judgment, evidence, category):
         eligible = set(judgment.eligible_services) & set(category.rubric.eligible_services)
         if not quote or quote not in source or not eligible or judgment.serves_market != "yes":
             judgment.verdict = "review"
-            judgment.reason = (
-                "Evidence or market eligibility could not be verified. " + judgment.reason
-            )
+            judgment.reason = UNVERIFIED_REASON_PREFIX + " " + judgment.reason
     return judgment
 
 
 def judge_lead(
     connection, run_id, lead, market, evidence, category, settings, *, client=None, tier=1
 ):
+    # The model's own verdict before the citation check, when a model answered at all.
+    proposed_verdict = None
     if not evidence:
         judgment = Judgment(
             verdict="review",
@@ -225,6 +228,7 @@ def judge_lead(
                     )
                 else:
                     proposed = response.parsed_output
+                    proposed_verdict = proposed.verdict
                     judgment = validate_judgment(proposed, evidence, category)
                     downgraded = judgment.verdict != proposed.verdict
                     audit(
@@ -267,6 +271,9 @@ def judge_lead(
                 "tier": tier,
                 "source": lead.get("source"),
                 "query_consensus": lead.get("query_consensus"),
+                "market": market,
+                # Differs from judgment.verdict when the citation check overruled the model.
+                "proposed_verdict": proposed_verdict,
             },
             model=settings.leadgen_model,
             run_id=run_id,

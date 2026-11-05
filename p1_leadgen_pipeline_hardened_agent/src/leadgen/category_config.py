@@ -19,6 +19,17 @@ from leadgen.settings import get_settings
 HOST_PATTERN = r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
 Host = Annotated[str, Field(pattern=HOST_PATTERN)]
 
+# Failure-mode tags the eval review page offers when a judge decision fails, for a category file
+# that names none of its own. Generic on purpose; each category lists the ways its judge goes wrong.
+DEFAULT_EVAL_FAILURE_MODES: tuple[str, ...] = (
+    "quote not on the page",
+    "wrong market",
+    "should have been review",
+    "directory or aggregator",
+    "not in the category",
+    "missed a disqualifier",
+)
+
 
 class CategoryRubric(BaseModel):
     """What qualifies, what does not, and what needs a closer look."""
@@ -57,6 +68,9 @@ class CategoryConfig(BaseModel):
     judge_requirement: str = Field(min_length=1)
     # Phrases the CRM write flags when a qualified lead's reason affirms them.
     disqualifier_phrases: list[str] = Field(min_length=1)
+    # Tags a reviewer picks from when a judge decision fails (eval review page): the ways this
+    # category's judge goes wrong, counted across labels to find the most common failure.
+    eval_failure_modes: list[str] = Field(default=list(DEFAULT_EVAL_FAILURE_MODES), min_length=1)
 
     @field_validator("exa_queries")
     @classmethod
@@ -73,6 +87,7 @@ class CategoryConfig(BaseModel):
         "signal_terms",
         "maps_category_terms",
         "disqualifier_phrases",
+        "eval_failure_modes",
     )
     @classmethod
     def entries_are_unique_and_non_blank(cls, entries: list[str]) -> list[str]:

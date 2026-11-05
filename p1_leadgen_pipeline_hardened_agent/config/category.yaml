@@ -120,6 +120,20 @@ disqualifier_phrases:
   - online directory
   - advisor-matching
 
+# Failure-mode tags for the eval review page: when a reviewer fails a judge decision, they tag how
+# it went wrong. Counting the tags across labels shows which mistake to fix first (in the judge
+# requirement or rubric above, or in evidence gathering).
+eval_failure_modes:
+  - national-firm branch advisor missed
+  - no CFP® on the page
+  - CFP® candidate or pending credential
+  - wrong market
+  - quote not on the page
+  - should have been review
+  - directory or aggregator
+  - not a financial planner
+  - insurance or tax-only firm
+
 # Domains many unrelated businesses share: social profiles, link-in-bio pages and site builders
 # that put every business under one host. Dedupe never treats these as a match key, and
 # Exa sourcing excludes them in the request itself. A host entry also covers its subdomains, so list
