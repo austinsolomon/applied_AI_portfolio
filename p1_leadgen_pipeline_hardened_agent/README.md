@@ -232,7 +232,7 @@ logo and implies no endorsement.
 |---|---|
 | Demand gaps | Leads Available % per market, biggest gap first |
 | Current run | The seven stages in order, each done, running, failed, waiting or "needs a human", with stage results, job progress, spend vs budget and recent events; refreshes every 10 s |
-| Audit log | For a plan run with `--audit`: each major step of the execution as Who (X) → Does (Y) → To (Z), for example "Exa API (Search) → company search returns 25 results → '…independent CFP® financial planners … in Phoenix, AZ'" or "Claude Agent SDK (PreToolUse hook) → allows the tool call → run_stage maps"; filter by the 19 actors in pipeline order, search, newest first; refreshes every 5 s |
+| Audit log | For a plan run with `--audit`: each major step as Who (X), a plain-language Summary (for example "Company search returns 25 results — independent CFP® financial planners … in Phoenix, AZ" or "Allows the tool call (approved stage) — run_stage maps") and the recorded Details as JSON; filter by the 19 actors in pipeline order, search, newest first; refreshes every 5 s |
 | Run history | One row per run: market, status, Maps and Exa sourced, new, qualified, review, rejected, CRM inserted, spend vs budget, cost per qualified lead |
 | Sources and spend | Qualification rate per source, Exa query-consensus breakdown, spend per service (provider-reported vs estimated) |
 | Eval review | Label the pipeline's decisions; labels export as test fixtures |

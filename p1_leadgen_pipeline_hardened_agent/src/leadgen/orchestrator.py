@@ -269,7 +269,8 @@ class Pipeline:
         audit(
             connection,
             STATE_MACHINE,
-            f"stage {stage} finished: {result}",
+            f"stage {stage} finished: "
+            + ", ".join(f"{key.replace('_', ' ')} {value}" for key, value in result.items()),
             stage,
             run_id=run_id,
         )

@@ -332,6 +332,15 @@ def render_sources(connection: psycopg.Connection) -> None:
     )
 
 
+def audit_summary(action: str, target: str | None) -> str:
+    """One plain sentence for what the actor did: the action, plus what it acted on when the
+    action does not already name it."""
+    sentence = action[:1].upper() + action[1:] if action else ""
+    if target and target.lower() not in sentence.lower():
+        sentence = f"{sentence} — {target}"
+    return sentence
+
+
 def audit_table(events: list[dict]) -> pandas.DataFrame:
     started = events[0]["recorded_at"] if events else None
     return pandas.DataFrame(
@@ -341,9 +350,9 @@ def audit_table(events: list[dict]) -> pandas.DataFrame:
                 "Time": event["recorded_at"].strftime("%H:%M:%S.%f")[:-3],
                 "+s": round((event["recorded_at"] - started).total_seconds(), 1),
                 "Who (X)": event["actor"],
-                "Does (Y)": event["action"],
-                "To (Z)": event["target"],
-                "Details": json.dumps(event["detail"]) if event["detail"] else "",
+                "Summary": audit_summary(event["action"], event["target"]),
+                # Everything recorded, including what the action was applied to.
+                "Details": json.dumps({"target": event["target"], **(event["detail"] or {})}),
             }
             for index, event in enumerate(events, start=1)
         ]
@@ -356,7 +365,7 @@ def render_audit(connection: psycopg.Connection) -> None:
         streamlit.info(
             "No audit trail yet. Plan and run with `--audit`, e.g. "
             "`leadgen plan --audit ...` then `leadgen run --plan latest --audit`. "
-            "Every step is then recorded here as who → does → to whom."
+            "Every step is then recorded here as who did it and what happened."
         )
         return
     labels = dict(plans)
@@ -368,7 +377,7 @@ def render_audit(connection: psycopg.Connection) -> None:
     controls = streamlit.columns([2, 2, 1])
     # The 19 audit actors in pipeline order, whether or not this plan's trail has them yet.
     actors = controls[0].multiselect("Who (X)", list(ACTORS), key="audit_actors")
-    search = controls[1].text_input("Search actions and details", key="audit_search")
+    search = controls[1].text_input("Search summaries and details", key="audit_search")
     newest_first = controls[2].toggle("Newest first", value=True, key="audit_newest")
     shown = table
     if actors:
@@ -381,14 +390,14 @@ def render_audit(connection: psycopg.Connection) -> None:
     if newest_first:
         shown = shown.iloc[::-1]
     streamlit.caption(
-        f"{len(shown)} of {len(table)} events. Each row reads: Who (X) → Does (Y) → To (Z). "
-        "Refreshes every 5 seconds."
+        f"{len(shown)} of {len(table)} events. Each row: who (X) did it, a plain-language "
+        "summary, and the recorded details. Refreshes every 5 seconds."
     )
     streamlit.dataframe(
         shown,
         hide_index=True,
         column_config={
-            "Does (Y)": streamlit.column_config.TextColumn(width="large"),
+            "Summary": streamlit.column_config.TextColumn(width="large"),
             "Details": streamlit.column_config.TextColumn(width="medium"),
         },
     )

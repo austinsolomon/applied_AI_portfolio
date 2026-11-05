@@ -1,5 +1,6 @@
 """The demand dashboard, rendered headless with Streamlit's AppTest against a seeded database."""
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -198,12 +199,13 @@ def test_audit_log_reads_who_does_what_to_whom(
     app = render_dashboard()
 
     audit = next(frame.value for frame in app.dataframe if "Who (X)" in frame.value.columns)
-    assert list(audit.columns) == ["#", "Time", "+s", "Who (X)", "Does (Y)", "To (Z)", "Details"]
-    # Newest first by default.
-    assert audit[["Who (X)", "To (Z)"]].values.tolist() == [
-        ["Exa API (Search)", "financial planner in Phoenix"],
-        ["Postgres (State machine)", f"plan {plan.plan_id}"],
+    assert list(audit.columns) == ["#", "Time", "+s", "Who (X)", "Summary", "Details"]
+    # Newest first by default; the summary is one plain sentence, the details keep the target.
+    assert audit[["Who (X)", "Summary"]].values.tolist() == [
+        ["Exa API (Search)", "Company search returns 5 results — financial planner in Phoenix"],
+        ["Postgres (State machine)", f"Run started — plan {plan.plan_id}"],
     ]
+    assert json.loads(audit["Details"].iloc[0])["target"] == "financial planner in Phoenix"
     # The actor filter offers the 19 actors in pipeline order.
     actor_filter = next(widget for widget in app.multiselect if widget.label == "Who (X)")
     assert list(actor_filter.options) == list(ACTORS)
