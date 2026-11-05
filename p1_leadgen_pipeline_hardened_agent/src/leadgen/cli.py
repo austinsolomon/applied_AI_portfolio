@@ -417,6 +417,9 @@ def run_streamlit_page(script_name: str) -> int:
             str(page_script),
             "--server.address",
             "localhost",
+            # Exa's brand colours and lookalike fonts (src/leadgen/exa_theme.toml).
+            "--theme.base",
+            str(Path(__file__).with_name("exa_theme.toml")),
             "--browser.gatherUsageStats",
             "false",
         ]

@@ -15,6 +15,7 @@ import streamlit
 from pydantic import ValidationError
 
 from leadgen import data_model, run_status
+from leadgen.category_config import load_category_config
 from leadgen.database import connect
 from leadgen.eval_review_view import render_eval_review
 from leadgen.gaps import STATUS_BELOW_GOAL, MarketDemand, read_market_demand
@@ -22,12 +23,14 @@ from leadgen.gaps import STATUS_BELOW_GOAL, MarketDemand, read_market_demand
 # Market, then the goal, what is in hand, what is missing, and the share of the goal in hand.
 COLUMN_ORDER = ["Market", "Lead Goal", "Leads Available", "Leads Needed", "Leads Available %"]
 
-# How far a market is from its goal, for the progress chart: the band and its colour.
+# How far a market is from its goal, for the progress chart: the band and its colour. One hue,
+# Exa blue, light (far) to deep navy (goal met); the ramp passes the ordinal palette checks on
+# the Marble surface, and every bar also carries its "available / goal" label.
 DISTANCE_BANDS = [
-    (100, "Goal met", "#2e7d5b"),
-    (75, "Close (75–99%)", "#7cb342"),
-    (40, "Halfway (40–74%)", "#f2a541"),
-    (0, "Far (under 40%)", "#d1495b"),
+    (100, "Goal met", "#0A1A66"),
+    (75, "Close (75–99%)", "#1840ED"),
+    (40, "Halfway (40–74%)", "#4D6FF1"),
+    (0, "Far (under 40%)", "#8EA3F6"),
 ]
 
 STAGE_BADGES = {
@@ -83,12 +86,12 @@ def progress_chart(table: pandas.DataFrame) -> altair.LayerChart:
     market_axis = altair.Y("Market:N", sort=None, title=None)
     track = (
         altair.Chart(chartable)
-        .mark_bar(color="#8a8f98", opacity=0.18, cornerRadius=3)
+        .mark_bar(color="#E4E1DC", cornerRadius=4)
         .encode(x=altair.X("goal:Q", scale=altair.Scale(domain=[0, 100])), y=market_axis)
     )
     filled = (
         altair.Chart(chartable)
-        .mark_bar(cornerRadius=3)
+        .mark_bar(cornerRadius=4)
         .encode(
             x=altair.X(
                 "filled:Q", title="Leads Available % of goal", scale=altair.Scale(domain=[0, 100])
@@ -109,7 +112,7 @@ def progress_chart(table: pandas.DataFrame) -> altair.LayerChart:
     )
     labels = (
         altair.Chart(chartable)
-        .mark_text(align="left", dx=6)
+        .mark_text(align="left", dx=6, color="#111318")
         .encode(x="filled:Q", y=market_axis, text="label:N")
     )
     return (track + filled + labels).properties(height=altair.Step(30))
@@ -272,64 +275,67 @@ def render_history(connection: psycopg.Connection) -> None:
     )
     streamlit.altair_chart(
         altair.Chart(chart_data)
-        .mark_bar()
+        .mark_bar(color="#1840ED", cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
         .encode(x=altair.X("Run:N", sort=None), y=altair.Y("USD:Q", title="Spend (USD)"))
     )
 
 
+def table_or_note(rows: list[dict], note: str) -> None:
+    """A table, or a plain sentence when there is nothing to show yet."""
+    if rows:
+        streamlit.dataframe(pandas.DataFrame(rows), hide_index=True)
+    else:
+        streamlit.caption(note)
+
+
 def render_sources(connection: psycopg.Connection) -> None:
+    no_runs = "Nothing yet: this fills in after the first run."
     streamlit.subheader("Yield by source")
-    streamlit.dataframe(
-        pandas.DataFrame(
-            [
-                {
-                    "Source": row["source"],
-                    "Sourced": row["sourced"],
-                    "New": row["new_leads"],
-                    "Judged": row["judged"],
-                    "Qualified": row["qualified"],
-                    "Qualified ÷ judged": percent(row["qualified_rate"]),
-                }
-                for row in run_status.read_source_yield(connection)
-            ]
-        ),
-        hide_index=True,
+    table_or_note(
+        [
+            {
+                "Source": row["source"],
+                "Sourced": row["sourced"],
+                "New": row["new_leads"],
+                "Judged": row["judged"],
+                "Qualified": row["qualified"],
+                "Qualified ÷ judged": percent(row["qualified_rate"]),
+            }
+            for row in run_status.read_source_yield(connection)
+        ],
+        no_runs,
     )
     streamlit.subheader("Exa leads by query consensus")
     streamlit.caption("How many Exa query phrasings found the business.")
-    streamlit.dataframe(
-        pandas.DataFrame(
-            [
-                {
-                    "Found by": row["query_consensus"],
-                    "Leads": row["leads"],
-                    "Judged": row["judged"],
-                    "Qualified": row["qualified"],
-                    "Qualified ÷ judged": percent(row["qualified_rate"]),
-                }
-                for row in run_status.read_consensus_yield(connection)
-            ]
-        ),
-        hide_index=True,
+    table_or_note(
+        [
+            {
+                "Found by": row["query_consensus"],
+                "Leads": row["leads"],
+                "Judged": row["judged"],
+                "Qualified": row["qualified"],
+                "Qualified ÷ judged": percent(row["qualified_rate"]),
+            }
+            for row in run_status.read_consensus_yield(connection)
+        ],
+        no_runs,
     )
     streamlit.subheader("Spend by service, all runs")
     streamlit.caption(
         "Estimated amounts are conservative ceilings where the provider reported none."
     )
-    streamlit.dataframe(
-        pandas.DataFrame(
-            [
-                {
-                    "Service": row["service"],
-                    "Calls": row["calls"],
-                    "Reported": usd(row["reported_usd"]),
-                    "Estimated": usd(row["estimated_usd"]),
-                    "Total": usd(row["total_usd"]),
-                }
-                for row in run_status.read_spend_by_service(connection)
-            ]
-        ),
-        hide_index=True,
+    table_or_note(
+        [
+            {
+                "Service": row["service"],
+                "Calls": row["calls"],
+                "Reported": usd(row["reported_usd"]),
+                "Estimated": usd(row["estimated_usd"]),
+                "Total": usd(row["total_usd"]),
+            }
+            for row in run_status.read_spend_by_service(connection)
+        ],
+        no_runs,
     )
 
 
@@ -450,9 +456,29 @@ def live_run() -> None:
         streamlit.error(f"Cannot read the run from the database: {error}")
 
 
+HEADER = """
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400&display=swap">
+<div style="display:flex;align-items:baseline;justify-content:space-between;
+            border-bottom:1px solid #E4E1DC;padding-bottom:0.75rem;margin-bottom:0.5rem">
+  <div>
+    <div style="font-size:0.75rem;letter-spacing:0.08em;text-transform:uppercase;color:#1840ED;
+                font-weight:600">Lead-gen agent</div>
+    <h1 style="margin:0;padding:0;font-weight:400;
+               font-family:Newsreader,Georgia,serif">{title}</h1>
+  </div>
+  <div style="font-size:0.8rem;color:#5B5F68">Search and evidence powered by Exa</div>
+</div>
+"""
+
+
 def render() -> None:
     streamlit.set_page_config(page_title="Lead-gen dashboard", layout="wide")
-    streamlit.title("Lead-gen dashboard")
+    try:
+        title = load_category_config().label
+    except Exception:
+        title = "Lead-gen dashboard"
+    streamlit.html(HEADER.format(title=title))
     (
         demand_tab,
         run_tab,

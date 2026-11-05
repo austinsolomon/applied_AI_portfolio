@@ -1,0 +1,28 @@
+# Dashboard theme after Exa's public brand guidelines (https://exa.ai/brand): Exa blue #1840ED
+# as the one accent, Marble #FAF9F8 and white as surfaces. Exa's typefaces (ABC Arizona Flare
+# for headings, ABC Diatype for text) are commercial, so free lookalikes stand in: Newsreader,
+# a flared serif, for headings, and Geist, a clean geometric sans, for text. No Exa logo is used.
+[theme]
+base = "light"
+primaryColor = "#1840ED"
+backgroundColor = "#FAF9F8"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#111318"
+linkColor = "#1840ED"
+borderColor = "#E4E1DC"
+dataframeBorderColor = "#E4E1DC"
+dataframeHeaderBackgroundColor = "#F2F0EC"
+showWidgetBorder = true
+baseRadius = "0.5rem"
+font = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap, sans-serif"
+headingFont = "Newsreader:https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap, serif"
+codeFont = "Geist Mono:https://fonts.googleapis.com/css2?family=Geist+Mono&display=swap, monospace"
+blueColor = "#1840ED"
+codeTextColor = "#0A1A66"
+codeBackgroundColor = "#EEF1FE"
+# Exa's blue range, deep navy to bright electric, for any chart without its own palette.
+chartCategoricalColors = ["#1840ED", "#0A1A66", "#4D6FF1", "#8EA3F6"]
+chartSequentialColors = ["#E8ECFE", "#C4CEFB", "#8EA3F6", "#4D6FF1", "#1840ED", "#1230B8", "#0A1A66"]
+
+[theme.sidebar]
+backgroundColor = "#FFFFFF"
