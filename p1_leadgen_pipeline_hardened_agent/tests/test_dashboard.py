@@ -1,6 +1,5 @@
 """The demand dashboard, rendered headless with Streamlit's AppTest against a seeded database."""
 
-import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -174,7 +173,9 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
     assert "#1840ED" in stage_cells[1] and "done" in stage_cells[1]  # Exa search: blue
     assert "needs a human" in stage_cells[2]
     assert "#E3E5EA" in stage_cells[6] and "waiting" in stage_cells[6]  # CRM: still gray
-    assert f"--plan {plan.plan_id} --resume" in app.warning[0].value
+    # The open-call note is a small caption under the run's numbers, never a banner on top.
+    assert not app.warning
+    assert any("web:tier1:1:1:fetch_page" in caption.value for caption in app.caption)
     summary = next(
         frame.value for frame in app.dataframe if "Per qualified" in frame.value.columns
     ).iloc[0]
@@ -198,14 +199,43 @@ def test_audit_log_reads_who_does_what_to_whom(
 
     app = render_dashboard()
 
-    audit = next(frame.value for frame in app.dataframe if "Who (X)" in frame.value.columns)
-    assert list(audit.columns) == ["#", "Time", "+s", "Who (X)", "Summary", "Details"]
+    audit = next(frame.value for frame in app.dataframe if "Subcomponent" in frame.value.columns)
+    assert list(audit.columns) == ["#", "Time", "Stage", "Subcomponent", "Summary"]
     # Newest first by default; the summary is one plain sentence, the details keep the target.
-    assert audit[["Who (X)", "Summary"]].values.tolist() == [
+    assert audit[["Subcomponent", "Summary"]].values.tolist() == [
         ["Exa API (Search)", "Company search returns 5 results — financial planner in Phoenix"],
         ["Postgres (State machine)", f"Run started — plan {plan.plan_id}"],
     ]
-    assert json.loads(audit["Details"].iloc[0])["target"] == "financial planner in Phoenix"
+    assert audit["Stage"].tolist() == ["Plan & approve", "Plan & approve"]
     # The actor filter offers the 19 actors in pipeline order.
-    actor_filter = next(widget for widget in app.multiselect if widget.label == "Who (X)")
+    actor_filter = next(widget for widget in app.multiselect if widget.label == "Subcomponent")
     assert list(actor_filter.options) == list(ACTORS)
+
+
+def test_audit_rows_are_labelled_with_the_stage_they_ran_in() -> None:
+    from leadgen.audit import PLANNER, SDK_PRE_TOOL_USE_HOOK, SDK_TOOL_CALL, STATE_MACHINE
+    from leadgen.dashboard import audit_stages
+
+    def event(actor, action, target):
+        return {"actor": actor, "action": action, "target": target}
+
+    events = [
+        event(PLANNER, "plans 1 cell", "Phoenix, AZ"),
+        event(SDK_PRE_TOOL_USE_HOOK, "allows the tool call", "run_stage maps"),
+        event(SDK_TOOL_CALL, "calls run_stage('maps')", "maps"),
+        event(STATE_MACHINE, "stage maps started", "maps"),
+        event("Apify (Google Maps)", "starts the scraper", "financial planner in Phoenix, AZ"),
+        event(SDK_TOOL_CALL, "calls run_stage('crm')", "crm"),
+        event(STATE_MACHINE, "stage crm finished: inserted 1", "crm"),
+        event(STATE_MACHINE, "run finished", "plan 1"),
+    ]
+    assert audit_stages(events) == [
+        "Plan & approve",
+        "Google Maps",
+        "Google Maps",
+        "Google Maps",
+        "Google Maps",
+        "Write to CRM",
+        "Write to CRM",
+        "Close-out",
+    ]

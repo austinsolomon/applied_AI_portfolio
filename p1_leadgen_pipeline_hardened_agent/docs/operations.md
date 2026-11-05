@@ -8,6 +8,21 @@ Cloud hosting and automated scheduling are not configured by this repository.
 budget. `leadgen run --plan ID` executes it. A completed run can be queried again without new paid
 work. The SDK is limited to the pipeline's MCP stage tool; changing scope requires a new plan.
 
+## Run close-out
+
+A run is reported `finished` only after a completion check (`leadgen.run_closeout`) confirms that
+it leaves nothing open: every stage checkpointed, no queued or running jobs, and no reservation
+still `started` or `uncertain`. A paid call that raised (a Firecrawl timeout, a 5xx) is over once
+the call returns; only its charge is unknown. Close-out books it at its reservation ceiling as an
+`estimated` cost-ledger row (`endpoint` `unknown-outcome`) and settles the reservation, so the next
+run never waits on it. This also happens when a run fails, and `leadgen weekly` applies it to
+runs that ended before the check existed.
+
+An Apify actor run is the exception. It can keep running and charging after the call that started
+it failed, so its reservation is never settled by estimate. A run that leaves one open ends
+`failed` with `Run is not complete: paid calls still open: maps:...`, and the next run stays
+blocked until an operator confirms in Apify that the actor stopped and reconciles it (below).
+
 ## Failure recovery
 
 Read `runs`, `pipeline_stages`, `run_ledger`, `traces`, and `budget_reservations` for the run. Check
@@ -42,9 +57,9 @@ policy would approve and stores nothing. Each approval records the policy file's
 | Exit | What to do |
 |---|---|
 | 0 | Nothing. The summary is in the output, in `traces` (operation `weekly`) and in the dashboard |
-| 1 | The run failed. Read the summary's `error`, then follow Failure recovery above; the next weekly run stays blocked while any paid call is uncertain |
+| 1 | The run failed. Read the summary's `error`, then follow Failure recovery above; the next weekly run stays blocked only while an Apify actor may still be running |
 | 2 | Nothing. It already ran within the cadence, or no market is below goal |
-| 3 | Act on the reason: run `leadgen db migrate`, reconcile uncertain reservations, or raise `budget_usd` or shrink the plan in the policy file |
+| 3 | Act on the reason: run `leadgen db migrate`, confirm and reconcile an open Apify actor run, or raise `budget_usd` or shrink the plan in the policy file |
 
 The weekly command never migrates and never retries a failed run by itself. Retrying paid work is
 always an operator decision.
