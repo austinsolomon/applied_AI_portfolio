@@ -344,6 +344,9 @@ def audit_summary(action: str, target: str | None) -> str:
 
 
 PLAN_PHASE = "Plan & approve"
+# Sized so the five audit columns fill a laptop-width table (about 1,560 px). Without it the
+# table spreads its spare width evenly across every column instead of giving it to the summary.
+AUDIT_SUMMARY_WIDTH = 1050
 CLOSE_OUT_PHASE = "Close-out"
 
 
@@ -422,8 +425,14 @@ def render_audit(connection: psycopg.Connection) -> None:
     streamlit.dataframe(
         shown,
         hide_index=True,
+        # Fixed widths sized to each label column's longest value ("Claude Agent SDK (PreToolUse
+        # hook)", "Extract contacts"); the summary, the column people read, fills the rest.
         column_config={
-            "Summary": streamlit.column_config.TextColumn(width="large"),
+            "#": streamlit.column_config.NumberColumn(width=36),
+            "Time": streamlit.column_config.TextColumn(width=100),
+            "Stage": streamlit.column_config.TextColumn(width=116),
+            "Subcomponent": streamlit.column_config.TextColumn(width=252),
+            "Summary": streamlit.column_config.TextColumn(width=AUDIT_SUMMARY_WIDTH),
         },
     )
     streamlit.download_button(
