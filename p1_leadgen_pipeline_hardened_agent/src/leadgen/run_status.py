@@ -19,6 +19,7 @@ from leadgen.orchestrator import STAGES
 STAGE_LABELS = {
     "maps": "Google Maps",
     "exa": "Exa search",
+    "extract": "Extract contacts",
     "dedupe": "Dedupe",
     "enrich": "Enrich contacts",
     "qualify": "Qualify",

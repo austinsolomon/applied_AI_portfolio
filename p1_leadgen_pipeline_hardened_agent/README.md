@@ -26,9 +26,10 @@ flowchart LR
     P --> A{Human approves<br/>plan + budget}
     A --> S[Sample, grade,<br/>full run: Google Maps]
     S --> X[Exa company search]
-    X --> DD[Dedupe vs CRM]
-    S --> DD
-    DD --> E[Enrich phone + email]
+    X --> XC[Extract phone + email<br/>from Exa page text, free]
+    S --> XC
+    XC --> DD[Dedupe vs CRM]
+    DD --> E[Paid enrichment only if<br/>still missing contacts]
     E --> Q[Qualify: Exa evidence<br/>+ Claude JSON judge]
     Q --> C[(CRM)]
     C --> D
@@ -141,8 +142,13 @@ dashboard's Audit log tab while the run executes. It is off by default.
 The planner selects the market with the lowest available-lead coverage, expands it using Census
 places, and displays its cells and Maps and Exa ceilings before asking for one approval. The total budget
 covers all services. `--approve --approved-by NAME` records approval already given by an operator.
-The runner exposes only the next pipeline stage to the SDK: Maps, Exa, dedupe, enrichment,
-qualification, research for unresolved leads, and CRM writing.
+The runner exposes only the next pipeline stage to the SDK: Maps, Exa, contact extraction,
+dedupe, enrichment, qualification, research for unresolved leads, and CRM writing.
+
+Contact extraction reads the phone numbers and emails printed on page text Exa sourcing already
+cached, with no network call, so Exa leads reach dedupe with the same phone and email keys Maps
+leads carry. Dedupe then matches on place ID, phone, email and domain, and paid enrichment
+(BlitzAPI) runs only for new leads that still have neither.
 
 Apify is polled and aborted after ten unique businesses or the sample ceiling; a poll can return
 more than ten. Category purity and market distance gate continuation to the approved target.
