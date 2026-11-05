@@ -11,7 +11,7 @@ the CRM.
 **Exa is central to the pipeline:** plain-language Exa searches find the businesses, and Exa supplies
 the page text Claude must quote to qualify a lead. See [Why Exa](#why-exa). Every decision is recorded for a recurring evaluation review.
 
-The demo category is independent private and personal chefs in US markets: chefs who cook in
+The demo category is independent private chefs in US markets: chefs who cook in
 clients' homes, rentals and private events. A chef currently tied to a restaurant, catering
 company or meal-delivery business is rejected. Past restaurant experience is fine.
 

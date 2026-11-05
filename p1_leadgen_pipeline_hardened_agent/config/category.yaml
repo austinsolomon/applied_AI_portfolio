@@ -1,8 +1,8 @@
 # The one category this deployment sources. Changed by pull request, never at runtime.
-# Demo category: independent private and personal chefs in US markets, not restaurant chefs.
+# Demo category: independent private chefs in US markets, not restaurant chefs.
 
 name: private_chef
-label: Independent private and personal chefs
+label: Independent private chefs
 
 # Google Maps search terms, strongest first. The planner reorders them by the purity each one
 # produced in past samples once that history exists.

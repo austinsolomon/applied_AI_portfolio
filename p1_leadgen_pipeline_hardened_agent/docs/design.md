@@ -13,7 +13,7 @@ This project replaces the operator's routine work with an agent while keeping a 
 human approves one plan and one budget per run, and reviews the agent's recorded decisions on a weekly cadence.
 
 Scope is one category per deployment (a buyer of this system wants one category). The demo category is independent
-private and personal chefs in US markets (not restaurant chefs); until 2026-11 it was mobile massage.
+private chefs in US markets (not restaurant chefs); until 2026-11 it was mobile massage.
 
 ## 2. Components
 
