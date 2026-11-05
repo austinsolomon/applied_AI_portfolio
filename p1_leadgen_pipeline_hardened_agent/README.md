@@ -8,8 +8,8 @@ From there it runs unattended: sources businesses from Google Maps and Exa, drop
 contact details, qualifies each lead against a category rubric with cited evidence, and writes qualified leads to
 the CRM.
 
-**Exa is central to the pipeline:** it finds lookalikes of already-qualified businesses, searches markets
-that have none yet, and supplies the page text Claude must quote to qualify a lead. See [Why Exa](#why-exa). Every decision is recorded for a recurring evaluation review.
+**Exa is central to the pipeline:** plain-language Exa searches find the businesses, and Exa supplies
+the page text Claude must quote to qualify a lead. See [Why Exa](#why-exa). Every decision is recorded for a recurring evaluation review.
 
 The demo category is mobile and in-home massage providers in US markets.
 
@@ -23,7 +23,7 @@ flowchart LR
     G --> P[Plan scrapes]
     P --> A{Human approves<br/>plan + budget}
     A --> S[Sample, grade,<br/>full run: Google Maps]
-    S --> X[Exa lookalikes<br/>or Exa search]
+    S --> X[Exa company search]
     X --> DD[Dedupe vs CRM]
     S --> DD
     DD --> E[Enrich phone + email]
@@ -34,35 +34,39 @@ flowchart LR
 
 ## Why Exa
 
-Exa does three jobs in this pipeline, all through Exa `search` and `get_contents`. Claude only
-reasons over what Exa returns.
+Exa does two jobs in this pipeline, through Exa `search` and `get_contents`. Claude only reasons
+over what Exa returns.
 
 | Exa role | Pipeline stage | Exa call | What it gives the pipeline |
 |---|---|---|---|
-| **1. Find lookalikes** | Sourcing | `search("pages similar to <seed>", num_results=10, exclude_domains=[seed domain], contents=False)` | Businesses that resemble ones already qualified in that market |
-| **2. Search a market with no seeds** | Sourcing (fallback) | `search("<keyword> business in <city>", type="neural", contents=False)` | A starting set for a market with no qualified own-domain leads yet |
-| **3. Gather evidence** | Qualification and research | `search(query, type="auto", contents={"text": ...})` and `get_contents(url, text=...)` | Page text the judge must quote from to qualify a lead |
+| **1. Find businesses** | Sourcing | `search("<plain-language description> in <city>", type="auto", category="company", num_results=25, exclude_domains=<directories>, contents={"text": ...})` per phrasing and city | Business homepages, with their page text cached for qualification |
+| **2. Gather evidence** | Qualification and research | `get_contents(homepage)`, `search(..., include_domains=[the business's site])` and one open `search` | Page text the judge must quote from to qualify a lead |
 
 Why it fits this category: Google Maps finds businesses by keyword and location, but many mobile
 massage therapists work only in clients' homes. They have no storefront and often no Maps listing,
 but they do have their own website, which is what Exa indexes and matches on meaning.
 
-- **Lookalikes from qualified leads.** Up to 50 already-qualified leads with their own domain
-  become seeds. A result is kept only if it is on its own domain (not Yelp, Vagaro, Instagram) and
-  its title or domain matches the category.
-- **Seed consensus as a confidence signal.** A domain returned by several seeds is more likely to
-  be a real lookalike. The count is stored on each lead. Enrichment and qualification process
+- **Plain-language queries, as Exa recommends.** `config/category.yaml` holds a few
+  descriptions of the business wanted, for example "independent mobile massage therapists who
+  travel to clients' homes in {city}, business homepages". Each runs once per planned city with
+  `type="auto"` and `category="company"`. Directories and shared platforms (Yelp, Vagaro,
+  Instagram) are excluded in the request and filtered again locally.
+- **Query consensus as a confidence signal.** A business found by several phrasings is more
+  likely to fit. The count is stored on each lead. Enrichment and qualification process
   high-consensus leads first, so they survive a budget or target cutoff, and every judge decision
   records the count.
+- **Evidence arrives with the lead.** Each result's page text is cached when it is sourced, so
+  qualification usually reads the homepage without another request. It then searches the
+  business's own site (`include_domains`) instead of guessing `/services` or `/about` pages.
 - **Evidence the judge can cite.** Search results carry 1,500 characters of page text and pages
   carry 6,000, so the judge's quote is checked against text Exa returned. Claude returns
   schema-validated JSON (`messages.parse` with a strict Pydantic model). A qualified verdict must
   quote that evidence word for word, or it is downgraded to review.
 - **Firecrawl only renders.** When Exa has no text for a page (typically a JavaScript-built
   site), that one page is fetched with Firecrawl. Exa searches and Exa outages never fall back.
-- **Cost stays visible.** Each Exa request reserves a 0.02 USD ceiling and records Exa's reported
-  `cost_dollars`. Live prices: similar-pages lookup 0.004 USD, search with text 0.007 USD, page
-  contents about 0.0001 USD.
+- **Cost stays visible.** Each Exa request reserves a ceiling (0.03 USD for a 25-result sourcing
+  search) and records Exa's reported `cost_dollars`. Observed prices: 0.004 USD for a 10-result
+  search without text, 0.007 USD with text, about 0.0001 USD per page of contents.
 
 Live Phoenix comparison, same plan and market (run `f2423f88`, 2026-11-04). Details are in
 [sample run](docs/sample_run.md#exa-live-run--2026-11-04).
@@ -70,12 +74,13 @@ Live Phoenix comparison, same plan and market (run `f2423f88`, 2026-11-04). Deta
 | Source | Sourced | New after dedupe | Judged | Qualified | Qualified ÷ judged | Sourcing cost (USD) | Sourcing cost per qualified lead |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Google Maps | 18 | 15 | 15 | 2 | 13% | 0.0002* | — |
-| Exa lookalikes (6 seeds)† | 37 | 37 | 35 | 11 | 31% | 0.024 | 0.0022 |
+| Exa (seed lookalikes)† | 37 | 37 | 35 | 11 | 31% | 0.024 | 0.0022 |
 
 \* Apify's reported usage had not settled when it was recorded, so the Maps figure is understated.
 The 2026-10-11 Maps run cost 0.2002 USD for 50 businesses.
-† Recorded with Exa's `find_similar` endpoint, which `exa-py` 2.25 deprecates; the code now
-uses its documented replacement, `search("pages similar to <seed>")`.
+† This run used the earlier seed-lookalike sourcing (`find_similar` on 6 qualified leads). Exa has
+since dropped `find_similar` from its docs, and sourcing now uses plain-language company search;
+its first live run will replace this row.
 
 ## Status
 
@@ -87,7 +92,7 @@ uses its documented replacement, `search("pages similar to <seed>")`.
 | Container image: python-slim + locked deps + Claude Code CLI, built and run in CI | done |
 | Database plumbing: local Postgres, typed config, migrations | done |
 | CRM schema, demand gaps, demo data | done |
-| Demand dashboard | done |
+| Dashboard: gaps, current run, history, sources, evals | done |
 | Raw agent loop on the Claude API | done |
 | US Census places and market expansion | done |
 | Scrape plans, the one approval, run state (nothing runs twice) | done |
@@ -112,7 +117,7 @@ cp .env.example .env          # DATABASE_URL for the local database
 uv run leadgen db migrate     # apply schema migrations
 uv run leadgen db seed-demo   # fictional markets and leads, into an empty database
 uv run leadgen db load-places # US Census places (2020), the city list markets expand into
-uv run leadgen dashboard      # demand dashboard at http://localhost:8501
+uv run leadgen dashboard      # gaps, current run, history, sources, evals at http://localhost:8501
 uv run leadgen evals review   # weekly eval review page: label the pipeline's decisions
 uv run pytest                 # tests, against throwaway databases on the same server
 ```
@@ -124,6 +129,11 @@ uv run leadgen plan --target 50 --max-cities 1 --max-keywords 1 --budget-usd 5
 uv run leadgen run --plan latest
 ```
 
+Add `--audit` to both commands to record a verbose audit trail of that execution: one row per step
+(planner reads, the approval, Agent SDK tool calls and hook decisions, budget reservations, every
+provider request and response, cache hits, job claims, checkpoints, CRM writes), read in the
+dashboard's Audit log tab while the run executes. It is off by default.
+
 The planner selects the market with the lowest available-lead coverage, expands it using Census
 places, and displays its cells and Maps and Exa ceilings before asking for one approval. The total budget
 covers all services. `--approve --approved-by NAME` records approval already given by an operator.
@@ -132,10 +142,9 @@ qualification, research for unresolved leads, and CRM writing.
 
 Apify is polled and aborted after ten unique businesses or the sample ceiling; a poll can return
 more than ten. Category purity and market distance gate continuation to the approved target.
-Every partial dataset is persisted. Exa uses up to
-50 existing qualified own-domain seeds; a market with no eligible seeds falls back to one Exa
-neural search per planned keyword and city. The plan shows the Exa cap (calls × 0.02 USD) next to
-the Maps cap. Existing
+Every partial dataset is persisted. Exa runs each
+plain-language query phrasing once per planned city. The plan shows the Exa cap (searches × 0.03
+USD) next to the Maps cap. Existing
 contact details avoid an unnecessary Blitz lookup. Two workers process enrichment and four process qualification, with one paid attempt per job. Qualified results must cite an exact evidence quote,
 a supplied source URL, an eligible service, and an affirmative service area.
 
@@ -155,11 +164,28 @@ ledger total was 1.385297 USD, including 0.374400 USD of conservative web estima
 accounted for 0.097097 USD. Twenty-four businesses remain for human review. Exact Firecrawl
 invoice reconciliation and cloud deployment remain open.
 
-## Demand dashboard
+## Dashboard
 
-Every market's Leads Available %, biggest gap first, read from the same `gap_view` the agent reads.
-Columns go from the answer to how it is made: goal − assigned = still needed; available ÷ still needed
-= Leads Available %; still needed − available = short by, the new leads that market needs.
+`leadgen dashboard` opens seven tabs, all read through the same functions the pipeline uses:
+
+| Tab | Shows |
+|---|---|
+| Demand gaps | Leads Available % per market, biggest gap first |
+| Current run | The seven stages in order, each done, running, failed, waiting or "needs a human", with stage results, job progress, spend vs budget and recent events; refreshes every 10 s |
+| Audit log | For a plan run with `--audit`: every step of the execution as Who (X) → Does (Y) → To (Z), for example "Exa stage → sends company search '…' → Exa API" or "PreToolUse hook → allows the tool call → Agent SDK"; filter by actor, search, newest first; refreshes every 5 s |
+| Run history | One row per run: market, status, Maps and Exa sourced, new, qualified, review, rejected, CRM inserted, spend vs budget, cost per qualified lead |
+| Sources and spend | Qualification rate per source, Exa query-consensus breakdown, spend per service (provider-reported vs estimated) |
+| Eval review | Label the pipeline's decisions; labels export as test fixtures |
+| Data model | Every Postgres table and view: one sentence on what it holds, its live row count, and a few made-up example rows |
+
+Only the Eval review tab writes, and only labels. The page shows contact details and evidence, so
+it is for local use.
+
+The Demand gaps tab reads the same `gap_view` the agent reads. Every demo market has a goal of
+100 leads. A progress bar per market shows how close it is, coloured far (under 40%), halfway
+(40–74%), close (75–99%) or goal met, furthest first. The table has four numbers: Lead Goal,
+Leads Available, Leads Needed (goal − available) and Leads Available % (available ÷ goal).
+Assigned and converted leads do not count toward the goal.
 
 ![Demand dashboard with the demo data](docs/images/demand_dashboard.png)
 

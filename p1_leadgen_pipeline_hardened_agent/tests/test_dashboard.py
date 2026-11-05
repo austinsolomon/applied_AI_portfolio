@@ -36,42 +36,47 @@ def render_dashboard() -> AppTest:
 
 
 @pytest.mark.usefixtures("dashboard_database")
-def test_columns_are_in_reading_order() -> None:
+def test_demand_columns_are_goal_available_needed_and_percent() -> None:
     table = render_dashboard().dataframe[0].value
 
     assert list(table.columns) == [
         "Market",
+        "Lead Goal",
+        "Leads Available",
+        "Leads Needed",
         "Leads Available %",
-        "Status",
-        "Lead goal",
-        "Assigned",
-        "Still needed",
-        "Available",
-        "Short by",
     ]
 
 
 @pytest.mark.usefixtures("dashboard_database")
-def test_markets_are_listed_biggest_gap_first_with_their_status() -> None:
+def test_markets_are_listed_furthest_from_goal_first() -> None:
     table = render_dashboard().dataframe[0].value
 
-    rows = table[["Market", "Leads Available %", "Status", "Short by"]].values.tolist()
-    assert rows[:2] == [
-        ["Phoenix, AZ", "10%", "Below goal", 54],
-        ["Los Angeles, CA", "18%", "Below goal", 66],
-    ]
-    assert rows[-2:] == [["Seattle, WA", "125%", "Covered", 0], ["Miami, FL", "—", "Goal met", 0]]
+    rows = table.values.tolist()
+    assert rows[:2] == [["Phoenix, AZ", 100, 10, 90, 10], ["Los Angeles, CA", 100, 18, 82, 18]]
+    assert rows[-1] == ["Seattle, WA", 100, 100, 0, 100]
 
 
 @pytest.mark.usefixtures("dashboard_database")
-def test_summary_names_the_biggest_gap_and_the_leads_to_find() -> None:
+def test_summary_names_the_furthest_market_and_the_leads_needed() -> None:
     metrics = {metric.label: metric.value for metric in render_dashboard().metric}
 
-    assert metrics == {
-        "Markets below goal": "6 of 8",
-        "Biggest gap": "Phoenix, AZ · 10%",
-        "New leads to find": "200",
-    }
+    assert metrics["Markets below goal"] == "7 of 8"
+    assert metrics["Furthest from goal"] == "Phoenix, AZ · 10%"
+    assert metrics["Leads needed"] == "365"
+
+
+def test_distance_bands_split_far_halfway_close_and_met() -> None:
+    assert [dashboard_module.distance_band(pct) for pct in (0, 39, 40, 74, 75, 99, 100, 250)] == [
+        "Far (under 40%)",
+        "Far (under 40%)",
+        "Halfway (40–74%)",
+        "Halfway (40–74%)",
+        "Close (75–99%)",
+        "Close (75–99%)",
+        "Goal met",
+        "Goal met",
+    ]
 
 
 def test_missing_database_url_shows_how_to_fix_it(
@@ -85,3 +90,115 @@ def test_missing_database_url_shows_how_to_fix_it(
 
     assert "DATABASE_URL is missing or malformed" in app.error[0].value
     get_settings.cache_clear()
+
+
+@pytest.mark.usefixtures("dashboard_database")
+def test_tabs_cover_gaps_run_audit_history_sources_and_evals() -> None:
+    labels = [tab.label for tab in render_dashboard().tabs]
+
+    assert labels == [
+        "Demand gaps",
+        "Current run",
+        "Audit log",
+        "Run history",
+        "Sources and spend",
+        "Eval review",
+        "Data model",
+    ]
+
+
+@pytest.mark.usefixtures("dashboard_database")
+def test_with_no_runs_the_run_tabs_say_how_to_start_one() -> None:
+    infos = [info.value for info in render_dashboard().info]
+
+    assert any("leadgen plan" in info for info in infos)
+
+
+def seed_blocked_run(connection: psycopg.Connection):
+    """A Phoenix run that finished Maps and Exa, then stopped with one paid call unresolved."""
+    from decimal import Decimal
+
+    from psycopg.types.json import Jsonb
+
+    from leadgen.plans import PlannedCell, approve_plan, create_plan, finish_run, start_run
+
+    market_id = connection.execute("SELECT market_id FROM markets WHERE name='Phoenix'").fetchone()[
+        0
+    ]
+    plan = create_plan(
+        connection, [PlannedCell(market_id, "Phoenix, AZ", "mobile massage", 30, Decimal("1"))]
+    )
+    approve_plan(connection, plan.plan_id, Decimal("3"), "test operator")
+    run = start_run(connection, plan.plan_id)
+    for stage, result in [("maps", {"sourced": 18}), ("exa", {"sourced": 37, "queries": 3})]:
+        connection.execute(
+            "INSERT INTO pipeline_stages(run_id,stage,result) VALUES (%s,%s,%s)",
+            (run.run_id, stage, Jsonb(result)),
+        )
+    connection.execute(
+        "INSERT INTO budget_reservations(plan_id,run_id,operation,ceiling_usd,status) "
+        "VALUES (%s,%s,'web:tier1:1:1:fetch_page',0.02,'uncertain')",
+        (plan.plan_id, run.run_id),
+    )
+    connection.execute(
+        "INSERT INTO cost_ledger(run_id,service,call_number,cost_usd,endpoint) "
+        "VALUES (%s,'exa',1,0.021,'search')",
+        (run.run_id,),
+    )
+    finish_run(connection, run.run_id, "failed")
+    return plan, run
+
+
+def test_current_run_shows_each_stage_and_flags_the_human_step(
+    dashboard_database, migrated_connection: psycopg.Connection
+) -> None:
+    plan, _run = seed_blocked_run(migrated_connection)
+
+    app = render_dashboard()
+
+    markdown = [element.value for element in app.markdown]
+    stage_rows = {
+        markdown[index].strip("*"): markdown[index + 1]
+        for index in range(len(markdown) - 1)
+        if markdown[index].startswith("**") and "badge" in markdown[index + 1]
+    }
+    assert list(stage_rows) == [
+        "Google Maps",
+        "Exa search",
+        "Dedupe",
+        "Enrich contacts",
+        "Qualify",
+        "Research",
+        "Write to CRM",
+    ]
+    assert "done" in stage_rows["Exa search"]
+    assert "needs a human" in stage_rows["Dedupe"]
+    assert "waiting" in stage_rows["Write to CRM"]
+    assert f"--plan {plan.plan_id} --resume" in app.warning[0].value
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert (metrics["Status"], metrics["Spent"], metrics["Budget"]) == ("failed", "$0.021", "$3")
+
+
+def test_audit_log_reads_who_does_what_to_whom(
+    dashboard_database, migrated_connection: psycopg.Connection
+) -> None:
+    plan, run = seed_blocked_run(migrated_connection)
+    for actor, action, target in [
+        ("Runner (leadgen run)", "starts run", "Postgres runs (state: running)"),
+        ("Exa stage", "sends company search 'mobile massage in Phoenix'", "Exa API"),
+    ]:
+        migrated_connection.execute(
+            "INSERT INTO audit_events (run_id, plan_id, actor, action, target) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (run.run_id, plan.plan_id, actor, action, target),
+        )
+
+    app = render_dashboard()
+
+    audit = next(frame.value for frame in app.dataframe if "Who (X)" in frame.value.columns)
+    assert list(audit.columns) == ["#", "Time", "+s", "Who (X)", "Does (Y)", "To (Z)", "Details"]
+    # Newest first by default.
+    assert audit[["Who (X)", "To (Z)"]].values.tolist() == [
+        ["Exa stage", "Exa API"],
+        ["Runner (leadgen run)", "Postgres runs (state: running)"],
+    ]

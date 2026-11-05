@@ -6,6 +6,8 @@ from time import monotonic
 
 from psycopg.types.json import Jsonb
 
+from leadgen.audit import audit, audit_enabled, component_for_operation
+
 
 class BudgetBlocked(Exception):
     """The approved plan cannot authorize this operation."""
@@ -20,6 +22,38 @@ def plan_spend(connection, plan_id):
 
 
 def reserve(connection, run_id, operation, ceiling, *, cell_id=None):
+    component = component_for_operation(operation)
+    try:
+        reservation_id = _reserve(connection, run_id, operation, ceiling, cell_id=cell_id)
+    except BudgetBlocked as refusal:
+        audit(
+            connection,
+            "Budget guard",
+            f"refuses {operation}: {refusal}",
+            component,
+            run_id=run_id,
+            ceiling_usd=ceiling,
+        )
+        raise
+    audit(
+        connection,
+        component,
+        f"reserves ${Decimal(str(ceiling))} ceiling for {operation}",
+        "Budget guard (budget_reservations)",
+        run_id=run_id,
+        reservation_id=reservation_id,
+        plan_spend_usd=connection.execute(
+            "SELECT coalesce(sum(cost_usd),0) FROM cost_ledger JOIN runs USING(run_id) "
+            "WHERE plan_id=(SELECT plan_id FROM runs WHERE run_id=%s)",
+            (run_id,),
+        ).fetchone()[0]
+        if audit_enabled()
+        else None,
+    )
+    return reservation_id
+
+
+def _reserve(connection, run_id, operation, ceiling, *, cell_id=None):
     ceiling = Decimal(str(ceiling))
     if not ceiling.is_finite() or ceiling < 0:
         raise BudgetBlocked("Invalid cost ceiling")
@@ -95,6 +129,15 @@ def paid_operation(connection, run_id, operation, ceiling, *, cell_id=None):
                 "INSERT INTO traces(run_id,operation,outcome,latency_ms) VALUES (%s,%s,%s,%s)",
                 (run_id, operation, outcome, int((monotonic() - started) * 1000)),
             )
+        audit(
+            connection,
+            component_for_operation(operation),
+            f"closes reservation for {operation} as {outcome}",
+            "Budget guard (budget_reservations)",
+            run_id=run_id,
+            reservation_id=reservation,
+            latency_ms=int((monotonic() - started) * 1000),
+        )
 
 
 def record_cost(
@@ -133,6 +176,18 @@ def record_cost(
                 run_id,
             ),
         )
+    audit(
+        connection,
+        f"{service} call",
+        f"records ${cost} ({cost_basis}{', ' + endpoint if endpoint else ''})",
+        "Postgres cost_ledger",
+        run_id=run_id,
+        model=model,
+        units=units,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        request_id=request_id,
+    )
 
 
 def trace(connection, run_id, operation, outcome, details=None):
@@ -140,6 +195,23 @@ def trace(connection, run_id, operation, outcome, details=None):
         "INSERT INTO traces(run_id,operation,outcome,details) VALUES (%s,%s,%s,%s)",
         (run_id, operation, outcome, Jsonb(details or {})),
     )
+    if operation == "PreToolUse":
+        audit(
+            connection,
+            "PreToolUse hook",
+            f"{outcome}s the tool call ({(details or {}).get('reason') or 'approved stage'})",
+            "Agent SDK",
+            run_id=run_id,
+        )
+    else:
+        audit(
+            connection,
+            "Pipeline runner",
+            f"writes trace: {operation} {outcome}",
+            "Postgres traces",
+            run_id=run_id,
+            **(details or {}),
+        )
 
 
 def reconcile_operation(connection, reservation_id, outcome, note):

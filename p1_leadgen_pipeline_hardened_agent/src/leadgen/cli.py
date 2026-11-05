@@ -109,8 +109,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--approve", action="store_true", help="record an already authorized approval"
     )
     plan_parser.add_argument("--approved-by", default="operator")
+    plan_parser.add_argument(
+        "--audit", action="store_true", help="write a verbose audit trail (dashboard Audit log tab)"
+    )
     run_parser = commands.add_parser("run", help="execute one approved plan (paid)")
     run_parser.add_argument("--plan", default="latest")
+    run_parser.add_argument(
+        "--audit", action="store_true", help="write a verbose audit trail (dashboard Audit log tab)"
+    )
     run_parser.add_argument(
         "--resume",
         action="store_true",
@@ -371,6 +377,10 @@ def run_streamlit_page(script_name: str) -> int:
 
 
 def run_pipeline_command(arguments):
+    if getattr(arguments, "audit", False):
+        from leadgen.audit import enable_audit
+
+        enable_audit()
     import asyncio
     import json
 
@@ -396,17 +406,27 @@ def run_pipeline_command(arguments):
                     target=arguments.target,
                     market=arguments.market,
                 )
-                exa_cap = exa_ceiling(connection, plan, category)
+                exa_cap = exa_ceiling(plan, category)
                 print(
                     f"Plan {plan.plan_id}: {len(plan.cells)} cells; "
                     f"{plan.expected_raw_leads} raw leads; Maps cap ${plan.estimated_cost_usd}; "
-                    f"Exa cap ${exa_cap} ({exa_calls(connection, plan, category)} calls); "
+                    f"Exa cap ${exa_cap} ({exa_calls(plan, category)} searches); "
                     f"total budget ${arguments.budget_usd} (all services)"
                 )
                 for cell in plan.cells:
                     print(f"  {cell.city}: {cell.keyword} ({cell.expected_raw_leads} leads)")
                 if plan.estimated_cost_usd + exa_cap >= arguments.budget_usd:
                     raise ValueError("Budget must also leave room for enrichment and qualification")
+                from leadgen.audit import audit
+
+                audit(
+                    connection,
+                    "Planner (leadgen plan)",
+                    f"shows the priced plan (Maps cap ${plan.estimated_cost_usd}, Exa cap "
+                    f"${exa_cap}, budget ${arguments.budget_usd}) and asks for approval",
+                    f"Human ({arguments.approved_by})",
+                    plan_id=plan.plan_id,
+                )
                 approved = (
                     arguments.approve
                     or input("Approve this plan and budget? [y/N] ").lower() == "y"

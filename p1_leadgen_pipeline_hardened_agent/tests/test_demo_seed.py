@@ -20,7 +20,8 @@ def test_demo_seed_produces_the_documented_gaps(migrated_connection: psycopg.Con
         for market in DEMO_MARKETS
     )
     assert lead_count == expected_leads
-    # Seattle (125%) and Miami (goal met) are not gaps.
+    # Every goal is 100, so Leads Available % is the available count. Seattle has met its goal.
+    assert all(market.lead_goal == 100 for market in DEMO_MARKETS)
     assert [
         (gap.market_name, gap.leads_available_pct) for gap in read_gaps(migrated_connection)
     ] == [
@@ -30,7 +31,21 @@ def test_demo_seed_produces_the_documented_gaps(migrated_connection: psycopg.Con
         ("Austin", 50),
         ("Chicago", 55),
         ("Denver", 80),
+        ("Miami", 92),
     ]
+
+
+def test_demo_phone_numbers_stay_in_the_range_reserved_for_fiction(
+    migrated_connection: psycopg.Connection,
+) -> None:
+    seed_demo_data(migrated_connection)
+    numbers = [
+        int(phone[-4:])
+        for (phone,) in migrated_connection.execute(
+            "SELECT phone FROM crm_leads WHERE phone IS NOT NULL"
+        ).fetchall()
+    ]
+    assert min(numbers) >= 100 and max(numbers) <= 199
 
 
 def test_demo_seed_is_identical_on_every_run(empty_database_url: str) -> None:

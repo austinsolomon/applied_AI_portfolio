@@ -28,16 +28,18 @@ class DemoMarket:
     do_not_contact: int
 
 
-# Leads Available % = available ÷ (goal − assigned − converted), shown in the trailing comment.
+# Every market's goal is 100 leads, so Leads Available % (available ÷ goal) equals the available
+# count, shown in the trailing comment. Each market has at most 100 leads, keeping every demo phone
+# number inside the 555-0100 to 555-0199 range reserved for fiction.
 DEMO_MARKETS = [
-    DemoMarket("Phoenix", "AZ", 33.4484, -112.0740, "602", 70, 6, 8, 2, 5, 1),  # 10%
-    DemoMarket("Los Angeles", "CA", 34.0522, -118.2437, "213", 120, 14, 32, 8, 6, 2),  # 18%
-    DemoMarket("San Diego", "CA", 32.7157, -117.1611, "619", 60, 12, 16, 4, 4, 1),  # 30%
-    DemoMarket("Austin", "TX", 30.2672, -97.7431, "512", 50, 20, 8, 2, 3, 0),  # 50%
-    DemoMarket("Chicago", "IL", 41.8781, -87.6298, "312", 90, 33, 24, 6, 5, 1),  # 55%
-    DemoMarket("Denver", "CO", 39.7392, -104.9903, "303", 40, 20, 12, 3, 2, 0),  # 80%
-    DemoMarket("Seattle", "WA", 47.6062, -122.3321, "206", 50, 50, 8, 2, 4, 1),  # 125%, no gap
-    DemoMarket("Miami", "FL", 25.7617, -80.1918, "305", 40, 9, 38, 7, 3, 1),  # goal met
+    DemoMarket("Phoenix", "AZ", 33.4484, -112.0740, "602", 100, 10, 8, 2, 5, 1),  # 10%
+    DemoMarket("Los Angeles", "CA", 34.0522, -118.2437, "213", 100, 18, 32, 8, 6, 2),  # 18%
+    DemoMarket("San Diego", "CA", 32.7157, -117.1611, "619", 100, 30, 16, 4, 4, 1),  # 30%
+    DemoMarket("Austin", "TX", 30.2672, -97.7431, "512", 100, 50, 8, 2, 3, 0),  # 50%
+    DemoMarket("Chicago", "IL", 41.8781, -87.6298, "312", 100, 55, 24, 6, 5, 1),  # 55%
+    DemoMarket("Denver", "CO", 39.7392, -104.9903, "303", 100, 80, 12, 3, 2, 0),  # 80%
+    DemoMarket("Miami", "FL", 25.7617, -80.1918, "305", 100, 92, 5, 1, 1, 1),  # 92%
+    DemoMarket("Seattle", "WA", 47.6062, -122.3321, "206", 100, 100, 0, 0, 0, 0),  # goal met
 ]
 
 NAME_FIRST_WORDS = [

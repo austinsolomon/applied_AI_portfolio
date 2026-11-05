@@ -1,8 +1,8 @@
 """The one category this deployment sources, read from `config/category.yaml`.
 
 The file is part of the repository and changes by pull request. Every stage that needs category
-knowledge (planner keywords, grader and judge rubric, dedupe and lookalike host lists) reads it
-through `load_category_config`, so there is one definition of the category.
+knowledge (planner keywords, Exa queries, grader and judge rubric, dedupe and sourcing host
+lists) reads it through `load_category_config`, so there is one definition of the category.
 """
 
 from pathlib import Path
@@ -42,8 +42,17 @@ class CategoryConfig(BaseModel):
     rubric: CategoryRubric
     shared_hosts: list[Host]
     aggregator_hosts: list[Host]
+    # Plain-language Exa queries, one per phrasing; `{city}` is replaced by each planned city.
+    exa_queries: list[str] = Field(min_length=1, max_length=5)
 
-    @field_validator("keywords", "shared_hosts", "aggregator_hosts")
+    @field_validator("exa_queries")
+    @classmethod
+    def queries_name_the_city(cls, queries: list[str]) -> list[str]:
+        if any("{city}" not in query for query in queries):
+            raise ValueError("every query must contain {city}")
+        return queries
+
+    @field_validator("keywords", "shared_hosts", "aggregator_hosts", "exa_queries")
     @classmethod
     def entries_are_unique_and_non_blank(cls, entries: list[str]) -> list[str]:
         stripped = [entry.strip() for entry in entries]
@@ -57,7 +66,7 @@ class CategoryConfig(BaseModel):
     @property
     def hosts_never_identifying_a_business(self) -> frozenset[str]:
         """Shared and aggregator hosts together: a domain on any of them names a platform, not
-        the business, so it can neither match a CRM lead nor seed a lookalike search."""
+        the business, so it can never match a CRM lead or be sourced as a lead."""
         return frozenset(self.shared_hosts) | frozenset(self.aggregator_hosts)
 
 

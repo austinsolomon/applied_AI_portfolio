@@ -42,6 +42,7 @@ import psycopg
 import trafilatura
 from psycopg.rows import class_row
 
+from leadgen.audit import audit
 from leadgen.public_urls import validate_public_url
 from leadgen.settings import Settings
 
@@ -50,6 +51,7 @@ DUCKDUCKGO_HTML_URL = "https://html.duckduckgo.com/html/"
 USER_AGENT = "leadgen-agent/0.1 (+https://github.com/austinsolomon/applied_AI_portfolio)"
 
 PAGE_CACHE_MAX_AGE = timedelta(days=7)
+BACKEND_LABELS = {"exa": "Exa API", "firecrawl": "Firecrawl API", "free": "Free web (httpx)"}
 DEFAULT_SEARCH_LIMIT = 5
 REQUEST_TIMEOUT_SECONDS = 30.0
 # Stored page text is capped so one oversized page cannot bloat the cache or a later prompt.
@@ -64,8 +66,6 @@ FIRECRAWL_SEARCH_RESULTS_PER_BLOCK = 10
 EXA_WEB_CEILING_PER_CALL = Decimal("0.02")
 EXA_SEARCH_TEXT_CHARACTERS = 1500
 EXA_PAGE_TEXT_CHARACTERS = 6000
-# Pages Exa crawled within the page cache's lifetime are fresh enough; older ones are recrawled.
-EXA_MAX_AGE_HOURS = int(PAGE_CACHE_MAX_AGE.total_seconds() // 3600)
 
 
 @dataclass(frozen=True)
@@ -151,7 +151,7 @@ class FetchResponse:
 class WebBackend(Protocol):
     name: str
 
-    def search(self, query: str, *, limit: int) -> SearchResponse: ...
+    def search(self, query: str, *, limit: int, site: str | None = None) -> SearchResponse: ...
 
     def fetch_page(self, url: str) -> FetchResponse: ...
 
@@ -189,7 +189,8 @@ class FirecrawlBackend:
         self._http = http_client
         self._base_url = base_url.rstrip("/")
 
-    def search(self, query: str, *, limit: int) -> SearchResponse:
+    def search(self, query: str, *, limit: int, site: str | None = None) -> SearchResponse:
+        query = f"site:{site} {query}" if site else query
         body = self._post("/search", {"query": query, "limit": limit, "sources": [{"type": "web"}]})
         web_results = body.get("data", {}).get("web", [])
         results = [
@@ -273,6 +274,10 @@ class FirecrawlBackend:
             )
         body = response.json()
         if not body.get("success", True):
+            if path == "/scrape":
+                # A dead domain (DNS failure) or unreachable page: the page is unreadable, and
+                # qualification goes on without it. Billing is unknown, so no charge is attached.
+                raise PageFetchFailed(f"Firecrawl could not read the page: {body.get('error')}")
             raise WebResearchError(f"Firecrawl reported a failure: {body.get('error')}")
         return body
 
@@ -297,7 +302,9 @@ class ExaWebBackend:
         self._ceiling = ceiling_usd
         self._sleep = sleep
 
-    def search(self, query: str, *, limit: int) -> SearchResponse:
+    def search(self, query: str, *, limit: int, site: str | None = None) -> SearchResponse:
+        # Exa restricts a search to one site with include_domains, never a site: operator.
+        options = {"include_domains": [site]} if site else {}
         response = self._call(
             "search",
             lambda: self._client.search(
@@ -305,6 +312,7 @@ class ExaWebBackend:
                 type="auto",
                 num_results=limit,
                 contents={"text": {"maxCharacters": EXA_SEARCH_TEXT_CHARACTERS}},
+                **options,
             ),
         )
         results = [
@@ -323,8 +331,9 @@ class ExaWebBackend:
             "contents",
             lambda: self._client.get_contents(
                 [url],
+                # Exa's stored copy is used when it has one: forcing a live recrawl made most
+                # small sites come back empty in the 2026-11-04 run.
                 text={"maxCharacters": EXA_PAGE_TEXT_CHARACTERS},
-                max_age_hours=EXA_MAX_AGE_HOURS,
             ),
         )
         charge = self._charge("contents", response)
@@ -385,7 +394,8 @@ class FreeWebBackend:
     def __init__(self, *, http_client: httpx.Client) -> None:
         self._http = http_client
 
-    def search(self, query: str, *, limit: int) -> SearchResponse:
+    def search(self, query: str, *, limit: int, site: str | None = None) -> SearchResponse:
+        query = f"site:{site} {query}" if site else query
         try:
             response = self._http.post(
                 DUCKDUCKGO_HTML_URL,
@@ -514,6 +524,31 @@ def _collapse_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def write_cached_page(connection: psycopg.Connection, page: FetchedPage) -> None:
+    """Store a page under its normalized URL. Sourcing uses this too, so text Exa returned with a
+    search result is already cached when qualification asks for that page."""
+    connection.execute(
+        """
+        INSERT INTO page_cache (url, final_url, title, text, status_code, backend, fetched_at)
+        VALUES (%(url)s, %(final_url)s, %(title)s, %(text)s, %(status_code)s, %(backend)s,
+                %(fetched_at)s)
+        ON CONFLICT (url) DO UPDATE SET
+            final_url = EXCLUDED.final_url, title = EXCLUDED.title, text = EXCLUDED.text,
+            status_code = EXCLUDED.status_code, backend = EXCLUDED.backend,
+            fetched_at = EXCLUDED.fetched_at
+        """,
+        {
+            "url": page.url,
+            "final_url": page.final_url,
+            "title": page.title,
+            "text": page.text,
+            "status_code": page.status_code,
+            "backend": page.backend,
+            "fetched_at": page.fetched_at,
+        },
+    )
+
+
 @dataclass
 class WebResearcher:
     """The interface the pipeline uses: cached pages, ledgered spend, free fallback."""
@@ -542,34 +577,67 @@ class WebResearcher:
         if self.owned_http_client is not None:
             self.owned_http_client.close()
 
-    def search(self, query: str, *, limit: int = DEFAULT_SEARCH_LIMIT) -> list[SearchResult]:
+    def search(
+        self, query: str, *, limit: int = DEFAULT_SEARCH_LIMIT, site: str | None = None
+    ) -> list[SearchResult]:
+        """Web results for `query`, or only pages on `site` (a domain) when it is given."""
+        self._audit(
+            f"sends search {query!r}" + (f" restricted to {site}" if site else ""),
+            BACKEND_LABELS.get(self.backend.name, self.backend.name),
+            limit=limit,
+        )
         try:
-            response = self.backend.search(query, limit=limit)
+            response = self.backend.search(query, limit=limit, site=site)
         except WebBackendUnavailable as failure:
             if (
                 self.fallback is None
                 or not self.fallback_searches
                 or not isinstance(failure, self.fallback_on)
             ):
+                self._audit(f"search failed: {failure}", "Qualify/research web tools")
                 raise
-            response = self.fallback.search(query, limit=limit)
+            self._audit(f"search failed ({failure}); retries on fallback", self.fallback.name)
+            response = self.fallback.search(query, limit=limit, site=site)
         self._record_charge(response.charge)
+        self._audit(
+            f"returns {len(response.results)} search results",
+            "Qualify/research web tools",
+            actor=BACKEND_LABELS.get(self.backend.name, self.backend.name),
+            urls=[result.url for result in response.results],
+        )
         return response.results
 
     def fetch_page(self, url: str) -> FetchedPage:
         cache_key = normalize_page_url(url)
         cached = self._read_cache(cache_key)
         if cached is not None:
+            self._audit(
+                f"reads {cache_key} from cache (no paid call)",
+                "Postgres page_cache",
+                cached_from=cached.backend,
+                characters=len(cached.text),
+            )
             return cached
+        self._audit(
+            f"cache miss; fetches {cache_key}",
+            BACKEND_LABELS.get(self.backend.name, self.backend.name),
+        )
         try:
             response = self._fetch_uncached(cache_key)
         except PageFetchFailed as failure:
             # A dead or forbidden page still cost a credit on the paid backend; ledger it so the
             # run's spend matches the provider's usage, then report the failure as before.
             self._record_charge(failure.charge)
+            self._audit(f"page unreadable: {failure}", "Qualify/research web tools", actor="Web")
             raise
         self._record_charge(response.charge)
         self._write_cache(response.page)
+        self._audit(
+            f"returns {len(response.page.text)} characters of page text",
+            "Qualify/research web tools",
+            actor=BACKEND_LABELS.get(response.page.backend, response.page.backend),
+            url=cache_key,
+        )
         return response.page
 
     def _fetch_uncached(self, cache_key: str) -> FetchResponse:
@@ -580,6 +648,11 @@ class WebResearcher:
                 raise
             # The primary may have billed the attempt (Exa charges for an empty page).
             self._record_charge(getattr(failure, "charge", None))
+            self._audit(
+                f"{failure}; hands the page to the fallback",
+                BACKEND_LABELS.get(self.fallback.name, self.fallback.name),
+                actor=BACKEND_LABELS.get(self.backend.name, self.backend.name),
+            )
             return self.fallback.fetch_page(cache_key)
 
     def _read_cache(self, cache_key: str) -> FetchedPage | None:
@@ -596,26 +669,12 @@ class WebResearcher:
             return cursor.fetchone()
 
     def _write_cache(self, page: FetchedPage) -> None:
-        self.connection.execute(
-            """
-            INSERT INTO page_cache (url, final_url, title, text, status_code, backend, fetched_at)
-            VALUES (%(url)s, %(final_url)s, %(title)s, %(text)s, %(status_code)s, %(backend)s,
-                    %(fetched_at)s)
-            ON CONFLICT (url) DO UPDATE SET
-                final_url = EXCLUDED.final_url, title = EXCLUDED.title, text = EXCLUDED.text,
-                status_code = EXCLUDED.status_code, backend = EXCLUDED.backend,
-                fetched_at = EXCLUDED.fetched_at
-            """,
-            {
-                "url": page.url,
-                "final_url": page.final_url,
-                "title": page.title,
-                "text": page.text,
-                "status_code": page.status_code,
-                "backend": page.backend,
-                "fetched_at": page.fetched_at,
-            },
-        )
+        write_cached_page(self.connection, page)
+
+    def _audit(
+        self, action: str, target: str, *, actor: str = "Qualify/research web tools", **detail
+    ) -> None:
+        audit(self.connection, actor, action, target, run_id=self.run_id, **detail)
 
     def _record_charge(self, charge: Charge | None) -> None:
         if charge is None:
@@ -644,6 +703,12 @@ class WebResearcher:
                     "cost_basis": charge.cost_basis,
                 },
             )
+        self._audit(
+            f"records ${charge.cost_usd} ({charge.cost_basis}, {charge.endpoint})",
+            "Postgres cost_ledger",
+            actor=f"{charge.service} call",
+            units=charge.credits,
+        )
 
 
 def build_web_researcher(

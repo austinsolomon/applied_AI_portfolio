@@ -11,8 +11,7 @@ its own README, design doc, tests and dependencies.
 
 | Exa role | What it does | Live result (Phoenix, 2026-11-04) |
 |---|---|---|
-| Lookalike sourcing | Exa `search("pages similar to <seed>")` on each qualified lead's own website; a domain found by several seeds ranks first | 6 seeds → 37 new businesses; 31% of those judged qualified, vs 13% from Google Maps in the same run |
-| Seedless-market search | Neural `search` by keyword and city when a market has no qualified leads yet | Tested with fakes and a recorded live response |
+| Business sourcing | Plain-language Exa company searches per city (`type="auto"`, `category="company"`), directories excluded; a business found by several phrasings ranks first | Earlier seed-lookalike version: 37 new businesses; 31% of those judged qualified, vs 13% from Google Maps in the same run. The plain-language version has not run live yet |
 | Qualification evidence | `search` with page text and `get_contents` for pages; Claude returns schema-checked JSON and must quote this text word for word | Exa cost 0.111 USD for the run; Firecrawl kept only to render JavaScript pages |
 
 Details: [Why Exa](p1_leadgen_pipeline_hardened_agent/README.md#why-exa) and the

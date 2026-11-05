@@ -61,6 +61,8 @@ def test_an_explicit_path_wins_over_the_setting(tmp_path: Path, demo_category_do
         ("aggregator_hosts", ["Yelp.com"], "aggregator_hosts"),
         ("name", "Mobile Massage", "name"),
         ("rubric", {"qualified_when": "x"}, "rubric"),
+        ("exa_queries", ["mobile massage therapists"], "city"),
+        ("exa_queries", [], "exa_queries"),
     ],
 )
 def test_an_invalid_category_names_the_field(
@@ -117,3 +119,19 @@ def test_the_config_is_immutable(demo_category_document: dict) -> None:
 )
 def test_a_host_covers_itself_and_its_subdomains_only(domain: str, expected: bool) -> None:
     assert is_on_host(domain, {"instagram.com", "facebook.com"}) is expected
+
+
+@pytest.mark.parametrize(
+    "domain",
+    [
+        "linkedin.com",
+        "arelaxingtouchmassage.glossgenius.com",
+        "www.qdexx.com",
+        "excellenttherapists.com",
+        "carenary.com",
+        "www.stedi.com",
+    ],
+)
+def test_platforms_seen_in_live_exa_results_never_count_as_a_business(domain):
+    category = load_category_config()
+    assert is_on_host(domain, category.hosts_never_identifying_a_business)

@@ -12,10 +12,10 @@ from unittest.mock import Mock
 import pytest
 
 from leadgen.budget import plan_spend
-from leadgen.category_config import load_category_config
+from leadgen.category_config import is_on_host, load_category_config
 from leadgen.plans import PlannedCell, approve_plan, create_plan, start_run
 from leadgen.raw_leads import read_raw_leads
-from leadgen.sourcing_exa import source_exa, source_exa_search
+from leadgen.sourcing_exa import source_exa
 from tests.crm_builders import add_market
 
 FIXTURES = Path(__file__).parent / "fixtures" / "exa"
@@ -46,39 +46,26 @@ def running(migrated_connection):
     return connection, plan, start_run(connection, plan.plan_id)
 
 
-def test_recorded_similar_search_replays_end_to_end(running):
-    fixture, response = load("similar")
+@pytest.mark.parametrize("name", ["company_search", "search"])
+def test_recorded_exa_response_replays_through_sourcing(running, name):
+    """company_search.json is the current request shape; search.json is a real 2026-11-04
+    response from the earlier keyword search, kept because its results (directories, Exa's own
+    pages, real businesses) exercise the same filters."""
+    fixture, response = load(name)
     connection, plan, run = running
+    category = load_category_config()
     client = Mock()
     client.search.return_value = response
     leads = source_exa(
-        connection,
-        run.run_id,
-        plan.cells[0].market_id,
-        load_category_config(),
-        client,
-        seeds=[fixture["request"]["seed"]],
+        connection, run.run_id, plan.cells[0].market_id, category, client, cities=["Phoenix, AZ"]
     )
     stored = read_raw_leads(connection, run.run_id)
     assert {lead.source_key for lead in leads} == {row["source_key"] for row in stored}
     assert len(stored) <= len(fixture["results"])
-    assert all(row["source"] == "exa" and row["seed_consensus"] == 1 for row in stored)
-    assert plan_spend(connection, plan.plan_id) == Decimal(str(fixture["cost_dollars"]))
-
-
-def test_recorded_search_replays_end_to_end(running):
-    fixture, response = load("search")
-    connection, plan, run = running
-    client = Mock()
-    client.search.return_value = response
-    source_exa_search(
-        connection,
-        run.run_id,
-        plan.cells[0].market_id,
-        load_category_config(),
-        client,
-        cities=["Phoenix, AZ"],
+    assert not any(
+        is_on_host(row["source_key"], category.hosts_never_identifying_a_business) for row in stored
     )
-    assert client.search.call_count == 1
-    assert len(read_raw_leads(connection, run.run_id)) <= len(fixture["results"])
-    assert plan_spend(connection, plan.plan_id) == Decimal(str(fixture["cost_dollars"]))
+    # The same response for every phrasing: each kept business is found by all of them.
+    assert {row["query_consensus"] for row in stored} <= {len(category.exa_queries)}
+    expected = Decimal(str(fixture["cost_dollars"])) * len(category.exa_queries)
+    assert plan_spend(connection, plan.plan_id) == expected

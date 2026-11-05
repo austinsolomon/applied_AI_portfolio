@@ -30,7 +30,7 @@ repeatable at scale.
 | 6 | Sample scrape | Pipeline | Small Google Maps run per cell; aborts at N new unique businesses or $X | Apify Google Maps actor via `apify-client` |
 | 7 | Sample grader | Pipeline | Purity per keyword and in-market share → proceed, reconfigure or abort | Python · rubric from config |
 | 8 | Full scrape | Pipeline | Continues the sampled run, or a fresh sweep after reconfiguring | Apify · pandas · Postgres `raw_leads`, `seen_leads` |
-| 9 | Lookalike sourcing | Pipeline | For markets still under target: finds businesses similar to that market's qualified leads, or searches by keyword and city when it has none | Exa `search` ("pages similar to <seed>", or keyword and city) via `exa-py` |
+| 9 | Exa sourcing | Pipeline | For markets still under target: plain-language company searches per planned city, directories excluded, ranked by how many phrasings found each business | Exa `search` (`type="auto"`, `category="company"`) via `exa-py` |
 | 10 | Dedupe | Pipeline | Drops any lead already in the CRM by Google place ID, phone, email or website domain; a domain on a shared or aggregator host is never a match | Postgres, exact match on normalized keys computed by the CRM's own expressions |
 | 11 | Contact enrichment | Pipeline | Phone and email per lead: a fixed chain of API calls (domain → company page → best-placed person → email, phone), cached per domain, every call in the cost ledger | BlitzAPI · httpx · Postgres `contact_cache` |
 | 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Exa search and contents (Firecrawl only to render JavaScript pages) |
@@ -55,14 +55,14 @@ repeatable at scale.
 | # | Step | What happens | Human |
 |---|---|---|---|
 | 0 | Trigger | Cloud Scheduler starts the job weekly, or someone runs `leadgen plan` | |
-| 1 | Read demand | `gap_view` computes, per market, Leads Available % = available ÷ (goal − already assigned). The dashboard and the agent read the same view, so the agent never scrapes a screen | |
+| 1 | Read demand | `gap_view` computes, per market, Leads Available % = available ÷ lead goal and Leads Needed = goal − available. The dashboard and the agent read the same view, so the agent never scrapes a screen | |
 | 2 | Find gaps | Markets under 100%, biggest gap first; cells already run are skipped | |
 | 3 | Plan | Each gap market is expanded into cities and keywords; the plan is sized to the goal and priced | |
 | 4 | Approve | The plan, expected leads and total estimated cost are shown; the human approves once and sets a budget | **yes** |
 | 5 | Sample | A small scrape per cell, graded for purity and in-market share | |
 | 6 | Reconfigure or abort | Weak cells retain a reconfigure or abort verdict; only already-approved cells may be sourced | |
 | 7 | Full run | Passing cells are scraped in full; the same business is never stored twice | |
-| 8 | Lookalikes | Markets still under target get Exa lookalike sourcing, seeded from that market's qualified leads; a market with no seeds gets an Exa keyword-and-city search | |
+| 8 | Exa sourcing | Markets still under target get plain-language Exa company searches for each planned city | |
 | 9 | Dedupe | Leads already in the CRM are dropped before anything is spent on them | |
 | 10 | Enrich | Phone and email lookup per lead | |
 | 11 | Qualify | Evidence gathered and judged; unclear cases escalate to agentic research | |
@@ -127,7 +127,7 @@ reported, never hidden.
 | CRM | `crm_leads`; Postgres-generated normalized phone, email and domain; unique place ID, phone and email; domain indexed as a match key |
 | Dedupe | `EXISTS` on normalized keys |
 | CRM write | `INSERT … ON CONFLICT DO NOTHING` in a transaction |
-| Dashboard and gaps | view `gap_view`: goal, assigned, still needed, available, Leads Available %, goal met, short by |
+| Dashboard and gaps | view `gap_view`: lead goal, leads available, leads needed, Leads Available %, goal met |
 | Markets and places | `markets` (center, radius), `places` (US Census 2020 snapshot), `haversine_km()` |
 | Plans and approval | `scrape_plans`, `scrape_plan_cells`, `approvals` |
 | Run state | `runs`, `run_ledger`, `seen_leads` with unique constraints |

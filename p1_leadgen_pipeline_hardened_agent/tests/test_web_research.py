@@ -692,3 +692,29 @@ def test_settings_read_the_firecrawl_price_from_the_environment(
 
     assert settings.firecrawl_usd_per_credit == Decimal("0.00083")
     assert settings.firecrawl_api_key is None
+
+
+def test_firecrawl_dead_domain_is_an_unreadable_page_not_a_crash(
+    migrated_connection: psycopg.Connection, mocked_web: respx.MockRouter, http_client: httpx.Client
+) -> None:
+    mocked_web.post(f"{FIRECRAWL_BASE_URL}/scrape").respond(
+        json={"success": False, "error": 'DNS resolution failed for hostname "gone.example"'}
+    )
+    researcher = WebResearcher(migrated_connection, firecrawl_backend(http_client))
+
+    with pytest.raises(PageFetchFailed, match="DNS resolution failed"):
+        researcher.fetch_page("https://gone.example/")
+
+
+def test_firecrawl_site_search_adds_a_site_operator(
+    migrated_connection: psycopg.Connection, mocked_web: respx.MockRouter, http_client: httpx.Client
+) -> None:
+    search_route = mocked_web.post(f"{FIRECRAWL_BASE_URL}/search").respond(
+        json=FIRECRAWL_SEARCH_RESPONSE
+    )
+    researcher = WebResearcher(migrated_connection, firecrawl_backend(http_client))
+
+    researcher.search("services", limit=3, site="serenity-mobile-massage.example")
+
+    sent = httpx.Request.read(search_route.calls.last.request)
+    assert b'"query":"site:serenity-mobile-massage.example services"' in sent
