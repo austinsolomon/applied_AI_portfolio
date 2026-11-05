@@ -62,10 +62,10 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                     {
                         "lead_id": 12,
                         "market_id": 1,
-                        "business_name": "Golden Bodywork 3",
+                        "business_name": "Golden Table 3",
                         "status": "assigned",
                         "phone": "(602) 555-0102",
-                        "website_domain": "goldenbodywork3-phoenix.example",
+                        "website_domain": "goldentable3-phoenix.example",
                         "source": "demo_seed",
                         "qualification_reason": None,
                     },
@@ -268,7 +268,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                     {
                         "raw_lead_id": 201,
                         "source": "google_maps",
-                        "business_name": "Sonoran Spa",
+                        "business_name": "Sonoran Grill",
                         "phone": "(602) 555-0177",
                         "query_consensus": 1,
                         "duplicate": False,
@@ -286,7 +286,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                         "seen_lead_id": 88,
                         "google_place_id": "ChIJ-example-1",
                         "phone_normalized": "6025550177",
-                        "website_domain": "sonoranspa.example",
+                        "website_domain": "sonorangrill.example",
                     }
                 ],
             ),

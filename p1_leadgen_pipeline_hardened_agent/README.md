@@ -213,7 +213,11 @@ The exit codes let a scheduler such as cron or Cloud Scheduler tell these cases 
 
 ## Dashboard
 
-`leadgen dashboard` opens seven tabs, all read through the same functions the pipeline uses:
+`leadgen dashboard` opens seven tabs, all read through the same functions the pipeline uses. The
+page is styled after Exa's public brand guidelines (Exa blue #1840ED on Marble #FAF9F8, a flared
+serif for headings and a geometric sans for text, as free lookalikes of Exa's commercial
+typefaces) through one theme file, [`exa_theme.toml`](src/leadgen/exa_theme.toml). It uses no Exa
+logo and implies no endorsement.
 
 | Tab | Shows |
 |---|---|
