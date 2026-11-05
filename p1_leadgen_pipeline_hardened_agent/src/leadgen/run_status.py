@@ -23,7 +23,6 @@ STAGE_LABELS = {
     "dedupe": "Dedupe",
     "enrich": "Enrich contacts",
     "qualify": "Qualify",
-    "research": "Research",
     "crm": "Write to CRM",
 }
 STAGE_DONE = "done"

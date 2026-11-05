@@ -104,7 +104,7 @@ its first live run will replace this row.
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
 | Web search and page fetching with a page cache (Exa evidence, Firecrawl rendering only) | done |
 | Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
-| Maps and Exa sourcing, qualification, CRM write | done; live Maps-to-CRM sample verified; Exa live run through qualification (partial: research and CRM write pending) |
+| Maps and Exa sourcing, qualification with inline research, CRM write | done; live runs verified end to end (2026-11-05, massage category); private-chef category not yet run live |
 | Eval capture, weekly review page, labels exported as test fixtures | done |
 | SDK orchestrator, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
 | Unattended weekly run approved by a standing policy (`leadgen weekly`) | done; tested with fake providers |
@@ -143,7 +143,10 @@ The planner selects the market with the lowest available-lead coverage, expands 
 places, and displays its cells and Maps and Exa ceilings before asking for one approval. The total budget
 covers all services. `--approve --approved-by NAME` records approval already given by an operator.
 The runner exposes only the next pipeline stage to the SDK: Maps, Exa, contact extraction,
-dedupe, enrichment, qualification, research for unresolved leads, and CRM writing.
+dedupe, enrichment, qualification and CRM writing. When the judge cannot decide a lead
+confidently (verdict `review`), the same qualification job escalates that lead to a bounded
+research agent at once, starting from the evidence already gathered, and the judge decides
+again; there is no separate research stage.
 
 Contact extraction reads the phone numbers and emails printed on page text Exa sourcing already
 cached, with no network call, so Exa leads reach dedupe with the same phone and email keys Maps

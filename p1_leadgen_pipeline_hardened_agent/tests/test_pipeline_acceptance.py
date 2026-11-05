@@ -1,6 +1,7 @@
 """Offline end-to-end contracts and real-Postgres hardening acceptance tests."""
 
 import asyncio
+import json
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import Mock, call
@@ -901,3 +902,94 @@ def test_malformed_judge_json_becomes_review_without_stopping_the_run(running):
     assert result.verdict == "review" and "incomplete JSON" in result.reason
     assert connection.execute("SELECT status FROM budget_reservations").fetchone() == ("succeeded",)
     assert connection.execute("SELECT cost_basis FROM cost_ledger").fetchone() == ("estimated",)
+
+
+def test_unconfident_verdict_escalates_to_research_inside_qualification(
+    running, empty_database_url, monkeypatch
+):
+    from datetime import UTC, datetime
+
+    from leadgen.web_research import FetchedPage, WebResearcher
+
+    connection, plan, run = running
+    market_id = plan.cells[0].market_id
+    persist_leads(
+        connection,
+        run.run_id,
+        market_id,
+        "exa",
+        [
+            RawLead(
+                "unclear.com", "Unclear Chef", phone="3105550111", website="https://unclear.com"
+            ),
+            RawLead("clear.com", "Clear Chef", phone="3105550122", website="https://clear.com"),
+        ],
+    )
+
+    def page(_self, url):
+        return FetchedPage(
+            url, url, "Chef", "Private chef in Los Angeles", 200, "free", datetime.now(UTC)
+        )
+
+    monkeypatch.setattr(WebResearcher, "fetch_page", page)
+    monkeypatch.setattr(WebResearcher, "search", lambda *args, **kwargs: [])
+
+    def decision(verdict, url):
+        return SimpleNamespace(
+            id="offline",
+            usage=SimpleNamespace(input_tokens=100, output_tokens=30),
+            parsed_output=Judgment(
+                verdict=verdict,
+                reason=f"{verdict} decision",
+                evidence_quote="Private chef in Los Angeles" if verdict == "qualified" else "",
+                source_url=url if verdict == "qualified" else "",
+                eligible_services=["private chef"] if verdict == "qualified" else [],
+                serves_market="yes" if verdict == "qualified" else "unclear",
+            ),
+        )
+
+    def judge_answer(**request):
+        evidence = json.loads(request["messages"][0]["content"])
+        business = evidence["business"]
+        url = next(iter(evidence["evidence"]))
+        tier_two = "research" in request["system"] or judge_answer.calls.get(business)
+        judge_answer.calls[business] = True
+        if business == "Unclear Chef" and not tier_two:
+            return decision("review", url)
+        return decision("qualified", url)
+
+    judge_answer.calls = {}
+    judge = Mock()
+    judge.messages.parse.side_effect = judge_answer
+    sessions = []
+
+    async def research_session(*, prompt, options):
+        sessions.append(prompt)
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="research",
+            total_cost_usd=0.002,
+            usage={},
+        )
+
+    monkeypatch.setattr("leadgen.research_agent.create_sdk_mcp_server", lambda **kwargs: kwargs)
+    settings = Settings(
+        _env_file=None, database_url=empty_database_url, anthropic_api_key=SecretStr("offline")
+    )
+    pipeline = Pipeline(connection, run, settings, judge=judge, research_query=research_session)
+    assert asyncio.run(pipeline.run_qualify()) == {"judged": 2}
+    assert sessions == ["Find missing evidence for Unclear Chef in Los Angeles, CA."]
+    leads = {lead["business_name"]: lead for lead in read_raw_leads(connection, run.run_id)}
+    assert leads["Unclear Chef"]["researched"] and not leads["Clear Chef"]["researched"]
+    assert {name: lead["qualification"]["verdict"] for name, lead in leads.items()} == {
+        "Unclear Chef": "qualified",
+        "Clear Chef": "qualified",
+    }
+    tiers = connection.execute(
+        "SELECT evidence->>'tier', subject FROM eval_records ORDER BY eval_record_id"
+    ).fetchall()
+    assert sorted(tiers) == [("1", "Clear Chef"), ("1", "Unclear Chef"), ("2", "Unclear Chef")]
