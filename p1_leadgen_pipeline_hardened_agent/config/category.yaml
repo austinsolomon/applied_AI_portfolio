@@ -1,97 +1,124 @@
 # The one category this deployment sources. Changed by pull request, never at runtime.
-# Demo category: independent private chefs in US markets, not restaurant chefs.
+# Demo category: independent financial planning firms in US markets with a CFP® professional on
+# staff. The use case is selling software to planners, so a lead must be a firm that picks its
+# own software: an independent firm, not an advisor at a national brokerage or insurer.
 
-name: private_chef
-label: Independent private chefs
+name: independent_cfp_planner
+label: Independent CFP® financial planners
 
 # Google Maps search terms, strongest first. The planner reorders them by the purity each one
 # produced in past samples once that history exists.
 keywords:
-  - private chef
-  - personal chef
-  - in-home chef
-  - personal chef service
-  - meal prep chef
-  - private dinner chef
+  - financial planner
+  - certified financial planner
+  - financial advisor
 
 # Exa sourcing: plain-language descriptions of the businesses wanted, as Exa's search guide
 # recommends ("describe the pages you want, not a bag of keywords"). Each is run once per planned
 # city; a business found by several phrasings ranks higher (query_consensus).
 exa_queries:
-  - independent private chefs who cook in clients' homes in {city}, personal chef business homepages
-  - personal chef services offering in-home meal prep and private dinners in {city}
-  - hire a private chef for dinner parties and weekly meal prep in {city}, the chef's own website
+  - independent fee-only financial planning firms led by a CERTIFIED FINANCIAL PLANNER™ (CFP®) in {city}, firm websites
+  - registered investment adviser (RIA) firms with CFP® professionals serving clients in {city}, the firm's own website
+  - independent CFP® financial planners offering retirement and comprehensive planning in {city}
 
 # Words that mark a page title or domain as this category. An Exa result needs one of them.
 signal_terms:
-  - chef
-  - culinary
+  - financial
+  - planning
+  - planner
+  - wealth
+  - advisor
+  - adviser
+  - advisory
+  - retirement
+  - fiduciary
+  - cfp
 
 # The Maps sample grader counts a business as on-category when one of its Maps categories
 # contains a term from `maps_category_terms` and none from `maps_category_excludes`.
 maps_category_terms:
-  - chef
+  - financial planner
+  - financial consultant
+  - financial advisor
+  - investment service
+  - wealth
 maps_category_excludes:
-  - restaurant
-  - school
-  - caterer
+  - bank
+  - credit union
+  - insurance
+  - tax preparation
 
 # Evidence gathering during qualification. `{business}` and `{market}` are filled in per lead.
 # The site search runs on the business's own domain; the web search looks for third-party pages.
-site_search: "{business}: private chef services, where they cook, and any restaurant they work at"
-evidence_search: "{business} {market} private chef personal chef"
+site_search: "{business}: team members holding the CFP® certification, planning services, and any national firm or broker-dealer the advisors are with"
+evidence_search: "{business} {market} CFP® certified financial planner independent firm"
 
 # Added to the judge's instructions: what the evidence must show before a lead can qualify.
 judge_requirement: >
-  Require affirmative evidence that this is a private or personal chef who currently cooks for
-  clients (in homes, rentals or private events) and serves the market. A current restaurant,
-  restaurant group, catering company or meal-delivery affiliation means rejected. Past restaurant
-  experience in a biography does not disqualify. Mixed or unclear affiliation means review.
+  Require affirmative evidence, quoted from a supplied page, that a named planner at the firm
+  holds the CFP® (CERTIFIED FINANCIAL PLANNER™) certification, and that the firm is independent
+  and serves the market. The evidence quote must be the text naming that CFP® professional. An
+  advisor or branch of a national brokerage, bank or insurer means rejected even when the
+  advisor holds the CFP®, because such advisors do not choose their own software. Other
+  credentials without the CFP® mean rejected. A pending or implied credential, or unclear
+  independence, means review.
 
 # Share of raw leads expected to qualify. The planner sizes a plan as goal ÷ this rate.
-expected_qualification_rate: 0.30
+expected_qualification_rate: 0.20
 
 # The eligibility rubric the sample grader and the qualification judge read.
 rubric:
   qualified_when: >
-    An individual private or personal chef, or a small chef-led business, that currently cooks
-    for clients in their homes, vacation rentals or private events (in-home dinners, weekly meal
-    prep, private dining) and is not currently employed by, owning or cooking for a restaurant.
-    Past restaurant experience mentioned in a biography is fine.
+    An independent financial planning firm on its own website domain whose pages name a planner
+    at the firm who holds the CFP® (CERTIFIED FINANCIAL PLANNER™) certification, and the firm
+    serves clients in the market.
   rejected_when: >
-    A restaurant or restaurant group; a chef who currently works at or owns a restaurant; a
-    restaurant's catering arm; a catering company; a ghost kitchen, meal-kit or meal-delivery
-    business; a food truck; a cooking school or class venue; or a chef marketplace or directory.
+    A branch or advisor page of a national firm (Edward Jones, Ameriprise, Northwestern Mutual,
+    Raymond James, Merrill, Morgan Stanley, Wells Fargo Advisors, LPL Financial, UBS, Stifel,
+    Charles Schwab, Fidelity, Vanguard, State Farm, Allstate, New York Life, MassMutual,
+    Thrivent, Primerica), even when the advisor holds the CFP®, because such advisors cannot buy
+    their own software; this includes advisors on their own vanity domains whose pages say they
+    are with such a firm. Also rejected: no CFP® claim (only ChFC, CRPC, CFA, CPA/PFS, or none);
+    insurance-only agencies; tax-preparation-only firms; banks and credit unions; directories
+    and advisor-matching sites; firms outside the market.
   review_when: >
-    The pages do not say whether the chef is independent today, the business mixes private-chef
-    work with restaurant or catering work (for example "private chef and catering"), or it is
-    unclear whether the chef cooks for private clients.
+    The credential is implied or pending ("CFP® candidate", "pursuing the CFP", "certified
+    planner" without naming the CFP®), the firm's independence is unclear, or it is unclear
+    whether the firm serves clients in the market.
+  # Planning services an independent CFP® firm offers. The judge must name at least one that the
+  # evidence supports; the qualifying fact itself is the quoted CFP® professional.
   eligible_services:
-    - private chef
-    - personal chef
-    - in-home dinner
-    - weekly meal prep
-    - private dinner party
-    - vacation rental chef
-    - private event chef
+    - financial planning
+    - comprehensive financial planning
+    - retirement planning
+    - investment management
+    - tax planning
+    - estate planning
+    - wealth management
 
 # Phrases that, affirmed in a qualification reason, describe a business the rubric rejects. The
-# CRM write flags a qualified lead whose reason affirms one ("works at a restaurant"); negated
-# mentions ("is not affiliated with a restaurant") do not count.
+# CRM write flags a qualified lead whose reason affirms one ("an Edward Jones advisor"); negated
+# mentions ("not affiliated with Edward Jones") do not count.
 disqualifier_phrases:
-  - works at a restaurant
-  - owns a restaurant
-  - restaurant group
-  - restaurant's catering
-  - catering company
-  - meal delivery
-  - meal-kit
-  - ghost kitchen
-  - food truck
-  - cooking school
-  - chef marketplace
+  - edward jones
+  - ameriprise
+  - northwestern mutual
+  - raymond james
+  - merrill lynch
+  - morgan stanley
+  - wells fargo advisors
+  - lpl financial
+  - state farm
+  - primerica
+  - national firm
+  - insurance agency
+  - tax preparation
+  - credit union
+  - cfp candidate
+  - cfp® candidate
   - business directory
   - online directory
+  - advisor-matching
 
 # Domains many unrelated businesses share: social profiles, link-in-bio pages and site builders
 # that put every business under one host. Dedupe never treats these as a match key, and
@@ -118,32 +145,48 @@ shared_hosts:
   - calendly.com
   - linkedin.com
 
-# Directories, review sites and booking marketplaces. Their pages describe many businesses, so
-# a result on one of these hosts is never a lead. They are also
+# Directories, review sites, advisor-matching services and national firms. Their pages describe
+# many businesses or advisors, so a result on one of these hosts is never a lead. They are also
 # excluded from the domain match key, for the same reason as the shared hosts.
 aggregator_hosts:
   # Directories and review sites: their pages describe many businesses.
   - yelp.com
   - yellowpages.com
-  - tripadvisor.com
   - mapquest.com
   - bbb.org
   - manta.com
   - foursquare.com
   - nextdoor.com
-  # Hiring and gig marketplaces that list many chefs under one host.
-  - thumbtack.com
-  - angi.com
-  - bark.com
-  - care.com
-  - takeachef.com
-  - cozymeal.com
-  # Restaurant reservation, delivery and event platforms: never an independent chef's own site.
-  - opentable.com
-  - resy.com
-  - doordash.com
-  - ubereats.com
-  - grubhub.com
-  - eventbrite.com
-  - theknot.com
-  - weddingwire.com
+  - zoominfo.com
+  # Advisor directories, matching services and credential lookups: one page per many advisors.
+  - smartasset.com
+  - wealthtender.com
+  - paladinregistry.com
+  - letsmakeaplan.org
+  - napfa.org
+  - xyplanningnetwork.com
+  - brokercheck.finra.org
+  - adviserinfo.sec.gov
+  - investor.gov
+  - nerdwallet.com
+  # National brokerages, banks and insurers: their advisors do not choose their own software.
+  - edwardjones.com
+  - ameriprise.com
+  - northwesternmutual.com
+  - raymondjames.com
+  - ml.com
+  - merrilledge.com
+  - morganstanley.com
+  - wellsfargoadvisors.com
+  - lpl.com
+  - ubs.com
+  - stifel.com
+  - schwab.com
+  - fidelity.com
+  - vanguard.com
+  - statefarm.com
+  - allstate.com
+  - newyorklife.com
+  - massmutual.com
+  - thrivent.com
+  - primerica.com

@@ -52,20 +52,20 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                     {
                         "lead_id": 401,
                         "market_id": 1,
-                        "business_name": "Desert Sage Private Chef",
+                        "business_name": "Desert Sage Financial Planning",
                         "status": "available",
                         "phone": "(602) 555-0142",
-                        "website_domain": "desertsage.example",
+                        "website_domain": "desertsageplanning.example",
                         "source": "exa",
-                        "qualification_reason": "Private chef cooking in clients' homes in Phoenix",
+                        "qualification_reason": "Independent firm with a CFP® planner in Phoenix",
                     },
                     {
                         "lead_id": 12,
                         "market_id": 1,
-                        "business_name": "Golden Table 3",
+                        "business_name": "Golden Wealth Planning 3",
                         "status": "assigned",
                         "phone": "(602) 555-0102",
-                        "website_domain": "goldentable3-phoenix.example",
+                        "website_domain": "goldenwealthplanning3-phoenix.example",
                         "source": "demo_seed",
                         "qualification_reason": None,
                     },
@@ -142,7 +142,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                         "plan_id": 3,
                         "market_id": 1,
                         "city": "Phoenix, AZ",
-                        "keyword": "private chef",
+                        "keyword": "financial planner",
                         "expected_raw_leads": 30,
                         "estimated_cost_usd": 1.00,
                         "status": "scraped",
@@ -258,8 +258,8 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                     {
                         "raw_lead_id": 214,
                         "source": "exa",
-                        "business_name": "Desert Sage Private Chef",
-                        "website": "https://desertsage.example/",
+                        "business_name": "Desert Sage Financial Planning",
+                        "website": "https://desertsageplanning.example/",
                         "query_consensus": 3,
                         "duplicate": False,
                         "enriched": True,
@@ -296,11 +296,11 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                 "days so a repeat read costs nothing.",
                 [
                     {
-                        "url": "https://desertsage.example/",
+                        "url": "https://desertsageplanning.example/",
                         "backend": "exa",
                         "status_code": 200,
-                        "title": "Desert Sage | Private chef in Phoenix",
-                        "text": "Private dinners and meal prep in your home across Phoenix…",
+                        "title": "Desert Sage | Independent financial planning in Phoenix",
+                        "text": "Jordan Example, CFP®, leads our fee-only practice in Phoenix…",
                     }
                 ],
             ),
@@ -310,11 +310,11 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                 "and their email and phone, so a domain is never paid for twice.",
                 [
                     {
-                        "domain": "desertsage.example",
+                        "domain": "desertsageplanning.example",
                         "found": True,
                         "person_name": "Jordan Example",
                         "person_title": "Owner",
-                        "email": "jordan@desertsage.example",
+                        "email": "jordan@desertsageplanning.example",
                         "records_used": 2,
                     },
                     {
@@ -354,7 +354,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                 [
                     {
                         "reservation_id": 301,
-                        "operation": "exa:1:independent private chefs…",
+                        "operation": "exa:1:independent fee-only financial planning firms…",
                         "ceiling_usd": 0.03,
                         "status": "succeeded",
                     },
@@ -402,9 +402,9 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                     {
                         "eval_record_id": 77,
                         "kind": "judge_decision",
-                        "subject": "Desert Sage Private Chef",
+                        "subject": "Desert Sage Financial Planning",
                         "verdict": "qualified",
-                        "reason": "Private chef cooking in clients' homes in Phoenix",
+                        "reason": "Independent firm with a CFP® planner in Phoenix",
                         "model": "claude-haiku-5-5",
                     }
                 ],
@@ -429,7 +429,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                 [
                     {
                         "trace_id": 501,
-                        "operation": "exa:1:independent private chefs…",
+                        "operation": "exa:1:independent fee-only financial planning firms…",
                         "outcome": "succeeded",
                         "latency_ms": 1840,
                     },
@@ -458,8 +458,8 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                         "actor": "Exa API (Search)",
                         "action": "company search returns 25 results: 12 new businesses, "
                         "3 already found, 10 filtered out",
-                        "target": "independent private chefs who cook in clients' homes in "
-                        "Phoenix, AZ",
+                        "target": "independent CFP® financial planners offering retirement and "
+                        "comprehensive planning in Phoenix, AZ",
                     },
                 ],
             ),

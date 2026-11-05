@@ -37,7 +37,8 @@ def approved(migrated_connection):
     connection = migrated_connection
     market_id = add_market(connection)
     plan = create_plan(
-        connection, [PlannedCell(market_id, "Los Angeles, CA", "private chef", 50, Decimal("1"))]
+        connection,
+        [PlannedCell(market_id, "Los Angeles, CA", "financial planner", 50, Decimal("1"))],
     )
     approve_plan(connection, plan.plan_id, Decimal("5"), "test operator")
     return connection, plan
@@ -155,7 +156,7 @@ def test_exa_page_reserves_exa_ceiling_plus_one_firecrawl_render(running):
     )
     web = GuardedWeb(connection, run.run_id, researcher, settings, "test")
     web.fetch_page("https://cedar.example")
-    web.search("cedar chef")
+    web.search("cedar planning")
     assert connection.execute(
         "SELECT ceiling_usd FROM budget_reservations ORDER BY reservation_id"
     ).fetchall() == [
@@ -180,10 +181,10 @@ def test_hook_denies_unknown_tool_and_out_of_order_stage(running):
 def fake_maps():
     item = {
         "placeId": "place-cedar",
-        "title": "Cedar Private Chef",
+        "title": "Cedar Financial Planning",
         "phone": "3105550142",
         "website": "https://cedar.example",
-        "categoryName": "Personal chef service",
+        "categoryName": "Financial planner",
         "location": {"lat": 34.05, "lng": -118.24},
     }
     actor_run = {
@@ -216,7 +217,7 @@ def test_aborted_scraper_persists_and_repersist_adds_nothing(running):
 
 def test_grader_does_not_treat_unknown_coordinates_as_in_market(running):
     connection, plan, run = running
-    lead = RawLead("cedar", "Cedar", categories=["Personal chef service"])
+    lead = RawLead("cedar", "Cedar", categories=["Financial planner"])
     assert grade_sample(connection, run.run_id, plan.cells[0], [lead]) == "RECONFIGURE"
 
 
@@ -226,7 +227,7 @@ def persist_consensus_mix(connection, run, market_id):
         run.run_id,
         market_id,
         "google_maps",
-        [RawLead("maps-1", "Maps Chef", phone="3105550101")],
+        [RawLead("maps-1", "Maps Planner", phone="3105550101")],
     )
     persist_leads(
         connection,
@@ -276,7 +277,7 @@ def test_exa_stage_runs_one_company_search_per_phrasing(running):
     connection, plan, run = running
     category = load_category_config()
     client = Mock()
-    client.search.return_value = exa_response(("https://desertchef.com/", "Desert Chef"))
+    client.search.return_value = exa_response(("https://desertplanning.com/", "Desert Planning"))
     assert exa_calls(plan, category) == len(category.exa_queries)
     result = asyncio.run(Pipeline(connection, run, Settings(), exa=client).run_exa())
     assert result == {"sourced": 1, "queries": len(category.exa_queries)}
@@ -299,7 +300,7 @@ def test_exa_counts_how_many_phrasings_found_a_business(running):
     connection, plan, run = running
     category = load_category_config()
     client = Mock()
-    client.search.return_value = exa_response(("https://desertchef.com", "Desert Chef"))
+    client.search.return_value = exa_response(("https://desertplanning.com", "Desert Planning"))
     leads = source_exa(
         connection, run.run_id, plan.cells[0].market_id, category, client, cities=["Phoenix, AZ"]
     )
@@ -313,11 +314,15 @@ def test_exa_drops_shared_and_aggregator_hosts(running):
     connection, plan, run = running
     client = Mock()
     client.search.return_value = exa_response(
-        ("https://www.yelp.com/search?find_desc=private+chef", "Best Private Chefs in Phoenix"),
-        ("https://instagram.com/privatechef", "Private Chef"),
-        ("https://cedar.cozymeal.com", "Cedar Chef on Cozymeal"),
-        ("https://desertchef.com", "Desert Chef"),
-        ("https://desertchef.com/about", "Desert Chef about"),
+        (
+            "https://www.yelp.com/search?find_desc=financial+planner",
+            "Best Financial Planners in Phoenix",
+        ),
+        ("https://instagram.com/cfpplanner", "Financial Planner"),
+        ("https://cedar.smartasset.com", "Cedar Planning on SmartAsset"),
+        ("https://www.edwardjones.com/us-en/advisor/jane-doe", "Jane Doe, CFP® financial advisor"),
+        ("https://desertplanning.com", "Desert Planning"),
+        ("https://desertplanning.com/about", "Desert Planning about"),
         ("https://phoenixplumbing.com", "Phoenix Plumbing"),
     )
     leads = source_exa(
@@ -328,7 +333,7 @@ def test_exa_drops_shared_and_aggregator_hosts(running):
         client,
         cities=["Phoenix, AZ"],
     )
-    assert [lead.source_key for lead in leads] == ["desertchef.com"]
+    assert [lead.source_key for lead in leads] == ["desertplanning.com"]
 
 
 def test_exa_page_text_is_cached_for_qualification(running):
@@ -337,8 +342,8 @@ def test_exa_page_text_is_cached_for_qualification(running):
     connection, plan, run = running
     client = Mock()
     client.search.return_value = exa_response(
-        ("https://desertchef.com", "Desert Chef"),
-        text="We travel to homes across Phoenix for private chef.",
+        ("https://desertplanning.com", "Desert Planning"),
+        text="Our CFP® professionals offer financial planning across Phoenix.",
     )
     source_exa(
         connection,
@@ -350,10 +355,10 @@ def test_exa_page_text_is_cached_for_qualification(running):
     )
     paid_backend = Mock()
     page = WebResearcher(connection, paid_backend, run_id=run.run_id).fetch_page(
-        "https://desertchef.com/"
+        "https://desertplanning.com/"
     )
     assert (page.from_cache, page.backend) == (True, "exa")
-    assert "private chef" in page.text
+    assert "financial planning" in page.text
     paid_backend.fetch_page.assert_not_called()
 
 
@@ -395,26 +400,26 @@ def test_exa_blocked_when_budget_is_exhausted(running):
     "quote,url,market,expected",
     [
         (
-            "We cook private dinners in homes across Los Angeles.",
+            "Dana Reyes, CFP®, plans for families across Los Angeles.",
             "https://cedar.example",
             "yes",
             "qualified",
         ),
         ("Invented quote", "https://cedar.example", "yes", "review"),
         (
-            "We cook private dinners in homes across Los Angeles.",
+            "Dana Reyes, CFP®, plans for families across Los Angeles.",
             "https://wrong.example",
             "yes",
             "review",
         ),
         (
-            "We cook private dinners in homes across Los Angeles.",
+            "Dana Reyes, CFP®, plans for families across Los Angeles.",
             "https://cedar.example",
             "no",
             "rejected",
         ),
         (
-            "We cook private dinners in homes across Los Angeles.",
+            "Dana Reyes, CFP®, plans for families across Los Angeles.",
             "https://cedar.example",
             "unclear",
             "review",
@@ -424,15 +429,15 @@ def test_exa_blocked_when_budget_is_exhausted(running):
 def test_judge_requires_real_quote_url_and_market(quote, url, market, expected):
     judgment = Judgment(
         verdict="qualified",
-        reason="Offers private chef",
+        reason="Independent firm with a CFP® planner",
         evidence_quote=quote,
         source_url=url,
-        eligible_services=["private chef"],
+        eligible_services=["financial planning"],
         serves_market=market,
     )
     result = validate_judgment(
         judgment,
-        {"https://cedar.example": "We cook private dinners in homes across Los Angeles."},
+        {"https://cedar.example": "Dana Reyes, CFP®, plans for families across Los Angeles."},
         load_category_config(),
     )
     assert result.verdict == expected
@@ -445,7 +450,7 @@ def test_qualification_records_model_usage_and_evidence(running):
         run.run_id,
         plan.cells[0].market_id,
         "google_maps",
-        [RawLead("cedar", "Cedar Private Chef", phone="3105550142")],
+        [RawLead("cedar", "Cedar Financial Planning", phone="3105550142")],
     )
     lead = read_raw_leads(connection, run.run_id)[0]
     client = Mock()
@@ -457,7 +462,7 @@ def test_qualification_records_model_usage_and_evidence(running):
             reason="Mobile service",
             evidence_quote="Mobile",
             source_url="https://cedar.example",
-            eligible_services=["private chef"],
+            eligible_services=["financial planning"],
             serves_market="yes",
         ),
     )
@@ -498,7 +503,7 @@ def test_pipeline_dedupe_and_crm_share_real_schema(running):
     connection.execute(
         "UPDATE raw_leads SET qualification=%s::jsonb",
         (
-            '{"verdict":"qualified","reason":"Private chef","evidence_quote":"Mobile",'
+            '{"verdict":"qualified","reason":"Independent CFP® planner","evidence_quote":"Mobile",'
             '"source_url":"https://cedar.example"}',
         ),
     )
@@ -583,10 +588,10 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
         usage=SimpleNamespace(input_tokens=100, output_tokens=30),
         parsed_output=Judgment(
             verdict="qualified",
-            reason="Travels to homes in the market",
-            evidence_quote="Private chef in Los Angeles",
+            reason="Independent firm with a CFP® planner serving the market",
+            evidence_quote="Dana Reyes, CFP®, plans for families in Los Angeles",
             source_url="https://cedar.example",
-            eligible_services=["private chef"],
+            eligible_services=["financial planning"],
             serves_market="yes",
         ),
     )
@@ -596,7 +601,7 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
             url,
             "https://cedar.example",
             "Cedar",
-            "Private chef in Los Angeles",
+            "Dana Reyes, CFP®, plans for families in Los Angeles",
             200,
             "free",
             datetime.now(UTC),
@@ -714,7 +719,7 @@ def test_truncated_judge_is_retained_for_review_without_retry(running):
         run.run_id,
         lead,
         "Phoenix",
-        {"https://cedar.example": "Private chef"},
+        {"https://cedar.example": "Jane Doe, CFP®"},
         load_category_config(),
         Settings(),
         client=client,
@@ -757,19 +762,19 @@ def test_research_loop_rejudges_bounded_evidence(running, monkeypatch, subtype):
         run.run_id,
         plan.cells[0].market_id,
         "google_maps",
-        [RawLead("research", "Cedar Private Chef", phone="3105550142")],
+        [RawLead("research", "Cedar Financial Planning", phone="3105550142")],
     )
     lead = read_raw_leads(connection, run.run_id)[0]
     lead["qualification"] = {"verdict": "review"}
     web = Mock()
     web.search.return_value = [
-        SimpleNamespace(url="https://cedar.example", description="Private chef")
+        SimpleNamespace(url="https://cedar.example", description="Jane Doe, CFP®")
     ]
     monkeypatch.setattr(research, "create_sdk_mcp_server", lambda **kwargs: kwargs)
 
     async def replay(*, prompt, options):
         search, fetch = options.mcp_servers["research"]["tools"]
-        await search.handler({"query": "Cedar private chef"})
+        await search.handler({"query": "Cedar financial planning"})
         denied = await fetch.handler({"url": "http://localhost/"})
         assert denied["isError"]
         yield ResultMessage(
@@ -791,10 +796,10 @@ def test_research_loop_rejudges_bounded_evidence(running, monkeypatch, subtype):
         usage=SimpleNamespace(input_tokens=100, output_tokens=30),
         parsed_output=Judgment(
             verdict="qualified",
-            reason="Offers private chef",
-            evidence_quote="Private chef",
+            reason="Independent firm with a CFP® planner",
+            evidence_quote="Jane Doe, CFP®",
             source_url="https://cedar.example",
-            eligible_services=["private chef"],
+            eligible_services=["financial planning"],
             serves_market="yes",
         ),
     )
@@ -901,11 +906,11 @@ def test_malformed_judge_json_becomes_review_without_stopping_the_run(running):
         run.run_id,
         plan.cells[0].market_id,
         "google_maps",
-        [RawLead("cedar", "Cedar Private Chef", phone="3105550142")],
+        [RawLead("cedar", "Cedar Financial Planning", phone="3105550142")],
     )
     lead = read_raw_leads(connection, run.run_id)[0]
     try:
-        Judgment.model_validate_json('{"verdict":"review","eligible_services":["mobile mass')
+        Judgment.model_validate_json('{"verdict":"review","eligible_services":["financial pla')
     except ValidationError as cut_off:
         malformed = cut_off
     client = Mock()
@@ -942,15 +947,21 @@ def test_unconfident_verdict_escalates_to_research_inside_qualification(
         "exa",
         [
             RawLead(
-                "unclear.com", "Unclear Chef", phone="3105550111", website="https://unclear.com"
+                "unclear.com", "Unclear Planner", phone="3105550111", website="https://unclear.com"
             ),
-            RawLead("clear.com", "Clear Chef", phone="3105550122", website="https://clear.com"),
+            RawLead("clear.com", "Clear Planner", phone="3105550122", website="https://clear.com"),
         ],
     )
 
     def page(_self, url):
         return FetchedPage(
-            url, url, "Chef", "Private chef in Los Angeles", 200, "free", datetime.now(UTC)
+            url,
+            url,
+            "Planner",
+            "Dana Reyes, CFP®, plans for families in Los Angeles",
+            200,
+            "free",
+            datetime.now(UTC),
         )
 
     monkeypatch.setattr(WebResearcher, "fetch_page", page)
@@ -963,9 +974,11 @@ def test_unconfident_verdict_escalates_to_research_inside_qualification(
             parsed_output=Judgment(
                 verdict=verdict,
                 reason=f"{verdict} decision",
-                evidence_quote="Private chef in Los Angeles" if verdict == "qualified" else "",
+                evidence_quote="Dana Reyes, CFP®, plans for families in Los Angeles"
+                if verdict == "qualified"
+                else "",
                 source_url=url if verdict == "qualified" else "",
-                eligible_services=["private chef"] if verdict == "qualified" else [],
+                eligible_services=["financial planning"] if verdict == "qualified" else [],
                 serves_market="yes" if verdict == "qualified" else "unclear",
             ),
         )
@@ -976,7 +989,7 @@ def test_unconfident_verdict_escalates_to_research_inside_qualification(
         url = next(iter(evidence["evidence"]))
         tier_two = "research" in request["system"] or judge_answer.calls.get(business)
         judge_answer.calls[business] = True
-        if business == "Unclear Chef" and not tier_two:
+        if business == "Unclear Planner" and not tier_two:
             return decision("review", url)
         return decision("qualified", url)
 
@@ -1004,26 +1017,30 @@ def test_unconfident_verdict_escalates_to_research_inside_qualification(
     )
     pipeline = Pipeline(connection, run, settings, judge=judge, research_query=research_session)
     assert asyncio.run(pipeline.run_qualify()) == {"judged": 2}
-    assert sessions == ["Find missing evidence for Unclear Chef in Los Angeles, CA."]
+    assert sessions == ["Find missing evidence for Unclear Planner in Los Angeles, CA."]
     leads = {lead["business_name"]: lead for lead in read_raw_leads(connection, run.run_id)}
-    assert leads["Unclear Chef"]["researched"] and not leads["Clear Chef"]["researched"]
+    assert leads["Unclear Planner"]["researched"] and not leads["Clear Planner"]["researched"]
     assert {name: lead["qualification"]["verdict"] for name, lead in leads.items()} == {
-        "Unclear Chef": "qualified",
-        "Clear Chef": "qualified",
+        "Unclear Planner": "qualified",
+        "Clear Planner": "qualified",
     }
     tiers = connection.execute(
         "SELECT evidence->>'tier', subject FROM eval_records ORDER BY eval_record_id"
     ).fetchall()
-    assert sorted(tiers) == [("1", "Clear Chef"), ("1", "Unclear Chef"), ("2", "Unclear Chef")]
+    assert sorted(tiers) == [
+        ("1", "Clear Planner"),
+        ("1", "Unclear Planner"),
+        ("2", "Unclear Planner"),
+    ]
 
 
 @pytest.mark.parametrize(
     "domain,public",
     [
-        ("chefanthonyserrano.", False),
-        ("chefanthonyserrano", False),
+        ("anthonyserrano.", False),
+        ("anthonyserrano", False),
         ("", False),
-        ("chef-anna.com", True),
+        ("anna-planning.com", True),
         ("anna.square.site", True),
     ],
 )
@@ -1039,8 +1056,10 @@ def test_exa_skips_a_result_whose_host_has_no_top_level_domain(running):
     client.search.return_value = SimpleNamespace(
         cost_dollars=SimpleNamespace(total=0.007),
         results=[
-            SimpleNamespace(url="https://chefanthonyserrano./", title="Chef Anthony", text=""),
-            SimpleNamespace(url="https://chef-anna.com/", title="Chef Anna", text=""),
+            SimpleNamespace(
+                url="https://anthonyserrano./", title="Anthony Serrano Planning", text=""
+            ),
+            SimpleNamespace(url="https://anna-planning.com/", title="Anna Planning", text=""),
         ],
     )
     leads = source_exa(
@@ -1051,7 +1070,7 @@ def test_exa_skips_a_result_whose_host_has_no_top_level_domain(running):
         client,
         cities=["Phoenix, AZ"],
     )
-    assert [lead.source_key for lead in leads] == ["chef-anna.com"]
+    assert [lead.source_key for lead in leads] == ["anna-planning.com"]
 
 
 def test_blitz_rejecting_one_lead_does_not_fail_enrichment(
@@ -1066,7 +1085,7 @@ def test_blitz_rejecting_one_lead_does_not_fail_enrichment(
         run.run_id,
         plan.cells[0].market_id,
         "exa",
-        [RawLead("bad.example", "Bad Domain Chef", website="https://bad.example/")],
+        [RawLead("bad.example", "Bad Domain Planner", website="https://bad.example/")],
     )
 
     def rejected(*args, **kwargs):
@@ -1095,8 +1114,8 @@ def test_dedupe_skips_businesses_judged_in_an_earlier_run(approved):
         market_id,
         "exa",
         [
-            RawLead("judged.example", "Judged Chef", website="https://www.judged.example/"),
-            RawLead("unjudged.example", "Unjudged Chef", website="https://unjudged.example/"),
+            RawLead("judged.example", "Judged Planner", website="https://www.judged.example/"),
+            RawLead("unjudged.example", "Unjudged Planner", website="https://unjudged.example/"),
         ],
     )
     connection.execute(
@@ -1113,9 +1132,9 @@ def test_dedupe_skips_businesses_judged_in_an_earlier_run(approved):
         market_id,
         "exa",
         [
-            RawLead("judged.example", "Judged Chef", website="https://judged.example/menu"),
-            RawLead("unjudged.example", "Unjudged Chef", website="https://unjudged.example/"),
-            RawLead("fresh.example", "Fresh Chef", website="https://fresh.example/"),
+            RawLead("judged.example", "Judged Planner", website="https://judged.example/menu"),
+            RawLead("unjudged.example", "Unjudged Planner", website="https://unjudged.example/"),
+            RawLead("fresh.example", "Fresh Planner", website="https://fresh.example/"),
         ],
     )
     result = asyncio.run(Pipeline(connection, later, Settings()).run_dedupe())

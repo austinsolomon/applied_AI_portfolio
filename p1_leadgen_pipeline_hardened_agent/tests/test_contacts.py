@@ -27,7 +27,7 @@ from leadgen.contacts import (
 from tests.crm_builders import add_lead, add_market
 
 BASE_URL = "https://blitz.test"
-COMPANY_URL = "https://www.linkedin.com/company/cedar-private-chef"
+COMPANY_URL = "https://www.linkedin.com/company/cedar-financial-planning"
 PERSON_URL = "https://www.linkedin.com/in/jordan-cedar"
 
 
@@ -59,7 +59,7 @@ KEY_INFO_ALL_ENDPOINTS = {
 COMPANY_FOUND = {
     "found": True,
     "company_linkedin_url": COMPANY_URL,
-    "company_name": "Cedar Private Chef",
+    "company_name": "Cedar Financial Planning",
     "other": [],
     "fair_usage": fair_usage(1, "req-company"),
 }
@@ -77,11 +77,11 @@ PERSON_FOUND = {
                 "first_name": "Jordan",
                 "last_name": "Cedar",
                 "full_name": "Jordan Cedar",
-                "headline": "Owner | @Cedar Private Chef",
+                "headline": "Owner | @Cedar Financial Planning",
                 "linkedin_url": PERSON_URL,
                 "experiences": [
                     {
-                        "company_name": "Cedar Private Chef",
+                        "company_name": "Cedar Financial Planning",
                         "job_title": "Owner",
                         "company_linkedin_url": COMPANY_URL,
                         "job_is_current": True,
@@ -102,8 +102,8 @@ PERSON_NOT_FOUND = {
 
 EMAIL_FOUND = {
     "found": True,
-    "email": "jordan@cedar-table.example",
-    "all_emails": [{"email": "jordan@cedar-table.example", "job_order_in_profile": 1}],
+    "email": "jordan@cedar-planning.example",
+    "all_emails": [{"email": "jordan@cedar-planning.example", "job_order_in_profile": 1}],
     "fair_usage": fair_usage(1, "req-email"),
 }
 EMAIL_NOT_FOUND = {"found": False, "email": None, "fair_usage": fair_usage(0, "req-email")}
@@ -168,20 +168,20 @@ def test_full_chain_finds_email_and_phone_and_ledgers_every_call(
     run_id = uuid.uuid4()
 
     lookup = enrich_contact(
-        "https://www.Cedar-Table.example/book",
+        "https://www.Cedar-Planning.example/book",
         connection=migrated_connection,
         client=client,
         run_id=run_id,
         usd_per_record=Decimal("0.05"),
     )
 
-    assert lookup.domain == "cedar-table.example"
+    assert lookup.domain == "cedar-planning.example"
     assert lookup.found is True
     assert lookup.from_cache is False
-    assert (lookup.email, lookup.phone) == ("jordan@cedar-table.example", "+13105550142")
+    assert (lookup.email, lookup.phone) == ("jordan@cedar-planning.example", "+13105550142")
     assert (lookup.person_name, lookup.person_title) == ("Jordan Cedar", "Owner")
     assert lookup.records_used == 4
-    assert blitz.company.calls.last.request.content == b'{"domain":"cedar-table.example"}'
+    assert blitz.company.calls.last.request.content == b'{"domain":"cedar-planning.example"}'
     assert blitz.company.calls.last.request.headers["x-api-key"] == "test-key"
 
     assert ledger_rows(migrated_connection, run_id) == [
@@ -198,19 +198,19 @@ def test_second_lookup_of_the_same_domain_is_served_from_the_cache(
     blitz.everything_found()
     first_run, second_run = uuid.uuid4(), uuid.uuid4()
     enrich_contact(
-        "cedar-table.example", connection=migrated_connection, client=client, run_id=first_run
+        "cedar-planning.example", connection=migrated_connection, client=client, run_id=first_run
     )
     calls_after_first = blitz.metered_calls
 
     cached = enrich_contact(
-        "http://www.cedar-table.example:443/?utm=x",
+        "http://www.cedar-planning.example:443/?utm=x",
         connection=migrated_connection,
         client=client,
         run_id=second_run,
     )
 
     assert cached.from_cache is True
-    assert (cached.email, cached.phone) == ("jordan@cedar-table.example", "+13105550142")
+    assert (cached.email, cached.phone) == ("jordan@cedar-planning.example", "+13105550142")
     assert blitz.metered_calls == calls_after_first == 4
     assert ledger_rows(migrated_connection, second_run) == []
 
@@ -220,7 +220,7 @@ def test_a_stale_cache_row_is_looked_up_again_and_replaced(
 ) -> None:
     blitz.everything_found()
     enrich_contact(
-        "cedar-table.example",
+        "cedar-planning.example",
         connection=migrated_connection,
         client=client,
         run_id=uuid.uuid4(),
@@ -233,7 +233,7 @@ def test_a_stale_cache_row_is_looked_up_again_and_replaced(
     )
 
     refreshed = enrich_contact(
-        "cedar-table.example",
+        "cedar-planning.example",
         connection=migrated_connection,
         client=client,
         run_id=uuid.uuid4(),
@@ -241,7 +241,7 @@ def test_a_stale_cache_row_is_looked_up_again_and_replaced(
     )
 
     assert refreshed.from_cache is False
-    assert refreshed.email == "jordan@cedar-table.example"
+    assert refreshed.email == "jordan@cedar-planning.example"
     assert blitz.metered_calls == 8
     assert migrated_connection.execute("SELECT count(*) FROM contact_cache").fetchone() == (1,)
 
@@ -275,14 +275,14 @@ def test_company_without_a_decision_maker_stops_after_two_calls(
     blitz.person.mock(return_value=httpx.Response(200, json=PERSON_NOT_FOUND))
 
     lookup = enrich_contact(
-        "cedar-table.example",
+        "cedar-planning.example",
         connection=migrated_connection,
         client=client,
         run_id=uuid.uuid4(),
     )
 
     assert lookup.found is False
-    assert lookup.company_name == "Cedar Private Chef"
+    assert lookup.company_name == "Cedar Financial Planning"
     assert lookup.person_linkedin_url is None
     assert blitz.metered_calls == 2
     assert blitz.person.calls.last.request.content == (
@@ -299,14 +299,14 @@ def test_email_found_but_no_phone_is_still_a_find(
     blitz.phone.mock(return_value=httpx.Response(200, json=PHONE_NOT_FOUND))
 
     lookup = enrich_contact(
-        "cedar-table.example",
+        "cedar-planning.example",
         connection=migrated_connection,
         client=client,
         run_id=uuid.uuid4(),
     )
 
     assert lookup.found is True
-    assert (lookup.email, lookup.phone) == ("jordan@cedar-table.example", None)
+    assert (lookup.email, lookup.phone) == ("jordan@cedar-planning.example", None)
     assert lookup.records_used == 3
 
 
@@ -318,13 +318,13 @@ def test_phone_is_skipped_when_the_plan_has_no_phone_endpoint(
     blitz.key_info.mock(return_value=httpx.Response(200, json=trial_key))
 
     lookup = enrich_contact(
-        "cedar-table.example",
+        "cedar-planning.example",
         connection=migrated_connection,
         client=client,
         run_id=uuid.uuid4(),
     )
 
-    assert (lookup.email, lookup.phone) == ("jordan@cedar-table.example", None)
+    assert (lookup.email, lookup.phone) == ("jordan@cedar-planning.example", None)
     assert blitz.phone.call_count == 0
     assert blitz.key_info.call_count == 1
 
@@ -416,7 +416,7 @@ def test_client_errors_become_plain_messages(
 
     with pytest.raises(error_type, match=message_part):
         enrich_contact(
-            "cedar-table.example",
+            "cedar-planning.example",
             connection=migrated_connection,
             client=client,
             run_id=uuid.uuid4(),
@@ -434,7 +434,7 @@ def test_a_failed_chain_keeps_the_spend_it_already_made(
 
     with pytest.raises(BlitzUnavailable):
         enrich_contact(
-            "cedar-table.example", connection=migrated_connection, client=client, run_id=run_id
+            "cedar-planning.example", connection=migrated_connection, client=client, run_id=run_id
         )
 
     assert [row[3] for row in ledger_rows(migrated_connection, run_id)] == [
@@ -478,12 +478,12 @@ def test_website_without_a_domain_is_refused_before_any_call(
 @pytest.mark.parametrize(
     "website",
     [
-        "https://www.Cedar-Table.example/book-now?ref=maps#top",
-        "http://cedar-table.example:8080/",
-        "  WWW.cedar-table.example  ",
-        "cedar-table.example",
-        "https://booking.cedar-table.example/",
-        "https://www.instagram.com/cedartable/",
+        "https://www.Cedar-Planning.example/book-now?ref=maps#top",
+        "http://cedar-planning.example:8080/",
+        "  WWW.cedar-planning.example  ",
+        "cedar-planning.example",
+        "https://booking.cedar-planning.example/",
+        "https://www.instagram.com/cedarplanning/",
     ],
 )
 def test_normalize_domain_matches_the_crm_generated_column(

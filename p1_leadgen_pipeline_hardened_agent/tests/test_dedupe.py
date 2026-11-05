@@ -31,7 +31,7 @@ def decide(
     connection: psycopg.Connection, category: CategoryConfig, **lead_columns: str
 ) -> tuple[str, ...]:
     """Dedupe one incoming lead and return the keys it matched on."""
-    lead = IncomingLead(business_name="Incoming Chef", **lead_columns)
+    lead = IncomingLead(business_name="Incoming Planner", **lead_columns)
     (decision,) = dedupe_against_crm(connection, [lead], category)
     return decision.matched_on
 
@@ -133,10 +133,12 @@ def test_the_same_email_in_another_case_is_a_duplicate(
     migrated_connection: psycopg.Connection, category: CategoryConfig
 ) -> None:
     market_id = add_market(migrated_connection)
-    add_lead(migrated_connection, market_id, email="Hello@CedarTable.example")
+    add_lead(migrated_connection, market_id, email="Hello@CedarPlanning.example")
 
-    assert decide(migrated_connection, category, email="  hello@cedartable.example ") == ("email",)
-    assert decide(migrated_connection, category, email="other@cedartable.example") == ()
+    assert decide(migrated_connection, category, email="  hello@cedarplanning.example ") == (
+        "email",
+    )
+    assert decide(migrated_connection, category, email="other@cedarplanning.example") == ()
 
 
 def test_the_same_google_place_is_a_duplicate(
@@ -153,10 +155,10 @@ def test_the_same_google_place_is_a_duplicate(
 @pytest.mark.parametrize(
     "incoming_website",
     [
-        "https://www.cedartable.example/book",
-        "http://cedartable.example:8080",
-        "CedarTable.example",
-        "cedartable.example/about?utm=x",
+        "https://www.cedarplanning.example/book",
+        "http://cedarplanning.example:8080",
+        "CedarPlanning.example",
+        "cedarplanning.example/about?utm=x",
     ],
 )
 def test_the_same_website_domain_is_a_duplicate(
@@ -167,7 +169,7 @@ def test_the_same_website_domain_is_a_duplicate(
         migrated_connection,
         market_id,
         email="a@one.example",
-        website="https://cedartable.example",
+        website="https://cedarplanning.example",
     )
 
     assert decide(migrated_connection, category, website=incoming_website) == ("website_domain",)
@@ -194,11 +196,14 @@ def test_a_different_subdomain_is_not_the_same_domain(
 @pytest.mark.parametrize(
     ("crm_website", "incoming_website"),
     [
-        ("https://www.instagram.com/cedartable", "https://instagram.com/willowkitchen/"),
-        ("https://linktr.ee/cedartable", "https://linktr.ee/willowkitchen"),
-        ("https://m.facebook.com/cedartable", "https://facebook.com/willowkitchen"),
-        ("https://www.yelp.com/biz/cedar-table", "https://yelp.com/biz/willow-kitchen"),
-        ("https://www.cozymeal.com/chef/cedar-table", "https://cozymeal.com/chef/willow-kitchen"),
+        ("https://www.instagram.com/cedarplanning", "https://instagram.com/willowwealth/"),
+        ("https://linktr.ee/cedarplanning", "https://linktr.ee/willowwealth"),
+        ("https://m.facebook.com/cedarplanning", "https://facebook.com/willowwealth"),
+        ("https://www.yelp.com/biz/cedar-planning", "https://yelp.com/biz/willow-wealth"),
+        (
+            "https://www.smartasset.com/advisor/cedar-planning",
+            "https://smartasset.com/advisor/willow-wealth",
+        ),
     ],
 )
 def test_a_shared_or_aggregator_host_is_never_a_domain_match(
@@ -223,14 +228,14 @@ def test_a_shared_host_lead_still_matches_on_its_other_keys(
         migrated_connection,
         market_id,
         phone="(310) 555-0142",
-        website="https://www.instagram.com/cedartable",
+        website="https://www.instagram.com/cedarplanning",
     )
 
     assert decide(
         migrated_connection,
         category,
         phone="310-555-0142",
-        website="https://instagram.com/cedartable",
+        website="https://instagram.com/cedarplanning",
     ) == ("phone",)
 
 
@@ -242,8 +247,8 @@ def test_every_matching_key_is_reported(
         migrated_connection,
         market_id,
         phone="(310) 555-0142",
-        email="hello@cedartable.example",
-        website="https://cedartable.example",
+        email="hello@cedarplanning.example",
+        website="https://cedarplanning.example",
         google_place_id="place_1",
     )
 
@@ -251,8 +256,8 @@ def test_every_matching_key_is_reported(
         migrated_connection,
         category,
         phone="+13105550142",
-        email="HELLO@cedartable.example",
-        website="www.cedartable.example/book",
+        email="HELLO@cedarplanning.example",
+        website="www.cedarplanning.example/book",
         google_place_id="place_1",
     )
 
@@ -278,7 +283,7 @@ def test_a_lead_without_keys_is_new(
     add_lead(migrated_connection, market_id, phone="(310) 555-0142")
 
     (decision,) = dedupe_against_crm(
-        migrated_connection, [IncomingLead(business_name="Nameless Chef")], category
+        migrated_connection, [IncomingLead(business_name="Nameless Planner")], category
     )
 
     assert decision.keys == NormalizedKeys(None, None, None, None)

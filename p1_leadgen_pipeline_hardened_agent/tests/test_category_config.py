@@ -33,13 +33,14 @@ def test_the_demo_category_loads(monkeypatch: pytest.MonkeyPatch) -> None:
 
     category = load_category_config()
 
-    assert category.name == "private_chef"
-    assert category.keywords[0] == "private chef"
-    assert category.expected_qualification_rate == 0.30
+    assert category.name == "independent_cfp_planner"
+    assert category.keywords[0] == "financial planner"
+    assert category.expected_qualification_rate == 0.20
     assert "instagram.com" in category.shared_hosts
     assert "yelp.com" in category.aggregator_hosts
-    assert "private chef" in category.rubric.eligible_services
-    assert "restaurant" in category.rubric.rejected_when
+    assert "financial planning" in category.rubric.eligible_services
+    assert "CFP®" in category.rubric.qualified_when
+    assert "Edward Jones" in category.rubric.rejected_when
     assert category.hosts_never_identifying_a_business >= {"instagram.com", "yelp.com"}
 
 
@@ -54,16 +55,16 @@ def test_an_explicit_path_wins_over_the_setting(tmp_path: Path, demo_category_do
     ("field", "bad_value", "complaint"),
     [
         ("keywords", [], "keywords"),
-        ("keywords", ["private chef", "private chef"], "duplicate"),
-        ("keywords", ["private chef", "  "], "blank"),
+        ("keywords", ["financial planner", "financial planner"], "duplicate"),
+        ("keywords", ["financial planner", "  "], "blank"),
         ("expected_qualification_rate", 0, "expected_qualification_rate"),
         ("expected_qualification_rate", 1.5, "expected_qualification_rate"),
         ("shared_hosts", ["https://instagram.com"], "shared_hosts"),
         ("shared_hosts", ["www.instagram.com/"], "shared_hosts"),
         ("aggregator_hosts", ["Yelp.com"], "aggregator_hosts"),
-        ("name", "Private Chef", "name"),
+        ("name", "Financial Planner", "name"),
         ("rubric", {"qualified_when": "x"}, "rubric"),
-        ("exa_queries", ["private chef therapists"], "city"),
+        ("exa_queries", ["independent CFP® planners"], "city"),
         ("exa_queries", [], "exa_queries"),
     ],
 )
@@ -115,7 +116,7 @@ def test_the_config_is_immutable(demo_category_document: dict) -> None:
         ("Instagram.com", True),
         ("notinstagram.com", False),
         ("instagram.com.example", False),
-        ("cedartable.example", False),
+        ("cedarplanning.example", False),
         ("com", False),
     ],
 )
@@ -141,9 +142,32 @@ def test_platforms_seen_in_live_exa_results_never_count_as_a_business(domain):
 
 
 @pytest.mark.parametrize(
-    "domain", ["takeachef.com", "www.cozymeal.com", "opentable.com", "www.thumbtack.com"]
+    "domain",
+    [
+        "www.smartasset.com",
+        "letsmakeaplan.org",
+        "brokercheck.finra.org",
+        "www.zoominfo.com",
+    ],
 )
-def test_chef_marketplaces_and_restaurant_platforms_never_count_as_a_business(domain):
+def test_advisor_directories_and_matching_sites_never_count_as_a_business(domain):
+    assert is_on_host(
+        domain, load_category_config(DEMO_CATEGORY_PATH).hosts_never_identifying_a_business
+    )
+
+
+@pytest.mark.parametrize(
+    "domain",
+    [
+        "www.edwardjones.com",
+        "advisors.ameriprise.com",
+        "www.northwesternmutual.com",
+        "fa.ml.com",
+        "www.statefarm.com",
+    ],
+)
+def test_national_firm_domains_never_count_as_a_business(domain):
+    # Their advisors cannot choose their own software, so a page on these hosts is never a lead.
     assert is_on_host(
         domain, load_category_config(DEMO_CATEGORY_PATH).hosts_never_identifying_a_business
     )
@@ -152,15 +176,15 @@ def test_chef_marketplaces_and_restaurant_platforms_never_count_as_a_business(do
 @pytest.mark.parametrize(
     ("maps_category", "counts"),
     [
-        ("Personal chef service", True),
-        ("Chef", True),
-        ("Restaurant", False),
-        ("Chef's restaurant", False),
-        ("Cooking school", False),
-        ("Caterer", False),
+        ("Financial planner", True),
+        ("Financial consultant", True),
+        ("Investment service", True),
+        ("Insurance agency", False),
+        ("Bank", False),
+        ("Tax preparation service", False),
     ],
 )
-def test_maps_categories_count_only_independent_chef_listings(maps_category, counts):
+def test_maps_categories_count_only_financial_planning_listings(maps_category, counts):
     from leadgen.sourcing_maps import on_category
 
     assert on_category(maps_category, load_category_config(DEMO_CATEGORY_PATH)) is counts
@@ -169,8 +193,8 @@ def test_maps_categories_count_only_independent_chef_listings(maps_category, cou
 @pytest.mark.parametrize(
     ("title", "matches"),
     [
-        ("Saffron Table | Private chef in Phoenix", True),
-        ("Culinary Nomad", True),
+        ("Juniper Planning | Fee-only CFP® planner in Phoenix", True),
+        ("Harbor Wealth Partners", True),
         ("Pho King", False),
     ],
 )
@@ -181,6 +205,6 @@ def test_exa_results_need_a_category_signal_term(title, matches):
 
 
 def test_evidence_search_templates_must_name_their_placeholders(tmp_path, demo_category_document):
-    demo_category_document["evidence_search"] = "{business} private chef"
+    demo_category_document["evidence_search"] = "{business} financial planner"
     with pytest.raises(CategoryConfigError, match="evidence_search"):
         load_category_config(write_category(tmp_path, demo_category_document))

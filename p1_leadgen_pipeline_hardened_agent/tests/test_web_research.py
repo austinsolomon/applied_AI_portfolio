@@ -38,33 +38,33 @@ def fixture_urls_do_not_need_dns(monkeypatch):
 
 
 USD_PER_CREDIT = Decimal("0.0032")
-PAGE_URL = "https://serenity-private-chef.example/services"
+PAGE_URL = "https://serenity-planning.example/services"
 
 # Long enough for trafilatura's main-content extractor; navigation and footer must be dropped.
 SERVICES_HTML = """
-<html><head><title>Serenity Private Chef | Services</title></head>
+<html><head><title>Serenity Financial Planning | Services</title></head>
 <body>
 <nav><a href="/">Home</a> <a href="/book">Book now</a> <a href="/faq">FAQ</a></nav>
 <main>
-<h1>Private chef in Pasadena</h1>
-<p>We bring a professional private chef to your home, hotel or office anywhere in Pasadena,
-Glendale and Burbank. Sessions run 60, 90 or 120 minutes and include a portable table, fresh
-linens and oils. Book online or call us; same-day appointments are often available in the
-afternoon.</p>
-<p>Our therapists are certified in Italian, Mexican and plant-based menus, and every visit
-is covered by liability insurance.</p>
+<h1>Financial planning in Pasadena</h1>
+<p>We are a fee-only CFP® planner team serving families and business owners anywhere in
+Pasadena, Glendale and Burbank. Engagements start with a 60, 90 or 120 minute discovery
+meeting and include a written plan, an investment review and a tax projection. Book online or
+call us; first meetings are often available the same week.</p>
+<p>Our planners hold the CERTIFIED FINANCIAL PLANNER™ certification, and every engagement is
+covered by our fiduciary commitment.</p>
 </main>
-<footer>Copyright 2026 Serenity Private Chef</footer>
+<footer>Copyright 2026 Serenity Financial Planning</footer>
 </body></html>
 """
 
 FIRECRAWL_SCRAPE_RESPONSE = {
     "success": True,
     "data": {
-        "markdown": "# Private chef in Pasadena\n\nWe bring a professional private chef to "
-        "your home, hotel or office anywhere in Pasadena, Glendale and Burbank.",
+        "markdown": "# Financial planning in Pasadena\n\nWe are a fee-only CFP® planner team "
+        "serving families and business owners anywhere in Pasadena, Glendale and Burbank.",
         "metadata": {
-            "title": "Serenity Private Chef | Services",
+            "title": "Serenity Financial Planning | Services",
             "sourceURL": PAGE_URL,
             "url": PAGE_URL,
             "statusCode": 200,
@@ -77,13 +77,13 @@ FIRECRAWL_SEARCH_RESPONSE = {
     "data": {
         "web": [
             {
-                "url": "https://serenity-private-chef.example/",
-                "title": "Serenity Private Chef",
-                "description": "In-home dinners across Pasadena and Glendale.",
+                "url": "https://serenity-planning.example/",
+                "title": "Serenity Financial Planning",
+                "description": "Retirement planning across Pasadena and Glendale.",
             },
             {
-                "url": "https://pasadena-dining-directory.example/chefs",
-                "title": "Private chefs in Pasadena",
+                "url": "https://pasadena-advisor-directory.example/planners",
+                "title": "Financial planners in Pasadena",
                 "description": "A directory of local therapists.",
             },
         ]
@@ -136,22 +136,22 @@ def test_firecrawl_search_sends_the_query_and_parses_web_results(
     )
     researcher = WebResearcher(migrated_connection, firecrawl_backend(http_client))
 
-    results = researcher.search("private chef Pasadena", limit=2)
+    results = researcher.search("financial planner Pasadena", limit=2)
 
     sent = search_route.calls.last.request
     assert sent.headers["Authorization"] == "Bearer fc-test-key"
     assert httpx.Request.read(sent) == (
-        b'{"query":"private chef Pasadena","limit":2,"sources":[{"type":"web"}]}'
+        b'{"query":"financial planner Pasadena","limit":2,"sources":[{"type":"web"}]}'
     )
     assert results == [
         SearchResult(
-            "https://serenity-private-chef.example/",
-            "Serenity Private Chef",
-            "In-home dinners across Pasadena and Glendale.",
+            "https://serenity-planning.example/",
+            "Serenity Financial Planning",
+            "Retirement planning across Pasadena and Glendale.",
         ),
         SearchResult(
-            "https://pasadena-dining-directory.example/chefs",
-            "Private chefs in Pasadena",
+            "https://pasadena-advisor-directory.example/planners",
+            "Financial planners in Pasadena",
             "A directory of local therapists.",
         ),
     ]
@@ -164,8 +164,8 @@ def test_firecrawl_search_is_ledgered_at_credits_times_price(
     run_id = uuid.uuid4()
     researcher = WebResearcher(migrated_connection, firecrawl_backend(http_client), run_id=run_id)
 
-    researcher.search("private chef Pasadena")
-    researcher.search("personal chef Glendale")
+    researcher.search("financial planner Pasadena")
+    researcher.search("certified financial planner Glendale")
 
     assert ledger_rows(migrated_connection) == [
         ("firecrawl", None, "/v2/search", 2, 1, Decimal("0.006400")),
@@ -196,11 +196,11 @@ def test_firecrawl_fetch_returns_markdown_and_charges_one_credit(
 
     sent_body = httpx.Request.read(scrape_route.calls.last.request)
     assert sent_body == (
-        b'{"url":"https://serenity-private-chef.example/services",'
+        b'{"url":"https://serenity-planning.example/services",'
         b'"formats":["markdown"],"onlyMainContent":true}'
     )
-    assert page.title == "Serenity Private Chef | Services"
-    assert page.text.startswith("# Private chef in Pasadena")
+    assert page.title == "Serenity Financial Planning | Services"
+    assert page.text.startswith("# Financial planning in Pasadena")
     assert (page.backend, page.status_code, page.from_cache) == ("firecrawl", 200, False)
     assert ledger_rows(migrated_connection) == [
         ("firecrawl", None, "/v2/scrape", 1, 1, Decimal("0.003200"))
@@ -310,7 +310,7 @@ def test_firecrawl_outage_falls_back_to_the_free_backend_without_a_charge(
 
     assert free_route.called
     assert page.backend == "free"
-    assert "professional private chef" in page.text
+    assert "fee-only CFP® planner" in page.text
     assert ledger_rows(migrated_connection) == []
     assert cache_rows(migrated_connection) == [(PAGE_URL, "free")]
 
@@ -343,8 +343,8 @@ def test_free_fetch_extracts_main_text_and_drops_navigation(
 
     page = researcher.fetch_page(PAGE_URL)
 
-    assert page.title == "Private chef in Pasadena"
-    assert "Sessions run 60, 90 or 120 minutes" in page.text
+    assert page.title == "Financial planning in Pasadena"
+    assert "Engagements start with a 60, 90 or 120 minute" in page.text
     assert "Book now" not in page.text
     assert "Copyright" not in page.text
     assert (page.backend, page.status_code, page.final_url) == ("free", 200, PAGE_URL)
@@ -354,7 +354,7 @@ def test_free_fetch_extracts_main_text_and_drops_navigation(
 def test_free_fetch_follows_redirects_and_keeps_the_final_url(
     migrated_connection: psycopg.Connection, mocked_web: respx.MockRouter, http_client: httpx.Client
 ) -> None:
-    moved_url = "http://serenity-private-chef.example/old-services"
+    moved_url = "http://serenity-planning.example/old-services"
     mocked_web.get(moved_url).respond(status_code=301, headers={"Location": PAGE_URL})
     mocked_web.get(PAGE_URL).respond(html=SERVICES_HTML)
     researcher = WebResearcher(migrated_connection, FreeWebBackend(http_client=http_client))
@@ -409,26 +409,28 @@ def test_free_search_parses_duckduckgo_results_and_unwraps_redirects(
     search_route = mocked_web.post(DUCKDUCKGO_HTML_URL).respond(
         html=duckduckgo_results_html(
             (
-                "https://serenity-private-chef.example/?ref=ddg",
-                "Serenity <b>Private</b> Chef",
-                "In-home dinners across\n  Pasadena &amp; Glendale.",
+                "https://serenity-planning.example/?ref=ddg",
+                "Serenity <b>Financial</b> Planning",
+                "Retirement planning across\n  Pasadena &amp; Glendale.",
             ),
-            ("https://pasadena-dining-directory.example/chefs", "Directory", "Listings."),
+            ("https://pasadena-advisor-directory.example/planners", "Directory", "Listings."),
             ("https://third-result.example/", "Third", "Beyond the limit."),
         )
     )
     researcher = WebResearcher(migrated_connection, FreeWebBackend(http_client=http_client))
 
-    results = researcher.search("private chef Pasadena", limit=2)
+    results = researcher.search("financial planner Pasadena", limit=2)
 
-    assert b"q=private+chef+Pasadena" in httpx.Request.read(search_route.calls.last.request)
+    assert b"q=financial+planner+Pasadena" in httpx.Request.read(search_route.calls.last.request)
     assert results == [
         SearchResult(
-            "https://serenity-private-chef.example/?ref=ddg",
-            "Serenity Private Chef",
-            "In-home dinners across Pasadena & Glendale.",
+            "https://serenity-planning.example/?ref=ddg",
+            "Serenity Financial Planning",
+            "Retirement planning across Pasadena & Glendale.",
         ),
-        SearchResult("https://pasadena-dining-directory.example/chefs", "Directory", "Listings."),
+        SearchResult(
+            "https://pasadena-advisor-directory.example/planners", "Directory", "Listings."
+        ),
     ]
     assert ledger_rows(migrated_connection) == []
 
@@ -512,7 +514,7 @@ def test_stale_cache_entry_is_refetched_and_replaced(
         "SELECT text, fetched_at > now() - interval '1 minute' FROM page_cache"
     ).fetchall()
     assert len(rows) == 1
-    assert rows[0][0].startswith("# Private chef") and rows[0][1] is True
+    assert rows[0][0].startswith("# Financial planning") and rows[0][1] is True
 
 
 def test_cache_key_ignores_fragments_and_host_case(
@@ -525,7 +527,7 @@ def test_cache_key_ignores_fragments_and_host_case(
 
     researcher.fetch_page(PAGE_URL)
     researcher.fetch_page(f"{PAGE_URL}#pricing")
-    page = researcher.fetch_page("  HTTPS://Serenity-Private-Chef.example/services  ")
+    page = researcher.fetch_page("  HTTPS://Serenity-Planning.example/services  ")
 
     assert scrape_route.call_count == 1
     assert page.from_cache
@@ -712,7 +714,7 @@ def test_firecrawl_site_search_adds_a_site_operator(
     )
     researcher = WebResearcher(migrated_connection, firecrawl_backend(http_client))
 
-    researcher.search("services", limit=3, site="serenity-private-chef.example")
+    researcher.search("services", limit=3, site="serenity-planning.example")
 
     sent = httpx.Request.read(search_route.calls.last.request)
-    assert b'"query":"site:serenity-private-chef.example services"' in sent
+    assert b'"query":"site:serenity-planning.example services"' in sent

@@ -127,7 +127,7 @@ def seed_blocked_run(connection: psycopg.Connection):
         0
     ]
     plan = create_plan(
-        connection, [PlannedCell(market_id, "Phoenix, AZ", "private chef", 30, Decimal("1"))]
+        connection, [PlannedCell(market_id, "Phoenix, AZ", "financial planner", 30, Decimal("1"))]
     )
     approve_plan(connection, plan.plan_id, Decimal("3"), "test operator")
     run = start_run(connection, plan.plan_id)
@@ -186,7 +186,7 @@ def test_audit_log_reads_who_does_what_to_whom(
     plan, run = seed_blocked_run(migrated_connection)
     for actor, action, target in [
         ("Postgres (State machine)", "run started", f"plan {plan.plan_id}"),
-        ("Exa API (Search)", "company search returns 5 results", "private chef in Phoenix"),
+        ("Exa API (Search)", "company search returns 5 results", "financial planner in Phoenix"),
     ]:
         migrated_connection.execute(
             "INSERT INTO audit_events (run_id, plan_id, actor, action, target) "
@@ -200,7 +200,7 @@ def test_audit_log_reads_who_does_what_to_whom(
     assert list(audit.columns) == ["#", "Time", "+s", "Who (X)", "Does (Y)", "To (Z)", "Details"]
     # Newest first by default.
     assert audit[["Who (X)", "To (Z)"]].values.tolist() == [
-        ["Exa API (Search)", "private chef in Phoenix"],
+        ["Exa API (Search)", "financial planner in Phoenix"],
         ["Postgres (State machine)", f"plan {plan.plan_id}"],
     ]
     # The actor filter offers the 19 actors in pipeline order.

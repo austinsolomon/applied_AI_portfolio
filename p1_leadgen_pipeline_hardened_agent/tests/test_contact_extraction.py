@@ -33,14 +33,14 @@ def test_phone_is_read_from_page_text(text, phone):
 
 def test_email_prefers_the_business_domain_and_skips_junk():
     text = (
-        "Site by studio@webagency.com · noreply@saffrontable.com · "
-        "Questions? Chef@SaffronTable.com."
+        "Site by studio@webagency.com · noreply@juniperplanning.com · "
+        "Questions? Planner@JuniperPlanning.com."
     )
-    assert extract_email(text, "https://saffrontable.com") == "chef@saffrontable.com"
-    assert extract_email("Write to hello@gmail.com.", "https://saffrontable.com") == (
+    assert extract_email(text, "https://juniperplanning.com") == "planner@juniperplanning.com"
+    assert extract_email("Write to hello@gmail.com.", "https://juniperplanning.com") == (
         "hello@gmail.com"
     )
-    assert extract_email("noreply@saffrontable.com only", "https://saffrontable.com") is None
+    assert extract_email("noreply@juniperplanning.com only", "https://juniperplanning.com") is None
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def running(migrated_connection):
     market_id = add_market(migrated_connection)
     plan = create_plan(
         migrated_connection,
-        [PlannedCell(market_id, "Los Angeles, CA", "private chef", 5, Decimal("1"))],
+        [PlannedCell(market_id, "Los Angeles, CA", "financial planner", 5, Decimal("1"))],
     )
     approve_plan(migrated_connection, plan.plan_id, Decimal("3"), "operator")
     return migrated_connection, market_id, start_run(migrated_connection, plan.plan_id)
@@ -68,8 +68,10 @@ def test_extract_stage_fills_missing_contacts_from_cached_homepages(running, emp
         market_id,
         "exa",
         [
-            RawLead("saffrontable.com", "Saffron Table", website="https://saffrontable.com"),
-            RawLead("uncached.com", "Uncached Chef", website="https://uncached.com"),
+            RawLead(
+                "juniperplanning.com", "Juniper Planning", website="https://juniperplanning.com"
+            ),
+            RawLead("uncached.com", "Uncached Planner", website="https://uncached.com"),
         ],
     )
     persist_leads(
@@ -77,10 +79,14 @@ def test_extract_stage_fills_missing_contacts_from_cached_homepages(running, emp
         run.run_id,
         market_id,
         "google_maps",
-        [RawLead("place-1", "Maps Chef", phone="3105550101", website="https://mapschef.com")],
+        [RawLead("place-1", "Maps Planner", phone="3105550101", website="https://mapsplanner.com")],
     )
-    cache(connection, "https://saffrontable.com/", "Call (310) 555-0177 · chef@saffrontable.com")
-    cache(connection, "https://mapschef.com/", "Call (310) 555-0999 · hi@mapschef.com")
+    cache(
+        connection,
+        "https://juniperplanning.com/",
+        "Call (310) 555-0177 · planner@juniperplanning.com",
+    )
+    cache(connection, "https://mapsplanner.com/", "Call (310) 555-0999 · hi@mapsplanner.com")
 
     settings = Settings(_env_file=None, database_url=empty_database_url)
     result = asyncio.run(Pipeline(connection, run, settings).run_extract())
@@ -91,9 +97,9 @@ def test_extract_stage_fills_missing_contacts_from_cached_homepages(running, emp
         for lead in read_raw_leads(connection, run.run_id)
     }
     assert contacts == {
-        "Saffron Table": ("(310) 555-0177", "chef@saffrontable.com"),
-        "Uncached Chef": (None, None),
+        "Juniper Planning": ("(310) 555-0177", "planner@juniperplanning.com"),
+        "Uncached Planner": (None, None),
         # A Maps phone is never replaced; only the missing email is filled in.
-        "Maps Chef": ("3105550101", "hi@mapschef.com"),
+        "Maps Planner": ("3105550101", "hi@mapsplanner.com"),
     }
     assert connection.execute("SELECT count(*) FROM cost_ledger").fetchone() == (0,)

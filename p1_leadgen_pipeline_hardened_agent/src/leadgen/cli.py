@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     enrich_parser = commands.add_parser(
         "enrich", help="look up phone and email for a business website (paid: calls BlitzAPI)"
     )
-    enrich_parser.add_argument("website", help='e.g. "https://www.saffron-table.example"')
+    enrich_parser.add_argument("website", help='e.g. "https://www.juniper-planning.example"')
 
     web_parser = commands.add_parser(
         "web", help="search the web or fetch a page (paid when FIRECRAWL_API_KEY is set)"
