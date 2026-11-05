@@ -43,7 +43,7 @@ from leadgen.sourcing_exa import EXA_CEILING_PER_CALL, exa_client, exa_queries, 
 from leadgen.sourcing_maps import grade_sample, maps_client, source_maps
 from leadgen.web_research import EXA_WEB_CEILING_PER_CALL, PageFetchFailed, build_web_researcher
 
-STAGES = ("maps", "exa", "dedupe", "enrich", "qualify", "research", "crm")
+STAGES = ("maps", "exa", "extract", "dedupe", "enrich", "qualify", "research", "crm")
 TOOL_NAME = "mcp__leadgen__run_stage"
 
 
@@ -326,6 +326,41 @@ class Pipeline:
             "sourced": total,
             "queries": exa_calls(plan, self.category),
         }
+
+    async def run_extract(self):
+        """Read phones and emails off page text already cached by sourcing; no network calls."""
+        from leadgen.contact_extraction import extract_email, extract_phone
+        from leadgen.sourcing_exa import homepage_cache_key
+
+        checked = phones = emails = 0
+        for lead in read_raw_leads(self.connection, self.run.run_id):
+            if not lead["website"] or (lead["phone"] and lead["email"]):
+                continue
+            row = self.connection.execute(
+                "SELECT text FROM page_cache WHERE url=%s", (homepage_cache_key(lead["website"]),)
+            ).fetchone()
+            if row is None:
+                continue
+            checked += 1
+            phone = None if lead["phone"] else extract_phone(row[0])
+            email = None if lead["email"] else extract_email(row[0], lead["website"])
+            if phone or email:
+                self.connection.execute(
+                    "UPDATE raw_leads SET phone=coalesce(phone,%s), email=coalesce(email,%s) "
+                    "WHERE raw_lead_id=%s",
+                    (phone, email, lead["raw_lead_id"]),
+                )
+            phones += bool(phone)
+            emails += bool(email)
+            audit(
+                self.connection,
+                "Extract stage",
+                f"reads cached page text for {lead['business_name']!r}: "
+                f"{'phone' if phone else 'no phone'}, {'email' if email else 'no email'}",
+                "Postgres page_cache",
+                run_id=self.run.run_id,
+            )
+        return {"pages_read": checked, "phones_found": phones, "emails_found": emails}
 
     async def run_dedupe(self):
         leads = read_raw_leads(self.connection, self.run.run_id)

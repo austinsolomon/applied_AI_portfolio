@@ -31,6 +31,7 @@ repeatable at scale.
 | 7 | Sample grader | Pipeline | Purity per keyword and in-market share → proceed, reconfigure or abort | Python · rubric from config |
 | 8 | Full scrape | Pipeline | Continues the sampled run, or a fresh sweep after reconfiguring | Apify · pandas · Postgres `raw_leads`, `seen_leads` |
 | 9 | Exa sourcing | Pipeline | For markets still under target: plain-language company searches per planned city, directories excluded, ranked by how many phrasings found each business | Exa `search` (`type="auto"`, `category="company"`) via `exa-py` |
+| 9b | Contact extraction | Pipeline | Reads phones and emails printed on the page text Exa sourcing cached, so Exa leads have dedupe keys; no network call | Python regex over `page_cache` |
 | 10 | Dedupe | Pipeline | Drops any lead already in the CRM by Google place ID, phone, email or website domain; a domain on a shared or aggregator host is never a match | Postgres, exact match on normalized keys computed by the CRM's own expressions |
 | 11 | Contact enrichment | Pipeline | Phone and email per lead: a fixed chain of API calls (domain → company page → best-placed person → email, phone), cached per domain, every call in the cost ledger | BlitzAPI · httpx · Postgres `contact_cache` |
 | 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Exa search and contents (Firecrawl only to render JavaScript pages) |

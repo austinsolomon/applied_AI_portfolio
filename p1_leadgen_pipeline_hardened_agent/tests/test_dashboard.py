@@ -165,6 +165,7 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
     assert list(stage_rows) == [
         "Google Maps",
         "Exa search",
+        "Extract contacts",
         "Dedupe",
         "Enrich contacts",
         "Qualify",
@@ -172,7 +173,7 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
         "Write to CRM",
     ]
     assert "done" in stage_rows["Exa search"]
-    assert "needs a human" in stage_rows["Dedupe"]
+    assert "needs a human" in stage_rows["Extract contacts"]
     assert "waiting" in stage_rows["Write to CRM"]
     assert f"--plan {plan.plan_id} --resume" in app.warning[0].value
     metrics = {metric.label: metric.value for metric in app.metric}
