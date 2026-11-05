@@ -1,7 +1,7 @@
 """Exa sourcing: plain-language company searches per planned city.
 
-Each phrasing in `category.exa_queries` (for example "independent private chefs who cook in
-clients' homes in Phoenix, AZ, personal chef business homepages") runs as one Exa search with
+Each phrasing in `category.exa_queries` (for example "independent CFP® financial planners
+offering retirement and comprehensive planning in Phoenix, AZ") runs as one Exa search with
 `type="auto"` and `category="company"`, as Exa's search guide recommends. Directories and shared
 platforms are excluded in the request itself and again locally. A business found by several
 phrasings gets a higher `query_consensus`, so paid stages work it first. Each result's page text

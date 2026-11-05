@@ -41,7 +41,7 @@ from leadgen.plans import (
 from tests.crm_builders import add_lead, add_market
 
 
-def planned_cell(market_id: int, city: str = "Pasadena, CA", keyword: str = "private chef"):
+def planned_cell(market_id: int, city: str = "Pasadena, CA", keyword: str = "financial planner"):
     return PlannedCell(
         market_id, city, keyword, expected_raw_leads=25, estimated_cost_usd=Decimal("0.4000")
     )
@@ -52,9 +52,9 @@ def three_cell_plan(connection: psycopg.Connection, market_name: str = "Los Ange
     return create_plan(
         connection,
         [
-            planned_cell(market_id, "Pasadena, CA", "private chef"),
-            planned_cell(market_id, "Pasadena, CA", "personal chef"),
-            planned_cell(market_id, "Glendale, CA", "private chef"),
+            planned_cell(market_id, "Pasadena, CA", "financial planner"),
+            planned_cell(market_id, "Pasadena, CA", "certified financial planner"),
+            planned_cell(market_id, "Glendale, CA", "financial planner"),
         ],
     )
 
@@ -77,9 +77,9 @@ def test_a_plan_keeps_its_cells_in_sweep_order_and_totals_them(
 
     assert plan.status == "draft"
     assert [(cell.position, cell.city, cell.keyword) for cell in plan.cells] == [
-        (1, "Pasadena, CA", "private chef"),
-        (2, "Pasadena, CA", "personal chef"),
-        (3, "Glendale, CA", "private chef"),
+        (1, "Pasadena, CA", "financial planner"),
+        (2, "Pasadena, CA", "certified financial planner"),
+        (3, "Glendale, CA", "financial planner"),
     ]
     assert all(cell.status == "planned" and cell.apify_run_id is None for cell in plan.cells)
     assert plan.expected_raw_leads == 75
@@ -121,10 +121,10 @@ def test_reading_an_unknown_plan_is_an_error(migrated_connection: psycopg.Connec
 @pytest.mark.parametrize(
     "cell",
     [
-        PlannedCell(0, "  ", "private chef", 10, Decimal("0.5")),
+        PlannedCell(0, "  ", "financial planner", 10, Decimal("0.5")),
         PlannedCell(0, "Pasadena, CA", "", 10, Decimal("0.5")),
-        PlannedCell(0, "Pasadena, CA", "private chef", -1, Decimal("0.5")),
-        PlannedCell(0, "Pasadena, CA", "private chef", 10, Decimal("-0.5")),
+        PlannedCell(0, "Pasadena, CA", "financial planner", -1, Decimal("0.5")),
+        PlannedCell(0, "Pasadena, CA", "financial planner", 10, Decimal("-0.5")),
     ],
 )
 def test_invalid_cell_values_are_rejected(

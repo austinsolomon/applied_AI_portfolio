@@ -11,9 +11,14 @@ the CRM.
 **Exa is central to the pipeline:** plain-language Exa searches find the businesses, and Exa supplies
 the page text Claude must quote to qualify a lead. See [Why Exa](#why-exa). Every decision is recorded for a recurring evaluation review.
 
-The demo category is independent private chefs in US markets: chefs who cook in
-clients' homes, rentals and private events. A chef currently tied to a restaurant, catering
-company or meal-delivery business is rejected. Past restaurant experience is fine.
+The demo category is independent CFP® financial planners in US markets: planning firms on their
+own website whose pages name a planner holding the CFP® (CERTIFIED FINANCIAL PLANNER™)
+certification. Advisors and branches of national firms (Edward Jones, Ameriprise, Northwestern
+Mutual and similar) are rejected even when the advisor holds the CFP®, as are other credentials
+without the CFP®, insurance-only agencies, banks, and directories. The use case is selling
+software to planners: an independent firm picks its own software, a national-firm advisor does
+not. The CFP Board's public "Verify a CFP® Professional" lookup is a possible future verification
+step; it is not built.
 
 Explore the [three connected architecture diagrams](docs/architecture/README.md): the lead
 pipeline, production safeguards, and qualification with human review. Each opens into focused
@@ -45,16 +50,17 @@ over what Exa returns.
 | **1. Find businesses** | Sourcing | `search("<plain-language description> in <city>", type="auto", category="company", num_results=25, exclude_domains=<directories>, contents={"text": ...})` per phrasing and city | Business homepages, with their page text cached for qualification |
 | **2. Gather evidence** | Qualification and research | `get_contents(homepage)`, `search(..., include_domains=[the business's site])` and one open `search` | Page text the judge must quote from to qualify a lead |
 
-Why it fits this category: Google Maps finds businesses by keyword and location, but most
-private chefs have no storefront. They cook in clients' homes, so many have no Maps listing, and
-the ones that do sit beside restaurants. What they do have is their own website, which is what Exa
-indexes and matches on meaning.
+Why it fits this category: Google Maps finds businesses by keyword and location, but a Maps
+search for "financial planner" mixes independent firms with national-firm branches, insurance
+agents and banks, and its listings never say who holds the CFP®. What an independent firm does
+have is its own website, with a team page naming its credentials, which is what Exa indexes and
+matches on meaning.
 
 - **Plain-language queries, as Exa recommends.** `config/category.yaml` holds a few
-  descriptions of the business wanted, for example "independent private chefs who cook in
-  clients' homes in {city}, personal chef business homepages". Each runs once per planned city with
+  descriptions of the business wanted, for example "independent CFP® financial planners
+  offering retirement and comprehensive planning in {city}". Each runs once per planned city with
   `type="auto"` and `category="company"`. Directories and shared platforms (Yelp,
-  Take a Chef, Instagram) are excluded in the request and filtered again locally.
+  SmartAsset, Instagram) and national-firm domains (Edward Jones, Ameriprise) are excluded in the request and filtered again locally.
 - **Query consensus as a confidence signal.** A business found by several phrasings is more
   likely to fit. The count is stored on each lead. Enrichment and qualification process
   high-consensus leads first, so they survive a budget or target cutoff, and every judge decision
@@ -104,7 +110,7 @@ its first live run will replace this row.
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
 | Web search and page fetching with a page cache (Exa evidence, Firecrawl rendering only) | done |
 | Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
-| Maps and Exa sourcing, qualification with inline research, CRM write | done; live runs verified end to end (2026-11-05, massage category); private-chef category not yet run live |
+| Maps and Exa sourcing, qualification with inline research, CRM write | done; live runs verified end to end (2026-11-05, massage category); CFP® planner category not yet run live |
 | Eval capture, weekly review page, labels exported as test fixtures | done |
 | SDK orchestrator, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
 | Unattended weekly run approved by a standing policy (`leadgen weekly`) | done; tested with fake providers |
@@ -226,7 +232,7 @@ logo and implies no endorsement.
 |---|---|
 | Demand gaps | Leads Available % per market, biggest gap first |
 | Current run | The seven stages in order, each done, running, failed, waiting or "needs a human", with stage results, job progress, spend vs budget and recent events; refreshes every 10 s |
-| Audit log | For a plan run with `--audit`: each major step of the execution as Who (X) → Does (Y) → To (Z), for example "Exa API (Search) → company search returns 25 results → '…private chefs in Phoenix, AZ'" or "Claude Agent SDK (PreToolUse hook) → allows the tool call → run_stage maps"; filter by the 19 actors in pipeline order, search, newest first; refreshes every 5 s |
+| Audit log | For a plan run with `--audit`: each major step of the execution as Who (X) → Does (Y) → To (Z), for example "Exa API (Search) → company search returns 25 results → '…independent CFP® financial planners … in Phoenix, AZ'" or "Claude Agent SDK (PreToolUse hook) → allows the tool call → run_stage maps"; filter by the 19 actors in pipeline order, search, newest first; refreshes every 5 s |
 | Run history | One row per run: market, status, Maps and Exa sourced, new, qualified, review, rejected, CRM inserted, spend vs budget, cost per qualified lead |
 | Sources and spend | Qualification rate per source, Exa query-consensus breakdown, spend per service (provider-reported vs estimated) |
 | Eval review | Label the pipeline's decisions; labels export as test fixtures |
@@ -296,7 +302,7 @@ is a readable diff.
 
 ## Contact enrichment
 
-`leadgen enrich https://www.saffron-table.example` looks up a phone and an email for the business
+`leadgen enrich https://www.juniper-planning.example` looks up a phone and an email for the business
 behind a website ([`contacts.py`](src/leadgen/contacts.py)). It is a plain function with a fixed
 input and output, not an agent. BlitzAPI keys its data on LinkedIn, so one lookup is a short
 fixed chain, each step one HTTP call, stopping at the first step that finds nothing: domain →
@@ -335,7 +341,7 @@ as a plain message, so a configuration problem is never hidden. Tests fake every
 neither the test suite nor CI touches the network.
 
 ```bash
-uv run leadgen web search "private chef Pasadena"          # top results
+uv run leadgen web search "CFP planner Pasadena"              # top results
 uv run leadgen web fetch https://example.com/services --free  # main text, cached
 ```
 
@@ -392,7 +398,7 @@ columns), so `(310) 555-0142` and `+1 310.555.0142` are the same lead and the se
 every lead needs a phone or an email; statuses and sources are fixed lists. `gap_view` computes
 Leads Available % per market, and `read_gaps()` returns the markets below 100%, biggest gap first.
 
-The demo data is fictional and deterministic: eight real US markets, invented private-chef businesses on
+The demo data is fictional and deterministic: eight real US markets, invented independent planning firms on
 `.example` domains, and phone numbers in the 555-0100 to 555-0199 range reserved for fiction.
 
 ### Census places and market expansion

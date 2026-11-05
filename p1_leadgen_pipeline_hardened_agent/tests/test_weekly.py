@@ -70,10 +70,10 @@ def fake_providers(monkeypatch):
         usage=SimpleNamespace(input_tokens=100, output_tokens=30),
         parsed_output=Judgment(
             verdict="qualified",
-            reason="Travels to homes in the market",
-            evidence_quote="Private chef in Los Angeles",
+            reason="Independent firm with a CFP® planner serving the market",
+            evidence_quote="Dana Reyes, CFP®, plans for families in Los Angeles",
             source_url="https://cedar.example",
-            eligible_services=["private chef"],
+            eligible_services=["financial planning"],
             serves_market="yes",
         ),
     )
@@ -83,7 +83,7 @@ def fake_providers(monkeypatch):
             url,
             "https://cedar.example",
             "Cedar",
-            "Private chef in Los Angeles",
+            "Dana Reyes, CFP®, plans for families in Los Angeles",
             200,
             "free",
             datetime.now(UTC),
@@ -188,7 +188,7 @@ def test_unreconciled_paid_call_blocks_the_next_run(demo, empty_database_url):
     from leadgen.budget import reserve
     from leadgen.plans import PlannedCell, approve_plan, create_plan, finish_run, start_run
 
-    plan = create_plan(demo, [PlannedCell(1, "Phoenix, AZ", "private chef", 1, Decimal("1"))])
+    plan = create_plan(demo, [PlannedCell(1, "Phoenix, AZ", "financial planner", 1, Decimal("1"))])
     approve_plan(demo, plan.plan_id, Decimal("3"), "operator")
     run = start_run(demo, plan.plan_id)
     reserve(demo, run.run_id, "exa:uncertain", Decimal("0.03"))
@@ -201,7 +201,7 @@ def test_unreconciled_paid_call_blocks_the_next_run(demo, empty_database_url):
 def test_run_still_marked_running_blocks_the_next_run(demo, empty_database_url):
     from leadgen.plans import PlannedCell, approve_plan, create_plan, start_run
 
-    plan = create_plan(demo, [PlannedCell(1, "Phoenix, AZ", "private chef", 1, Decimal("1"))])
+    plan = create_plan(demo, [PlannedCell(1, "Phoenix, AZ", "financial planner", 1, Decimal("1"))])
     approve_plan(demo, plan.plan_id, Decimal("3"), "operator")
     start_run(demo, plan.plan_id)
     exit_code, summary = weekly(demo, offline_settings(empty_database_url), policy())

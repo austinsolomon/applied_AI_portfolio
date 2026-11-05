@@ -49,7 +49,7 @@ NAME_FIRST_WORDS = [
     "Willow",
     "Summit",
     "Bayside",
-    "Saffron",
+    "Keystone",
     "Juniper",
     "Coastal",
     "Sage",
@@ -57,7 +57,7 @@ NAME_FIRST_WORDS = [
     "Maple",
     "Riverstone",
     "Sunrise",
-    "Rosemary",
+    "Granite",
     "Blue Ridge",
     "Driftwood",
     "Copper",
@@ -65,14 +65,14 @@ NAME_FIRST_WORDS = [
     "Pacific",
 ]
 NAME_SECOND_WORDS = [
-    "Private Chef",
-    "Table",
-    "Personal Chef",
-    "Kitchen at Home",
-    "Private Dining",
-    "Supper Club",
-    "Meal Prep Chef",
-    "Chef at Home",
+    "Financial Planning",
+    "Wealth Planning",
+    "Planning Group",
+    "Financial Partners",
+    "Wealth Advisors",
+    "Planning Partners",
+    "Financial Advisors",
+    "Retirement Planning",
 ]
 
 

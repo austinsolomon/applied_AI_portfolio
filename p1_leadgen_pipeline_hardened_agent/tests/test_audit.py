@@ -72,7 +72,12 @@ def test_every_call_site_uses_one_of_the_19_actors():
 def test_an_unknown_actor_is_skipped_without_raising(migrated_connection, monkeypatch):
     monkeypatch.setenv("LEADGEN_AUDIT", "1")
     audit(migrated_connection, "Exa stage", "sends company search", "Exa API")
-    audit(migrated_connection, "Exa API (Search)", "company search returns 3 results", "chefs")
+    audit(
+        migrated_connection,
+        "Exa API (Search)",
+        "company search returns 3 results",
+        "financial planners",
+    )
     rows = migrated_connection.execute("SELECT actor FROM audit_events").fetchall()
     assert rows == [("Exa API (Search)",)]
 
@@ -89,7 +94,7 @@ def test_audit_never_raises_on_a_broken_connection(migrated_connection, monkeypa
     ("operation", "actor"),
     [
         ("maps:1:sample", "Apify API (Google Maps)"),
-        ("exa:1:private chefs in Phoenix", "Exa API (Search)"),
+        ("exa:1:financial planners in Phoenix", "Exa API (Search)"),
         ("web:tier1:7:2:search", "Exa API (Search)"),
         ("web:tier1:7:1:fetch_page", "Exa API (Contents)"),
         ("judge:1:7", "Claude API (LLM call)"),

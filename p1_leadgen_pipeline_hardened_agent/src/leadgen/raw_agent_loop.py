@@ -29,8 +29,8 @@ from leadgen.gaps import read_gaps
 CHARACTERS_PER_TOKEN_ESTIMATE = 3
 
 SYSTEM_PROMPT = """\
-You help a lead-generation team decide where to source new leads for independent private \
-chefs. Each market has a goal for qualified leads. Leads Available % is available \
+You help a lead-generation team decide which market to source new leads in next. \
+Each market has a goal for qualified leads. Leads Available % is available \
 leads divided by the leads still needed; below 100% the market needs new leads, and short_by is \
 how many.
 

@@ -1,7 +1,9 @@
 # Phoenix live sample — 2026-10-11
 
-> These runs used the earlier demo category, mobile and in-home massage. The demo category has
-> been independent private chefs since 2026-11-05; the numbers below are kept as recorded.
+> These runs used the first demo category, mobile and in-home massage; the numbers below are kept
+> as recorded. The category then became independent private chefs on 2026-11-05; that day's chef
+> runs (plans 7 and 9) are history under that previous category and are not reported here. The
+> demo category is now independent CFP® financial planners.
 
 One approved plan targeted 50 mobile-massage businesses in Phoenix, Arizona, using one city and
 one keyword. It finished with **12 qualified, 14 rejected and 24 review decisions**. Ten qualified

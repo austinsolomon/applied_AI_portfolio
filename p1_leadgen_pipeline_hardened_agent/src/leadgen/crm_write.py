@@ -11,9 +11,9 @@ as a conflict. The whole batch is one transaction: a run either writes all of it
 none of them.
 
 After the write, a contradiction scan reads each written lead's `qualification_reason`. A reason
-that affirms a disqualifier ("works at a restaurant") while the verdict is `qualified` is a
-judge inconsistency worth a human look. The scan is negation-aware: "is not part of a
-restaurant group" is no hit. Hits go to `eval_records` and never block the write.
+that affirms a disqualifier ("an Edward Jones advisor") while the verdict is `qualified` is a
+judge inconsistency worth a human look. The scan is negation-aware: "is not affiliated with
+Edward Jones" is no hit. Hits go to `eval_records` and never block the write.
 """
 
 import logging
@@ -196,8 +196,8 @@ def find_contradictions(
     """Disqualifier phrases the reason affirms, as (phrase, clause) pairs.
 
     The reason is split into clauses; a phrase counts only when no negation marker appears in the
-    few words before it inside its clause. "works at a restaurant" hits; "never works at a
-    restaurant" and "independent, not part of a restaurant group" do not.
+    few words before it inside its clause. "an Edward Jones advisor" hits; "never worked at
+    Edward Jones" and "independent, not part of a national firm" do not.
     """
     hits: list[tuple[str, str]] = []
     for clause in CLAUSE_SPLIT.split(reason):

@@ -259,7 +259,7 @@ PUBLIC_DOMAIN = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$
 
 
 def is_public_domain(domain: str | None) -> bool:
-    """False for hosts no business can own, such as "chefanthonyserrano." (no top-level domain),
+    """False for hosts no business can own, such as "anthonyserrano." (no top-level domain),
     which Exa returned in a live run and BlitzAPI then rejected."""
     return bool(domain) and bool(PUBLIC_DOMAIN.match(domain))
 

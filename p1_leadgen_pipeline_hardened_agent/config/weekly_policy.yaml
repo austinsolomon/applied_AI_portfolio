@@ -8,10 +8,10 @@
 budget_usd: 5.00
 
 # Plan size: cities from the market's Census places, keywords from config/category.yaml.
-# target_leads counts raw leads sourced: 25 qualified ÷ 0.30 expected qualification rate = 84.
+# target_leads counts raw leads sourced: 25 qualified ÷ 0.20 expected qualification rate = 125.
 max_cities: 1
 max_keywords: 1
-target_leads: 84
+target_leads: 125
 
 # Run at most once per this many days, even if the job is triggered again.
 min_days_between_runs: 6

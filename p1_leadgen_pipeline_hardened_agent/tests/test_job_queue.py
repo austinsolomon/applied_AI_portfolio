@@ -39,7 +39,7 @@ def running_run(connection: psycopg.Connection):
     market_id = add_market(connection)
     plan = create_plan(
         connection,
-        [PlannedCell(market_id, "Pasadena, CA", "private chef", 25, Decimal("0.4"))],
+        [PlannedCell(market_id, "Pasadena, CA", "financial planner", 25, Decimal("0.4"))],
     )
     approve_plan(connection, plan.plan_id, Decimal("5.00"), "operator")
     return start_run(connection, plan.plan_id), plan.cells[0]

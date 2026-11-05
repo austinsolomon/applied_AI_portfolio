@@ -216,8 +216,8 @@ def distance_km(latitude, longitude, center_latitude, center_longitude):
 
 
 def on_category(maps_category, category):
-    """A Maps category such as "Personal chef service" counts when it contains one of the
-    configured terms and none of the excludes ("Restaurant", "Cooking school")."""
+    """A Maps category such as "Financial planner" counts when it contains one of the
+    configured terms and none of the excludes ("Insurance agency", "Bank")."""
     lowered = maps_category.lower()
     return any(term.lower() in lowered for term in category.maps_category_terms) and not any(
         exclude.lower() in lowered for exclude in category.maps_category_excludes

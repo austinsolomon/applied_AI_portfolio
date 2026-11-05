@@ -22,7 +22,7 @@ def record_three_decisions(connection: psycopg.Connection) -> dict[str, int]:
     sample_id = record_eval(
         connection,
         kind="sample_verdict",
-        subject="Phoenix, AZ · personal chef",
+        subject="Phoenix, AZ · certified financial planner",
         verdict="PROCEED",
         reason="purity 88%, in-market 95%",
         evidence={"purity_pct": 88, "in_market_pct": 95, "sampled": 40},
@@ -31,10 +31,10 @@ def record_three_decisions(connection: psycopg.Connection) -> dict[str, int]:
     judge_id = record_eval(
         connection,
         kind="judge_decision",
-        subject="Cedar Private Chef",
+        subject="Cedar Financial Planning",
         verdict="qualified",
-        reason="offers in-home dinners in Phoenix",
-        evidence={"evidence_quote": "In-home dinners, Phoenix", "serves_market": "yes"},
+        reason="names a CFP® planner serving Phoenix",
+        evidence={"evidence_quote": "Jordan Example, CFP®, Phoenix", "serves_market": "yes"},
         model="claude-haiku-5-5",
     )
     contradiction_id = record_eval(
@@ -140,10 +140,10 @@ def test_export_writes_one_fixture_file_per_kind_with_labels(
         {
             "eval_record_id": ids["judge"],
             "kind": "judge_decision",
-            "subject": "Cedar Private Chef",
+            "subject": "Cedar Financial Planning",
             "verdict": "qualified",
-            "reason": "offers in-home dinners in Phoenix",
-            "evidence": {"evidence_quote": "In-home dinners, Phoenix", "serves_market": "yes"},
+            "reason": "names a CFP® planner serving Phoenix",
+            "evidence": {"evidence_quote": "Jordan Example, CFP®, Phoenix", "serves_market": "yes"},
             "model": "claude-haiku-5-5",
             "run_id": None,
             "created_at": judge_fixture[0]["created_at"],
