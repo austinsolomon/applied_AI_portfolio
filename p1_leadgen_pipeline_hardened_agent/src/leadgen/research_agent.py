@@ -171,8 +171,10 @@ async def research_lead(
                             "error_max_turns",
                             "error_max_budget_usd",
                         }:
+                            detail = " ".join(str(getattr(message, "result", "") or "").split())
                             raise QualificationError(
-                                "Research API failed; check credentials and credit balance"
+                                f"Research session ended with {message.subtype}"
+                                + (f": {detail[:200]}" if detail else "")
                             )
                         break
             if not result_seen:
