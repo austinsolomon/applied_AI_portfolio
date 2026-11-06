@@ -114,7 +114,7 @@ its first live run will replace this row.
 | Eval capture, weekly review page, labels exported as test fixtures | done |
 | SDK orchestrator, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
 | Unattended weekly run approved by a standing policy (`leadgen weekly`) | done; tested with fake providers |
-| Scheduled cloud deployment | planned |
+| Scheduled cloud deployment | deployed: Cloud Run Jobs + Cloud Scheduler (Fridays 08:00 PT, paused until the first supervised cloud run), Neon Postgres, Secret Manager, keyless GitHub deploys; cloud migrate and dry run verified |
 
 ## Quickstart
 
@@ -219,6 +219,35 @@ optional pinned market, and a minimum number of days between runs. It then:
 | 3 | Needs a person: unapplied migrations, unreconciled paid calls, or a plan over policy |
 
 The exit codes let a scheduler such as cron or Cloud Scheduler tell these cases apart.
+
+## Production deployment
+
+```mermaid
+flowchart LR
+    CS[Cloud Scheduler<br/>Fridays 08:00 PT] --> CR[Cloud Run Job<br/>leadgen weekly<br/>Agent SDK pipeline]
+    SM[Secret Manager<br/>DB URLs + API keys] --> CR
+    CR --> API[Maps · Exa · Claude<br/>Blitz · Firecrawl]
+    CR --> DB[(Neon Postgres)]
+    ST[Streamlit Community Cloud<br/>read-only dashboard] --> DB
+    GH[GitHub Actions<br/>after CI on main] -->|Workload Identity Federation| AR[Artifact Registry image]
+    AR --> CR
+    GH --> MG[Cloud Run Job<br/>leadgen db migrate] --> DB
+```
+
+- **Runs:** Cloud Scheduler starts the `leadgen-weekly` Cloud Run Job every Friday at 08:00
+  Pacific. The container runs `leadgen weekly` (above) and exits; all state is in Postgres.
+- **Database:** Neon Postgres. The job logs in as `leadgen_app` (rows only, no schema changes);
+  migrations run as the owner in a separate `leadgen-migrate` job; the dashboard logs in as
+  `leadgen_dashboard`, which can read only aggregate views.
+- **Secrets:** Google Secret Manager, injected into each job at start. None are in GitHub.
+- **Deploys:** after CI passes on `main`, GitHub Actions signs in to Google through Workload
+  Identity Federation (a short-lived token, accepted only from this repository's `main`), builds
+  the image, migrates, and points the weekly job at the new image.
+- **Dashboard:** Streamlit Community Cloud runs `streamlit_cloud/streamlit_app.py`: demand gaps,
+  run history and sources. Contacts, evidence and eval review stay on the operator's machine.
+- **Cost:** hosting fits free tiers, plus cents for image storage; provider spend per run is
+  capped by the policy budget. The [operations runbook](docs/operations.md#production-deployment)
+  covers logs, pausing, rotating secrets and backups.
 
 ## Dashboard
 

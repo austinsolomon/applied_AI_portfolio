@@ -50,7 +50,7 @@ repeatable at scale.
 | 24 | Migrations | Hardening | Schema changes as numbered SQL files, each applied once in a transaction; edited history refused | `src/leadgen/migrations/` · `leadgen db migrate` |
 | 25 | Tests and eval regression | Hardening | Every stage tested against a real Postgres; grader and judge fixtures must keep passing | pytest · respx |
 | 26 | Tooling and CI | Hardening | Pinned dependencies, lint, typed config; lint → migrate → test → evals → build on every push | uv · ruff · pre-commit · pydantic-settings · GitHub Actions |
-| 27 | Container and deployment | Hardening | One image; hosted database; weekly scheduled run; keys outside the code | Docker · Supabase (Postgres host) · Cloud Run Jobs · Cloud Scheduler · Secret Manager · Workload Identity Federation |
+| 27 | Container and deployment | Hardening | One image; hosted database; weekly scheduled run; keys outside the code | Docker · Neon (Postgres host) · Cloud Run Jobs · Cloud Scheduler · Secret Manager · Workload Identity Federation |
 
 ## 3. A run, step by step
 
@@ -141,7 +141,7 @@ reported, never hidden.
 | Retrieval and memory (planned) | full-text search (`tsvector` with a GIN index), `lessons` |
 
 The code targets plain PostgreSQL 16 through `DATABASE_URL`. Local development and CI use a Postgres container;
-the planned production host is Supabase. Any Postgres host works.
+production runs on Neon (Postgres 18; the suite also passes there). Any Postgres host works.
 
 ## 7. Decisions and trade-offs
 
@@ -199,7 +199,7 @@ their subdomains. Fuzzy name matching is left out until data shows it is needed.
 |---|---|---|
 | Python, uv, ruff, pytest, respx, pre-commit, pydantic, pandas, psycopg, httpx, trafilatura | yes | free |
 | PostgreSQL, Streamlit, Docker Engine | yes | free |
-| Supabase (hosting only) | yes | free tier |
+| Neon (hosting only) | yes | free tier |
 | Claude API and Claude Agent SDK | SDKs yes | per token |
 | Apify | client yes | per run |
 | Exa | client yes | per request |
@@ -230,4 +230,4 @@ estimates for subscription services, not invoice totals.
 
 A process crash does not imply a paid operation is safe to retry. Uncertain reservations must be
 reconciled against the provider. Resuming retains the original run ID and skips stored stages.
-Cloud deployment, scheduler, secrets integration, and learned keyword ranking remain planned.
+Cloud Run Jobs, Cloud Scheduler and Secret Manager run the weekly job ([operations](operations.md#production-deployment)); learned keyword ranking remains planned.
