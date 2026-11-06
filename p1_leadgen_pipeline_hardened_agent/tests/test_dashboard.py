@@ -383,3 +383,28 @@ def test_run_history_sorts_new_leads_into_qualified_rejected_and_human_escalated
         + unfinished["Human escalated"]
         + unfinished["Not judged"]
     )
+
+
+def test_demand_progress_axis_ticks_every_20_points() -> None:
+    import pandas
+
+    from leadgen.dashboard import progress_chart
+
+    table = pandas.DataFrame(
+        [
+            {
+                "Market": "Phoenix, AZ",
+                "Lead Goal": 100,
+                "Leads Available": 37,
+                "Leads Needed": 63,
+                "Leads Available %": 37,
+            }
+        ]
+    )
+    spec = progress_chart(table).to_dict()
+    tick_lists = [
+        layer["encoding"]["x"]["axis"]["values"]
+        for layer in spec["layer"]
+        if "axis" in layer["encoding"]["x"]
+    ]
+    assert tick_lists and all(ticks == [0, 20, 40, 60, 80, 100] for ticks in tick_lists)
