@@ -1197,3 +1197,82 @@ def test_dedupe_skips_businesses_judged_in_an_earlier_run(approved):
         if not lead["duplicate"]
     }
     assert kept == {"unjudged.example", "fresh.example"}
+
+
+@pytest.mark.parametrize("failure", ["session_error", "retry_refused"])
+def test_failed_research_keeps_review_and_the_run_goes_on(
+    running, empty_database_url, monkeypatch, failure
+):
+    from datetime import UTC, datetime
+
+    from leadgen.web_research import FetchedPage, WebResearcher
+
+    connection, plan, run = running
+    persist_leads(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        "exa",
+        [
+            RawLead(
+                "unclear.com", "Unclear Planner", phone="3105550111", website="https://unclear.com"
+            )
+        ],
+    )
+    lead_id = read_raw_leads(connection, run.run_id)[0]["raw_lead_id"]
+    monkeypatch.setattr(
+        WebResearcher,
+        "fetch_page",
+        lambda _self, url: FetchedPage(
+            url, url, "Planner", "A planning firm", 200, "free", datetime.now(UTC)
+        ),
+    )
+    monkeypatch.setattr(WebResearcher, "search", lambda *args, **kwargs: [])
+    judge = Mock()
+    judge.messages.parse.return_value = SimpleNamespace(
+        id="offline",
+        usage=SimpleNamespace(input_tokens=100, output_tokens=30),
+        parsed_output=Judgment(
+            verdict="review",
+            reason="No CFP® credential on the firm's own pages",
+            evidence_quote="",
+            source_url="",
+            eligible_services=[],
+            serves_market="unclear",
+        ),
+    )
+    if failure == "retry_refused":
+        # As on a resume: this lead's research session already ran, so it is never paid for twice.
+        reserve(connection, run.run_id, f"sdk:research:{lead_id}", Decimal("0.03"))
+        connection.execute("UPDATE budget_reservations SET status='succeeded'")
+
+    async def failing_session(*, prompt, options):
+        yield ResultMessage(
+            subtype="error_during_execution",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=True,
+            num_turns=3,
+            session_id="research",
+            total_cost_usd=0.003,
+            usage={},
+            result="tool crashed",
+        )
+
+    monkeypatch.setattr("leadgen.research_agent.create_sdk_mcp_server", lambda **kwargs: kwargs)
+    settings = Settings(
+        _env_file=None, database_url=empty_database_url, anthropic_api_key=SecretStr("offline")
+    )
+    pipeline = Pipeline(connection, run, settings, judge=judge, agent_query=failing_session)
+    assert asyncio.run(pipeline.run_qualify()) == {"judged": 1}
+    assert read_raw_leads(connection, run.run_id)[0]["qualification"]["verdict"] == "review"
+    error_type, message = connection.execute(
+        "SELECT details->>'error_type', details->>'message' FROM traces "
+        "WHERE operation=%s AND outcome='failed'",
+        (f"research:{lead_id}",),
+    ).fetchone()
+    if failure == "session_error":
+        assert error_type == "QualificationError"
+        assert message == "Research session ended with error_during_execution: tool crashed"
+    else:
+        assert error_type == "BudgetBlocked" and "will not repeat" in message

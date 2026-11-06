@@ -708,24 +708,41 @@ class Pipeline:
             run_id=self.run.run_id,
             reason=lead["qualification"]["reason"],
         )
-        with build_web_researcher(connection, self.settings, run_id=self.run.run_id) as researcher:
-            web = GuardedWeb(
-                connection, self.run.run_id, researcher, self.settings, f"tier2:{raw_lead_id}"
-            )
-            result = asyncio.run(
-                research_lead(
-                    connection,
-                    self.run.run_id,
-                    lead,
-                    market,
-                    evidence,
-                    self.category,
-                    self.settings,
-                    web,
-                    query_fn=self.agent_query,
-                    judge_client=self.judge,
+        try:
+            with build_web_researcher(
+                connection, self.settings, run_id=self.run.run_id
+            ) as researcher:
+                web = GuardedWeb(
+                    connection, self.run.run_id, researcher, self.settings, f"tier2:{raw_lead_id}"
                 )
+                result = asyncio.run(
+                    research_lead(
+                        connection,
+                        self.run.run_id,
+                        lead,
+                        market,
+                        evidence,
+                        self.category,
+                        self.settings,
+                        web,
+                        query_fn=self.agent_query,
+                        judge_client=self.judge,
+                    )
+                )
+        except Exception as error:  # noqa: BLE001 - research is an optional second look
+            # The lead keeps the judge's "review" verdict, so a person decides it; the run goes on.
+            # Its paid calls are already reserved and settle like any other.
+            failure = {"error_type": type(error).__name__, "message": str(error)[:300]}
+            trace(connection, self.run.run_id, f"research:{raw_lead_id}", "failed", failure)
+            audit(
+                connection,
+                SDK_RESEARCH_AGENT,
+                f"stops without a verdict ({failure['error_type']}); the lead stays review",
+                lead["business_name"],
+                run_id=self.run.run_id,
+                **failure,
             )
+            return "review"
         return result.verdict if hasattr(result, "verdict") else result["verdict"]
 
     async def run_crm(self):
