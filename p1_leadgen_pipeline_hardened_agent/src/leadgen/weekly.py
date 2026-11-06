@@ -27,7 +27,7 @@ from leadgen.budget import plan_spend, trace
 from leadgen.category_config import load_category_config
 from leadgen.gaps import read_gaps
 from leadgen.migrate import MigrationError, _check_history, discover_migrations
-from leadgen.orchestrator import Pipeline, build_plan, exa_ceiling, run_plan
+from leadgen.orchestrator import Pipeline, build_plan, run_plan, sourcing_ceiling
 from leadgen.plans import approve_plan
 from leadgen.run_closeout import settle_ended_runs, settles_by_estimate, web_service_for
 from leadgen.run_status import _market_label
@@ -252,7 +252,7 @@ async def run_weekly(
             target=policy.target_leads,
             market=policy.market,
         )
-        estimate = plan.estimated_cost_usd + exa_ceiling(plan, category)
+        estimate = sourcing_ceiling(plan, category)
         return (
             plan,
             estimate,

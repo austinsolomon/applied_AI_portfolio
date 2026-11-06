@@ -46,6 +46,7 @@ from leadgen.qualification import gather_evidence, judge_lead
 from leadgen.raw_leads import read_raw_leads
 from leadgen.research_agent import research_lead
 from leadgen.run_closeout import close_out_run, settle_unknown_outcomes, web_service_for
+from leadgen.sourcing_agent import adapt_sourcing, adaptive_ceiling
 from leadgen.sourcing_exa import EXA_CEILING_PER_CALL, exa_client, exa_queries, source_exa
 from leadgen.sourcing_maps import grade_sample, maps_client, source_maps
 from leadgen.web_research import (
@@ -55,7 +56,7 @@ from leadgen.web_research import (
     build_web_researcher,
 )
 
-STAGES = ("maps", "exa", "extract", "dedupe", "enrich", "qualify", "crm")
+STAGES = ("maps", "exa", "adapt", "extract", "dedupe", "enrich", "qualify", "crm")
 
 
 def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50, market=None):
@@ -112,6 +113,12 @@ def exa_calls(plan, category):
 
 def exa_ceiling(plan, category):
     return exa_calls(plan, category) * EXA_CEILING_PER_CALL
+
+
+def sourcing_ceiling(plan, category):
+    """Worst-case sourcing spend: the planned Maps cells and Exa searches, plus everything the
+    sourcing agent may add."""
+    return plan.estimated_cost_usd + exa_ceiling(plan, category) + adaptive_ceiling()
 
 
 def completed_stages(connection, run_id):
@@ -283,67 +290,85 @@ class Pipeline:
         for cell in read_plan(self.connection, self.run.plan_id).cells:
             if cell.status != "planned":
                 continue
-            attempt = start_cell_attempt(self.connection, self.run.run_id, cell.cell_id, "sample")
-            try:
-                client = self.maps or maps_client(self.settings)
-                sample_limit = min(10, cell.expected_raw_leads)
-                sample_budget = (
-                    cell.estimated_cost_usd
-                    if sample_limit == cell.expected_raw_leads
-                    else cell.estimated_cost_usd / 2
+            total += self.source_cell(cell)["sourced"]
+        return {"sourced": total}
+
+    def source_cell(self, cell):
+        """Sample one cell, grade the sample, and scrape it in full if the grade is PROCEED.
+
+        Planned cells and the cells the sourcing agent adds go through this same path."""
+        attempt = start_cell_attempt(self.connection, self.run.run_id, cell.cell_id, "sample")
+        try:
+            client = self.maps or maps_client(self.settings)
+            sample_limit = min(10, cell.expected_raw_leads)
+            sample_budget = (
+                cell.estimated_cost_usd
+                if sample_limit == cell.expected_raw_leads
+                else cell.estimated_cost_usd / 2
+            )
+            leads = source_maps(
+                self.connection,
+                self.run.run_id,
+                cell,
+                client,
+                limit=sample_limit,
+                ceiling=sample_budget,
+            )
+            verdict, metrics = grade_sample(
+                self.connection,
+                self.run.run_id,
+                cell,
+                leads,
+                category=self.category,
+                with_metrics=True,
+            )
+            if verdict == "PROCEED" and len(leads) < cell.expected_raw_leads:
+                refreshed = next(
+                    item
+                    for item in read_plan(self.connection, self.run.plan_id).cells
+                    if item.cell_id == cell.cell_id
+                )
+                full_attempt = start_cell_attempt(
+                    self.connection, self.run.run_id, cell.cell_id, "full"
                 )
                 leads = source_maps(
                     self.connection,
                     self.run.run_id,
-                    cell,
+                    refreshed,
                     client,
-                    limit=sample_limit,
-                    ceiling=sample_budget,
+                    limit=cell.expected_raw_leads,
+                    ceiling=cell.estimated_cost_usd - sample_budget,
+                    stage="full",
                 )
-                verdict = grade_sample(
-                    self.connection, self.run.run_id, cell, leads, category=self.category
-                )
-                if verdict == "PROCEED" and len(leads) < cell.expected_raw_leads:
-                    refreshed = next(
-                        item
-                        for item in read_plan(self.connection, self.run.plan_id).cells
-                        if item.cell_id == cell.cell_id
-                    )
-                    full_attempt = start_cell_attempt(
-                        self.connection, self.run.run_id, cell.cell_id, "full"
-                    )
-                    leads = source_maps(
-                        self.connection,
-                        self.run.run_id,
-                        refreshed,
-                        client,
-                        limit=cell.expected_raw_leads,
-                        ceiling=cell.estimated_cost_usd - sample_budget,
-                        stage="full",
-                    )
-                    finish_cell_attempt(
-                        self.connection,
-                        full_attempt.attempt_id,
-                        succeeded=True,
-                        leads_found=len(leads),
-                    )
-                    self.connection.execute(
-                        "UPDATE scrape_plan_cells SET status='scraped' WHERE cell_id=%s",
-                        (cell.cell_id,),
-                    )
-                finish_cell_attempt(
-                    self.connection, attempt.attempt_id, succeeded=True, leads_found=len(leads)
-                )
-                total += len(leads)
-            except Exception:
                 finish_cell_attempt(
                     self.connection,
-                    attempt.attempt_id,
-                    succeeded=False,
-                    error="Sourcing failed; inspect provider run before resuming",
+                    full_attempt.attempt_id,
+                    succeeded=True,
+                    leads_found=len(leads),
                 )
-                raise
-        return {"sourced": total}
+                self.connection.execute(
+                    "UPDATE scrape_plan_cells SET status='scraped' WHERE cell_id=%s",
+                    (cell.cell_id,),
+                )
+            finish_cell_attempt(
+                self.connection, attempt.attempt_id, succeeded=True, leads_found=len(leads)
+            )
+        except Exception:
+            finish_cell_attempt(
+                self.connection,
+                attempt.attempt_id,
+                succeeded=False,
+                error="Sourcing failed; inspect provider run before resuming",
+            )
+            raise
+        return {
+            "city": cell.city,
+            "keyword": cell.keyword,
+            "verdict": verdict,
+            "category_purity": round(metrics["category_purity"], 2),
+            "in_market_share": round(metrics["in_market_share"], 2),
+            "sourced": len(leads),
+        }
 
     async def run_exa(self):
         total = 0
@@ -364,6 +389,10 @@ class Pipeline:
             "sourced": total,
             "queries": exa_calls(plan, self.category),
         }
+
+    async def run_adapt(self):
+        """The sourcing agent: add Maps cells or Exa searches if planned sourcing fell short."""
+        return await adapt_sourcing(self, query_fn=self.agent_query)
 
     async def run_extract(self):
         """Read phones and emails off page text already cached by sourcing; no network calls."""

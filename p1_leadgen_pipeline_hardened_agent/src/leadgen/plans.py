@@ -94,6 +94,8 @@ class PlanCell:
     estimated_cost_usd: Decimal
     status: str
     apify_run_id: str | None
+    # planned: in the approved plan · agent: added by the sourcing agent from the approved pools
+    origin: str = "planned"
 
 
 @dataclass(frozen=True)
@@ -156,7 +158,7 @@ class LeadKeys:
 
 CELL_COLUMNS = (
     "cell_id, plan_id, position, market_id, city, keyword, expected_raw_leads, "
-    "estimated_cost_usd, status, apify_run_id"
+    "estimated_cost_usd, status, apify_run_id, origin"
 )
 ATTEMPT_COLUMNS = (
     "attempt_id, run_id, cell_id, stage, attempt_number, status, started_at, finished_at, "
@@ -230,6 +232,35 @@ def create_plan(connection: psycopg.Connection, cells: Iterable[PlannedCell]) ->
         ],
     )
     return plan
+
+
+def add_agent_cell(
+    connection: psycopg.Connection,
+    plan_id: int,
+    market_id: int,
+    city: str,
+    keyword: str,
+    expected_raw_leads: int,
+    estimated_cost_usd: Decimal,
+) -> PlanCell:
+    """Append a cell the sourcing agent chose to an approved plan, after its planned cells.
+
+    The caller has already checked the city and keyword against the approved pools; the database
+    still refuses a second cell for the same city and keyword."""
+    with connection.cursor(row_factory=class_row(PlanCell)) as cursor:
+        cell = cursor.execute(
+            f"""
+            INSERT INTO scrape_plan_cells
+                (plan_id, position, market_id, city, keyword, expected_raw_leads,
+                 estimated_cost_usd, origin)
+            SELECT %s, coalesce(max(position), 0) + 1, %s, %s, %s, %s, %s, 'agent'
+            FROM scrape_plan_cells WHERE plan_id = %s
+            RETURNING {CELL_COLUMNS}
+            """,
+            (plan_id, market_id, city, keyword, expected_raw_leads, estimated_cost_usd, plan_id),
+        ).fetchone()
+    assert cell is not None
+    return cell
 
 
 def read_plan(connection: psycopg.Connection, plan_id: int) -> ScrapePlan:

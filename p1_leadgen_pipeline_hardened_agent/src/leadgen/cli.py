@@ -436,9 +436,16 @@ def run_pipeline_command(arguments):
 
     from leadgen.budget import BudgetBlocked
     from leadgen.category_config import load_category_config
-    from leadgen.orchestrator import build_plan, exa_calls, exa_ceiling, run_plan
+    from leadgen.orchestrator import (
+        build_plan,
+        exa_calls,
+        exa_ceiling,
+        run_plan,
+        sourcing_ceiling,
+    )
     from leadgen.plans import PlanError, approve_plan, latest_plan, read_plan
     from leadgen.qualification import QualificationError
+    from leadgen.sourcing_agent import adaptive_ceiling
     from leadgen.sourcing_maps import SourcingError
 
     try:
@@ -461,11 +468,12 @@ def run_pipeline_command(arguments):
                     f"Plan {plan.plan_id}: {len(plan.cells)} cells; "
                     f"{plan.expected_raw_leads} raw leads; Maps cap ${plan.estimated_cost_usd}; "
                     f"Exa cap ${exa_cap} ({exa_calls(plan, category)} searches); "
+                    f"sourcing agent cap ${adaptive_ceiling()}; "
                     f"total budget ${arguments.budget_usd} (all services)"
                 )
                 for cell in plan.cells:
                     print(f"  {cell.city}: {cell.keyword} ({cell.expected_raw_leads} leads)")
-                if plan.estimated_cost_usd + exa_cap >= arguments.budget_usd:
+                if sourcing_ceiling(plan, category) >= arguments.budget_usd:
                     raise ValueError("Budget must also leave room for enrichment and qualification")
                 from leadgen.audit import HUMAN_APPROVAL, PLANNER, audit
 
@@ -473,7 +481,8 @@ def run_pipeline_command(arguments):
                     connection,
                     PLANNER,
                     f"prices the plan (Maps cap ${plan.estimated_cost_usd}, Exa cap "
-                    f"${exa_cap}, budget ${arguments.budget_usd}) and asks for approval",
+                    f"${exa_cap}, sourcing agent cap ${adaptive_ceiling()}, budget "
+                    f"${arguments.budget_usd}) and asks for approval",
                     f"plan {plan.plan_id}",
                     plan_id=plan.plan_id,
                 )

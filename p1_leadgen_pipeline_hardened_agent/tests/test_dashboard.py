@@ -161,6 +161,7 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
     labels = [
         "Google Maps",
         "Exa search",
+        "Adapt sourcing (agent)",
         "Extract contacts",
         "Dedupe",
         "Enrich contacts",
@@ -172,7 +173,7 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
     stage_cells = track.split('<div style="flex:1')[1:]
     assert "#1840ED" in stage_cells[1] and "done" in stage_cells[1]  # Exa search: blue
     assert "needs a human" in stage_cells[2]
-    assert "#E3E5EA" in stage_cells[6] and "waiting" in stage_cells[6]  # CRM: still gray
+    assert "#E3E5EA" in stage_cells[7] and "waiting" in stage_cells[7]  # CRM: still gray
     # The open-call note is a small caption under the run's numbers, never a banner on top.
     assert not app.warning
     assert any("web:tier1:1:1:fetch_page" in caption.value for caption in app.caption)
