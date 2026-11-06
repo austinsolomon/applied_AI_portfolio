@@ -3,7 +3,8 @@
 The steps, each of which can stop the run with a plain reason:
 
 1. Ready check: migrations current, no run in progress, no paid call left uncertain.
-2. Cadence: a policy-approved plan in the last `min_days_between_runs` days means nothing to do.
+2. Duplicate guard: a policy-approved plan in the last `min_hours_between_runs` hours means
+   nothing to do, so a repeated trigger never pays twice. The schedule sets the cadence.
 3. Gaps: no market below its goal means nothing to do.
 4. Plan within policy: the planner's Maps and Exa ceilings must leave room under the budget.
 5. Approval recorded as `policy:weekly@<policy file sha>`, through the same `approve_plan` a
@@ -49,7 +50,7 @@ class WeeklyPolicy(BaseModel):
     max_cities: int = Field(default=1, ge=1, le=40)
     max_keywords: int = Field(default=1, ge=1)
     target_leads: int = Field(default=30, ge=1, le=500)
-    min_days_between_runs: int = Field(default=6, ge=0, le=31)
+    min_hours_between_runs: int = Field(default=12, ge=0, le=744)
     market: str | None = None
 
 
@@ -132,13 +133,13 @@ def check_ready(
         )
 
 
-def recent_policy_approval(connection, days: int):
-    if days == 0:
+def recent_policy_approval(connection, hours: int):
+    if hours == 0:
         return None
     return connection.execute(
         "SELECT plan_id, approved_at FROM approvals WHERE approved_by LIKE %s "
-        "AND approved_at > now() - make_interval(days => %s) ORDER BY approved_at DESC LIMIT 1",
-        (APPROVER_PREFIX + "%", days),
+        "AND approved_at > now() - make_interval(hours => %s) ORDER BY approved_at DESC LIMIT 1",
+        (APPROVER_PREFIX + "%", hours),
     ).fetchone()
 
 
@@ -230,12 +231,12 @@ async def run_weekly(
         )
     except NeedsHuman as reason:
         return EXIT_NEEDS_HUMAN, {"status": "needs a human", "reason": str(reason)}
-    recent = recent_policy_approval(connection, policy.min_days_between_runs)
+    recent = recent_policy_approval(connection, policy.min_hours_between_runs)
     if recent and not dry_run:
         return EXIT_NOTHING_TO_DO, {
             "status": "nothing to do",
             "reason": f"plan {recent[0]} was policy-approved at {recent[1].isoformat()}, "
-            f"within {policy.min_days_between_runs} days",
+            f"within {policy.min_hours_between_runs} hours",
         }
     if not read_gaps(connection):
         return EXIT_NOTHING_TO_DO, {"status": "nothing to do", "reason": "every market is at goal"}
@@ -273,7 +274,9 @@ async def run_weekly(
         within = estimate < policy.budget_usd
         status = "dry run: would run" if within else "dry run: plan exceeds policy"
         if recent:
-            status = f"dry run: nothing to do (plan {recent[0]} ran within the cadence)"
+            status = (
+                f"dry run: nothing to do (plan {recent[0]} was approved within the duplicate guard)"
+            )
         return (EXIT_OK if within else EXIT_NEEDS_HUMAN), {
             **preview,
             "plan_id": None,

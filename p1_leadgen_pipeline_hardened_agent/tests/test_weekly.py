@@ -171,12 +171,14 @@ def test_unattended_run_is_approved_by_the_policy_and_completes(
     assert stored["run_id"] == summary["run_id"]
 
 
-def test_second_trigger_within_the_cadence_spends_nothing(demo, empty_database_url, fake_providers):
+def test_second_trigger_within_the_duplicate_guard_spends_nothing(
+    demo, empty_database_url, fake_providers
+):
     settings = offline_settings(empty_database_url)
     assert weekly(demo, settings, policy(), **fake_providers)[0] == EXIT_OK
     before = demo.execute("SELECT count(*), sum(cost_usd) FROM cost_ledger").fetchone()
     exit_code, summary = weekly(demo, settings, policy(), **fake_providers)
-    assert exit_code == EXIT_NOTHING_TO_DO and "within 6 days" in summary["reason"]
+    assert exit_code == EXIT_NOTHING_TO_DO and "within 12 hours" in summary["reason"]
     assert demo.execute("SELECT count(*), sum(cost_usd) FROM cost_ledger").fetchone() == before
     assert demo.execute("SELECT count(*) FROM scrape_plans").fetchone() == (1,)
 

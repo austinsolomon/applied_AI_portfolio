@@ -58,7 +58,7 @@ policy would approve and stores nothing. Each approval records the policy file's
 |---|---|
 | 0 | Nothing. The summary is in the output, in `traces` (operation `weekly`) and in the dashboard |
 | 1 | The run failed. Read the summary's `error`, then follow Failure recovery above; the next weekly run stays blocked only while an Apify actor may still be running |
-| 2 | Nothing. It already ran within the cadence, or no market is below goal |
+| 2 | Nothing. A run was already approved in the last 12 hours (a repeated trigger), or no market is below goal |
 | 3 | Act on the reason: run `leadgen db migrate`, confirm and reconcile an open Apify actor run, or raise `budget_usd` or shrink the plan in the policy file |
 
 The weekly command never migrates and never retries a failed run by itself. Retrying paid work is

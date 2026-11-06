@@ -199,7 +199,8 @@ optional pinned market, and a minimum number of days between runs. It then:
 
 1. Refuses to start if migrations are not applied, a run is still marked running, or any paid
    call has an unknown outcome. Those need a person ([operations](docs/operations.md)).
-2. Does nothing if a policy-approved plan already ran within `min_days_between_runs`, or if
+2. Does nothing if a policy-approved plan already ran within `min_hours_between_runs` (a
+   duplicate guard, 12 hours; Cloud Scheduler sets the weekly cadence), or if
    every market is at its goal.
 3. Builds the plan for the biggest gap (or the pinned market) and refuses it if the Maps and
    Exa ceilings leave no room under the policy budget.
@@ -215,7 +216,7 @@ optional pinned market, and a minimum number of days between runs. It then:
 |---|---|
 | 0 | Ran to completion (or the dry run fits the policy) |
 | 1 | The run started and failed; inspect the summary and traces |
-| 2 | Nothing to do: already ran this cadence, or every market is at goal |
+| 2 | Nothing to do: a run was already approved in the last 12 hours, or every market is at goal |
 | 3 | Needs a person: unapplied migrations, unreconciled paid calls, or a plan over policy |
 
 The exit codes let a scheduler such as cron or Cloud Scheduler tell these cases apart.
