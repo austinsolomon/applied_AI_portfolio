@@ -64,7 +64,7 @@ What keeps unattended work controlled and recoverable?
 |---|---|
 | Paid retries | Ambiguous requests stay reserved until operator reconciliation. |
 | Accounting | Conservative estimates are explicit; exact Firecrawl invoice reconciliation remains open. |
-| Deployment | Container verified; cloud deployment and scheduling are planned. |
+| Deployment | Cloud Run Job on a weekly schedule with Neon Postgres; migrations and a dry run verified in the cloud. |
 
 ### Flow: Allowed work
 
@@ -376,19 +376,19 @@ Steps:
 3. **Build image** — Install locked Python dependencies and the pinned Claude CLI.
 4. **Smoke test** — Run both CLIs and migrate a fresh database.
 
-### DEP · Cloud deployment (planned)
+### DEP · Cloud deployment
 
-Cloud hosting and scheduled execution are still planned.
+Run the weekly job on Google Cloud against hosted Postgres.
 
-The container exists, but Cloud Run, Scheduler, Secret Manager and deployment identity are outside the completed build. No live cloud service is represented here.
+Cloud Scheduler starts the leadgen-weekly Cloud Run Job on Fridays at 08:00 Pacific; it reads its keys from Secret Manager and logs in to Neon Postgres as a rows-only role. GitHub Actions deploys through Workload Identity Federation and migrates first. The schedule stays paused until a supervised first cloud run.
 
-Source: [docs/design.md](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/docs/design.md).
+Source: [docs/operations.md](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/docs/operations.md).
 
 Steps:
 
-1. **Choose hosting** — Define the deployment environment.
-2. **Wire secrets** — Provide runtime credentials securely.
-3. **Schedule** — Configure the approved operating cadence.
+1. **Deploy** — Build the image, migrate, update the job.
+2. **Schedule** — Fridays 08:00 Pacific, retries off.
+3. **Run** — leadgen weekly under the policy budget.
 
 ### EV · Evidence gathering
 

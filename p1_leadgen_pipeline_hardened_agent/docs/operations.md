@@ -58,7 +58,7 @@ policy would approve and stores nothing. Each approval records the policy file's
 |---|---|
 | 0 | Nothing. The summary is in the output, in `traces` (operation `weekly`) and in the dashboard |
 | 1 | The run failed. Read the summary's `error`, then follow Failure recovery above; the next weekly run stays blocked only while an Apify actor may still be running |
-| 2 | Nothing. It already ran within the cadence, or no market is below goal |
+| 2 | Nothing. A run was already approved in the last 12 hours (a repeated trigger), or no market is below goal |
 | 3 | Act on the reason: run `leadgen db migrate`, confirm and reconcile an open Apify actor run, or raise `budget_usd` or shrink the plan in the policy file |
 
 The weekly command never migrates and never retries a failed run by itself. Retrying paid work is
@@ -81,3 +81,86 @@ the public sample report contains business names and aggregate counts only.
 Unit prices convert Firecrawl credits and Blitz records into accounting costs. Set them for the
 actual subscription. Provider balance or price changes require checking these assumptions before
 a new run. Never interpret a missing final usage report as zero spend.
+
+## Production deployment
+
+| Piece | Where | Name |
+|---|---|---|
+| Weekly job | Google Cloud Run Job, `us-west1` | `leadgen-weekly` (`leadgen weekly`, 45-minute timeout, retries 0) |
+| Migrations | Google Cloud Run Job | `leadgen-migrate` (`leadgen db migrate`, run by every deploy) |
+| Schedule | Google Cloud Scheduler | `leadgen-weekly-friday`: Fridays 08:00 America/Los_Angeles |
+| Database | Neon Postgres, AWS `us-west-2` | project `leadgen-prod-neon`, database `neondb` |
+| Secrets | Google Secret Manager | `DATABASE_URL` (owner), `APP_DATABASE_URL`, `DASHBOARD_DATABASE_URL`, the provider keys |
+| Image | Artifact Registry | `us-west1-docker.pkg.dev/leadgen-prod-austin/leadgen/leadgen:<commit>` |
+| Dashboard | Streamlit Community Cloud | `streamlit_cloud/streamlit_app.py`, read-only login |
+| Deploys | GitHub Actions | `.github/workflows/deploy.yml`, after CI passes on `main` |
+
+Four database logins, each with the least it needs (`leadgen.database_roles`): the owner
+(`DATABASE_URL`) only for migrations; `leadgen_app` for the weekly job (reads and writes rows,
+cannot change the schema); `leadgen_operator` for the private dashboard (reads every table,
+writes only eval labels); `leadgen_dashboard` for a public or shared dashboard (reads only the
+views in `run_status.DASHBOARD_VIEWS`, never contacts or evidence). `scripts/gcp_setup.sh` records
+how the Google project was built.
+
+The Streamlit Cloud app is private (viewers invited by email) and runs in operator mode: every tab
+as on the operator's machine, including evidence, contacts and eval labeling. Its secrets are
+`DATABASE_URL` = the `OPERATOR_DATABASE_URL` secret and `DASHBOARD_MODE = "operator"`. Without
+that second line it falls back to the three read-only tabs, which is also what a public app
+should run, with `DASHBOARD_DATABASE_URL`.
+
+Set `P=leadgen-prod-austin R=us-west1` for the commands below.
+
+**Check the last run.** Cloud Run → Jobs → `leadgen-weekly` → Executions, or:
+
+```bash
+gcloud run jobs executions list --job=leadgen-weekly --region=$R --project=$P --limit=5
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="leadgen-weekly"' \
+    --project=$P --freshness=2d --order=asc --format="value(textPayload)"
+```
+
+The log ends with the JSON summary and `Container called exit(N)`; the exit codes are the ones in
+the table above. A failed execution (exit 1 or 3) is not retried: handle it as in Failure
+recovery, with the owner URL from Secret Manager as `DATABASE_URL`.
+
+**Run now, or preview.** `--dry-run` plans inside a rolled-back transaction and spends nothing.
+
+```bash
+gcloud run jobs execute leadgen-weekly --region=$R --project=$P --wait --args=weekly,--dry-run
+gcloud run jobs execute leadgen-weekly --region=$R --project=$P --wait      # paid, policy budget
+```
+
+**Pause or resume the schedule.**
+
+```bash
+gcloud scheduler jobs pause leadgen-weekly-friday --location=$R --project=$P
+gcloud scheduler jobs resume leadgen-weekly-friday --location=$R --project=$P
+```
+
+**Deploy.** Merging to `main` deploys after CI passes: the workflow builds the image, runs
+`leadgen-migrate`, then moves `leadgen-weekly` to the new image. Actions → "Deploy p1 to Google
+Cloud" → Run workflow redeploys by hand. A migration that adds a dashboard view also needs the
+grant: rerun `scripts/provision_database_roles.py` (no `--rotate`).
+
+**Rotate a provider key.** Create the new key with the provider, then
+`printf '%s' "$NEW_KEY" | gcloud secrets versions add EXA_API_KEY --data-file=- --project=$P`.
+Jobs read `latest` at start, so the next execution uses it; revoke the old key afterwards.
+
+**Rotate the database logins.**
+`DATABASE_URL="$(gcloud secrets versions access latest --secret=DATABASE_URL --project=$P)" uv run python scripts/provision_database_roles.py --project $P --rotate`,
+then paste the new `OPERATOR_DATABASE_URL` into the Streamlit Cloud app's secrets. Rotate the
+owner password in the Neon console and add it as a new `DATABASE_URL` version.
+
+**Back up.** Neon's free plan keeps a short restore window, not long-term backups. Before risky
+changes, and monthly:
+
+```bash
+docker run --rm -v "$PWD:/dump" -e URL="$(gcloud secrets versions access latest --secret=DATABASE_URL --project=$P)" \
+    postgres:18 sh -c 'pg_dump "$URL" -Fc --no-owner --no-acl -f /dump/leadgen_$(date +%Y%m%d).dump'
+```
+
+Restore into an empty database with `pg_restore --no-owner --no-acl -d "$URL" <file>`, then
+rerun `provision_database_roles.py`. Dumps hold contact details: keep them off the repository.
+
+**Cost.** Hosting stays inside free tiers (Cloud Run, Scheduler, Secret Manager, Neon, Streamlit
+Cloud); the image registry costs cents. The `leadgen-monthly-5usd` budget alert emails at 50%,
+90% and 100% of $5 a month. Provider spend per run is capped by the policy budget.

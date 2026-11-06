@@ -1,0 +1,65 @@
+name: Deploy p1 to Google Cloud
+
+# Runs after CI passes on main (or by hand). Signs in to Google Cloud through Workload Identity
+# Federation: GitHub's short-lived OIDC token is exchanged for the leadgen-deployer service
+# account, and the trust link only accepts this repository's main branch. No Google key and no
+# provider API key is stored in GitHub; the jobs read their keys from Secret Manager at run time.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-p1
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: leadgen-prod-austin
+  REGION: us-west1
+  IMAGE: us-west1-docker.pkg.dev/leadgen-prod-austin/leadgen/leadgen
+  WORKLOAD_IDENTITY_PROVIDER: projects/1001406310514/locations/global/workloadIdentityPools/github/providers/applied-ai-portfolio
+  DEPLOYER: leadgen-deployer@leadgen-prod-austin.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    name: build, migrate, update jobs
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: p1_leadgen_pipeline_hardened_agent
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOYER }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Build and push the image (tagged with the commit)
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          TAG="${IMAGE}:$(git rev-parse --short HEAD)"
+          docker build --platform linux/amd64 -t "$TAG" .
+          docker push "$TAG"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      # Migrations run before the weekly job moves to the new image, never inside it.
+      - name: Migrate the production database
+        run: |
+          gcloud run jobs update leadgen-migrate --image "$TAG" --region "$REGION" --project "$PROJECT_ID" --quiet
+          gcloud run jobs execute leadgen-migrate --region "$REGION" --project "$PROJECT_ID" --wait
+
+      - name: Point the weekly job at the new image
+        run: gcloud run jobs update leadgen-weekly --image "$TAG" --region "$REGION" --project "$PROJECT_ID" --quiet

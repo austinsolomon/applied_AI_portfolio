@@ -13,8 +13,10 @@ max_cities: 1
 max_keywords: 1
 target_leads: 125
 
-# Run at most once per this many days, even if the job is triggered again.
-min_days_between_runs: 6
+# Duplicate guard: at most one run in this many hours, even if the job is triggered again (a
+# retried or manual trigger never pays twice). Cloud Scheduler sets the weekly cadence: Fridays
+# 08:00 Pacific.
+min_hours_between_runs: 12
 
 # Optional: always plan this market (e.g. "Phoenix, AZ") instead of the biggest gap.
 market: null

@@ -114,7 +114,7 @@ its first live run will replace this row.
 | Eval capture, weekly review page, labels exported as test fixtures | done |
 | SDK orchestrator, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
 | Unattended weekly run approved by a standing policy (`leadgen weekly`) | done; tested with fake providers |
-| Scheduled cloud deployment | planned |
+| Scheduled cloud deployment | deployed: Cloud Run Jobs + Cloud Scheduler (Fridays 08:00 PT, paused until the first supervised cloud run), Neon Postgres, Secret Manager, keyless GitHub deploys; cloud migrate and dry run verified |
 
 ## Quickstart
 
@@ -199,7 +199,8 @@ optional pinned market, and a minimum number of days between runs. It then:
 
 1. Refuses to start if migrations are not applied, a run is still marked running, or any paid
    call has an unknown outcome. Those need a person ([operations](docs/operations.md)).
-2. Does nothing if a policy-approved plan already ran within `min_days_between_runs`, or if
+2. Does nothing if a policy-approved plan already ran within `min_hours_between_runs` (a
+   duplicate guard, 12 hours; Cloud Scheduler sets the weekly cadence), or if
    every market is at its goal.
 3. Builds the plan for the biggest gap (or the pinned market) and refuses it if the Maps and
    Exa ceilings leave no room under the policy budget.
@@ -215,10 +216,42 @@ optional pinned market, and a minimum number of days between runs. It then:
 |---|---|
 | 0 | Ran to completion (or the dry run fits the policy) |
 | 1 | The run started and failed; inspect the summary and traces |
-| 2 | Nothing to do: already ran this cadence, or every market is at goal |
+| 2 | Nothing to do: a run was already approved in the last 12 hours, or every market is at goal |
 | 3 | Needs a person: unapplied migrations, unreconciled paid calls, or a plan over policy |
 
 The exit codes let a scheduler such as cron or Cloud Scheduler tell these cases apart.
+
+## Production deployment
+
+```mermaid
+flowchart LR
+    CS[Cloud Scheduler<br/>Fridays 08:00 PT] --> CR[Cloud Run Job<br/>leadgen weekly<br/>Agent SDK pipeline]
+    SM[Secret Manager<br/>DB URLs + API keys] --> CR
+    CR --> API[Maps · Exa · Claude<br/>Blitz · Firecrawl]
+    CR --> DB[(Neon Postgres)]
+    ST[Streamlit Community Cloud<br/>read-only dashboard] --> DB
+    GH[GitHub Actions<br/>after CI on main] -->|Workload Identity Federation| AR[Artifact Registry image]
+    AR --> CR
+    GH --> MG[Cloud Run Job<br/>leadgen db migrate] --> DB
+```
+
+- **Runs:** Cloud Scheduler starts the `leadgen-weekly` Cloud Run Job every Friday at 08:00
+  Pacific. The container runs `leadgen weekly` (above) and exits; all state is in Postgres.
+- **Database:** Neon Postgres. The job logs in as `leadgen_app` (rows only, no schema changes);
+  migrations run as the owner in a separate `leadgen-migrate` job; the dashboard logs in as
+  `leadgen_dashboard`, which can read only aggregate views.
+- **Secrets:** Google Secret Manager, injected into each job at start. None are in GitHub.
+- **Deploys:** after CI passes on `main`, GitHub Actions signs in to Google through Workload
+  Identity Federation (a short-lived token, accepted only from this repository's `main`), builds
+  the image, migrates, and points the weekly job at the new image.
+- **Dashboard:** Streamlit Community Cloud runs `streamlit_cloud/streamlit_app.py` as a private
+  app (viewers invited by email) with every tab, including the audit log, data model and eval
+  labeling. It logs in as `leadgen_operator`, which reads every table and writes only eval
+  labels. Without the operator setting it shows only demand gaps, run history and sources, from
+  views that hold no contact details.
+- **Cost:** hosting fits free tiers, plus cents for image storage; provider spend per run is
+  capped by the policy budget. The [operations runbook](docs/operations.md#production-deployment)
+  covers logs, pausing, rotating secrets and backups.
 
 ## Dashboard
 

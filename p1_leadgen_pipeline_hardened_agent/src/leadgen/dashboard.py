@@ -8,6 +8,7 @@ the same numbers. Only the Eval review tab writes, and only labels.
 
 import html
 import json
+import os
 
 import altair
 import pandas
@@ -507,6 +508,34 @@ HEADER = """
 """
 
 
+# Set by the Streamlit Community Cloud entrypoint (streamlit_cloud/streamlit_app.py). "hosted" logs
+# in as the read-only dashboard role and shows only market and run totals. "operator" (a private
+# app, viewers invited by email) logs in as the operator role and shows every tab, as locally.
+HOSTED = os.environ.get("LEADGEN_DASHBOARD_MODE") == "hosted"
+
+
+def render_hosted() -> None:
+    streamlit.caption(
+        "Read-only: market demand and run totals. Contact details, evidence and eval review stay "
+        "on the operator's machine."
+    )
+    demand_tab, history_tab, sources_tab = streamlit.tabs(
+        ["Demand gaps", "Run history", "Sources and spend"]
+    )
+    try:
+        with connect() as connection:
+            with demand_tab:
+                render_demand(connection)
+            with history_tab:
+                render_history(connection)
+            with sources_tab:
+                render_sources(connection)
+    except ValidationError:
+        streamlit.error(DATABASE_URL_HELP)
+    except psycopg.Error as error:
+        streamlit.error(f"Cannot read from the database: {error}")
+
+
 def render() -> None:
     streamlit.set_page_config(page_title="Lead-gen dashboard", layout="wide")
     try:
@@ -514,6 +543,9 @@ def render() -> None:
     except Exception:
         title = "Lead-gen dashboard"
     streamlit.html(HEADER.format(title=title))
+    if HOSTED:
+        render_hosted()
+        return
     (
         demand_tab,
         run_tab,

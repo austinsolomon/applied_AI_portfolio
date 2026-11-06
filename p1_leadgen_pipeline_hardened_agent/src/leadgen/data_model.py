@@ -97,6 +97,54 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
                 kind="view",
             ),
             TableGuide(
+                "run_history_view",
+                "A view: one row per run with its market, leads sourced by Maps and Exa, new "
+                "leads, verdicts, CRM inserts, budget and spend, read by the hosted dashboard "
+                "in place of the tables so it never sees contact details.",
+                [
+                    {
+                        "market": "Phoenix, AZ",
+                        "status": "finished",
+                        "maps_sourced": 18,
+                        "exa_sourced": 37,
+                        "qualified": 13,
+                        "crm_inserted": 10,
+                        "budget_usd": 5.0,
+                        "spend_usd": 0.75,
+                    }
+                ],
+                kind="view",
+            ),
+            TableGuide(
+                "source_yield_view",
+                "A view: for each source across all runs, leads sourced, new after dedupe, "
+                "judged and qualified.",
+                [{"source": "exa", "sourced": 37, "new_leads": 37, "judged": 35, "qualified": 11}],
+                kind="view",
+            ),
+            TableGuide(
+                "consensus_yield_view",
+                "A view: Exa leads grouped by how many query phrasings found them, with how "
+                "many were judged and qualified.",
+                [{"query_consensus": 2, "leads": 4, "judged": 4, "qualified": 2}],
+                kind="view",
+            ),
+            TableGuide(
+                "spend_by_service_view",
+                "A view: all-time calls and spend per service, split into provider-reported "
+                "and estimated amounts.",
+                [
+                    {
+                        "service": "exa",
+                        "calls": 45,
+                        "reported_usd": 0.111,
+                        "estimated_usd": 0,
+                        "total_usd": 0.111,
+                    }
+                ],
+                kind="view",
+            ),
+            TableGuide(
                 "places",
                 "Every US city with at least 5,000 people from the 2020 Census, which the "
                 "planner uses to turn a market into a list of real cities to search.",

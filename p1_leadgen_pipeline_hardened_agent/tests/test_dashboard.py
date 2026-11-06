@@ -239,3 +239,107 @@ def test_audit_rows_are_labelled_with_the_stage_they_ran_in() -> None:
         "Write to CRM",
         "Close-out",
     ]
+
+
+def login_as_role(connection, database_url, monkeypatch, grant, mode):
+    """Create a throwaway login, give it a production role's grants and point the page at it."""
+    from urllib.parse import urlsplit, urlunsplit
+    from uuid import uuid4
+
+    from psycopg import sql
+
+    role = f"dashboard_test_{uuid4().hex[:8]}"
+    connection.execute(
+        sql.SQL("CREATE ROLE {} LOGIN PASSWORD 'dashboard-test'").format(sql.Identifier(role))
+    )
+    connection.execute(
+        sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+            sql.Identifier(connection.info.dbname), sql.Identifier(role)
+        )
+    )
+    grant(connection, role)
+    parts = urlsplit(database_url)
+    host = parts.netloc.rsplit("@", 1)[1]
+    role_url = urlunsplit(parts._replace(netloc=f"{role}:dashboard-test@{host}"))
+    monkeypatch.setenv("DATABASE_URL", role_url)
+    monkeypatch.setenv("LEADGEN_DASHBOARD_MODE", mode)
+    get_settings.cache_clear()
+    return role, role_url
+
+
+def drop_role(connection, role):
+    from psycopg import sql
+
+    get_settings.cache_clear()
+    connection.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+    connection.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+@pytest.fixture
+def read_only_dashboard_role(
+    migrated_connection: psycopg.Connection,
+    empty_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Log the page in with the production dashboard role's grants: aggregate views only."""
+    from leadgen.database_roles import grant_dashboard
+
+    seed_demo_data(migrated_connection)
+    role, _url = login_as_role(
+        migrated_connection, empty_database_url, monkeypatch, grant_dashboard, "hosted"
+    )
+    yield
+    drop_role(migrated_connection, role)
+
+
+@pytest.mark.usefixtures("read_only_dashboard_role")
+def test_hosted_dashboard_renders_from_views_with_a_read_only_role() -> None:
+    app = render_dashboard()
+
+    assert [tab.label for tab in app.tabs] == ["Demand gaps", "Run history", "Sources and spend"]
+    assert not app.error, [element.value for element in app.error]
+
+
+@pytest.fixture
+def operator_role(
+    migrated_connection: psycopg.Connection,
+    empty_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[str]:
+    """Log the page in with the production operator role's grants: read all, write eval labels."""
+    from leadgen.database_roles import grant_operator
+
+    seed_demo_data(migrated_connection)
+    role, role_url = login_as_role(
+        migrated_connection, empty_database_url, monkeypatch, grant_operator, "operator"
+    )
+    yield role_url
+    drop_role(migrated_connection, role)
+
+
+def test_operator_dashboard_shows_every_tab_and_may_write_only_labels(
+    operator_role: str, migrated_connection: psycopg.Connection
+) -> None:
+    from leadgen.eval_review import EVAL_LABELS, label_eval_record, record_eval
+
+    app = render_dashboard()
+    assert [tab.label for tab in app.tabs] == [
+        "Demand gaps",
+        "Current run",
+        "Audit log",
+        "Run history",
+        "Sources and spend",
+        "Eval review",
+        "Data model",
+    ]
+    assert not app.error, [element.value for element in app.error]
+
+    record_id = record_eval(
+        migrated_connection, kind="judge_decision", subject="Cedar", verdict="qualified"
+    )
+    with psycopg.connect(operator_role, autocommit=True) as operator:
+        label_eval_record(operator, record_id, label=EVAL_LABELS[0], labeled_by="operator test")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            operator.execute("DELETE FROM crm_leads")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            operator.execute("CREATE TABLE operator_check (x int)")
