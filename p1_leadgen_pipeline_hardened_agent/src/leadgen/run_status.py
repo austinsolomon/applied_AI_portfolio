@@ -19,6 +19,7 @@ from leadgen.orchestrator import STAGES
 STAGE_LABELS = {
     "maps": "Google Maps",
     "exa": "Exa search",
+    "adapt": "Adapt sourcing (agent)",
     "extract": "Extract contacts",
     "dedupe": "Dedupe",
     "enrich": "Enrich contacts",
@@ -30,6 +31,8 @@ STAGE_RUNNING = "running"
 STAGE_FAILED = "failed"
 STAGE_BLOCKED = "blocked"
 STAGE_WAITING = "waiting"
+# A finished run that predates a stage (e.g. runs before the sourcing agent existed).
+STAGE_SKIPPED = "skipped"
 
 
 @dataclass(frozen=True)
@@ -72,7 +75,9 @@ def stage_states(status: str, completed: dict[str, tuple], unresolved: bool) -> 
             result, completed_at = completed[stage]
             states.append(StageState(stage, STAGE_LABELS[stage], STAGE_DONE, result, completed_at))
             continue
-        if current_found or status == "finished":
+        if status == "finished":
+            state = STAGE_SKIPPED
+        elif current_found:
             state = STAGE_WAITING
         elif status == "running":
             state = STAGE_RUNNING

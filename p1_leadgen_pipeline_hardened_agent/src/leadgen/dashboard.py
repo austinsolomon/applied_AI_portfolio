@@ -43,6 +43,7 @@ STAGE_COLOURS = {
     run_status.STAGE_FAILED: ("#D93025", "#FFFFFF"),
     run_status.STAGE_BLOCKED: ("#F29900", "#FFFFFF"),
     run_status.STAGE_WAITING: ("#E3E5EA", "#5F6368"),
+    run_status.STAGE_SKIPPED: ("#F1F2F4", "#9AA0A6"),
 }
 STAGE_STATUS_WORDS = {
     run_status.STAGE_DONE: "done",
@@ -50,6 +51,7 @@ STAGE_STATUS_WORDS = {
     run_status.STAGE_FAILED: "failed",
     run_status.STAGE_BLOCKED: "needs a human",
     run_status.STAGE_WAITING: "waiting",
+    run_status.STAGE_SKIPPED: "not part of this run",
 }
 DATABASE_URL_HELP = (
     "DATABASE_URL is missing or malformed. Copy .env.example to .env, or export "
@@ -168,7 +170,7 @@ def stage_result_text(result: dict | None) -> str:
 
 
 def stage_track_html(detail) -> str:
-    """The seven stages left to right, each gray until it finishes and blue once done."""
+    """The stages left to right, each gray until it finishes and blue once done."""
     cells = []
     for number, stage in enumerate(detail.stages, start=1):
         background, colour = STAGE_COLOURS[stage.status]

@@ -183,7 +183,8 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
             TableGuide(
                 "scrape_plan_cells",
                 "The rows of a plan: one market, city and keyword each, with the expected number "
-                "of businesses and the Google Maps spending cap.",
+                "of businesses, the Google Maps spending cap, and whether the plan or the sourcing "
+                "agent added it.",
                 [
                     {
                         "cell_id": 7,
@@ -495,7 +496,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
             TableGuide(
                 "audit_events",
                 "The opt-in trail of one execution (--audit): each major step as who does "
-                "what to whom, from 19 actors named Tool (role).",
+                "what to whom, from 20 actors named Tool (role).",
                 [
                     {
                         "audit_event_id": 203,

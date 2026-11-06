@@ -16,7 +16,7 @@ from urllib.parse import urljoin
 from exa_py import Exa
 
 from leadgen.audit import EXA_SEARCH, audit
-from leadgen.budget import paid_operation, record_cost
+from leadgen.budget import paid_operation, record_cost, trace
 from leadgen.category_config import is_on_host
 from leadgen.contacts import is_public_domain, normalize_domain
 from leadgen.raw_leads import RawLead, persist_leads
@@ -120,8 +120,52 @@ def source_exa(
     num_results=RESULTS_PER_QUERY,
     ceiling_per_query=EXA_CEILING_PER_CALL,
 ):
-    candidates = {}
-    for query in exa_queries(category, cities):
+    """The planned searches: every phrasing in the category config, for every planned city."""
+    run_exa_queries(
+        connection,
+        run_id,
+        market_id,
+        category,
+        client,
+        exa_queries(category, cities),
+        num_results=num_results,
+        ceiling_per_query=ceiling_per_query,
+    )
+    return run_exa_leads(connection, run_id, market_id)
+
+
+def run_exa_leads(connection, run_id, market_id):
+    """Every Exa lead this run has found in the market so far, with its query consensus."""
+    rows = connection.execute(
+        "SELECT source_key,business_name,website,query_consensus FROM raw_leads "
+        "WHERE run_id=%s AND market_id=%s AND source='exa' ORDER BY raw_lead_id",
+        (run_id, market_id),
+    ).fetchall()
+    return [
+        RawLead(source_key, name, website=website, query_consensus=consensus)
+        for source_key, name, website, consensus in rows
+    ]
+
+
+def run_exa_queries(
+    connection,
+    run_id,
+    market_id,
+    category,
+    client,
+    queries,
+    *,
+    num_results=RESULTS_PER_QUERY,
+    ceiling_per_query=EXA_CEILING_PER_CALL,
+):
+    """Run company searches and add their businesses to what this run already found.
+
+    A business an earlier query (planned or the agent's) already found gains query consensus
+    instead of a second row. Each query's outcome is traced as `exa_query`, so the sourcing agent
+    can read how every search did. Returns those outcomes."""
+    candidates = {lead.source_key: lead for lead in run_exa_leads(connection, run_id, market_id)}
+    outcomes = []
+    for query in queries:
         with paid_operation(connection, run_id, f"exa:{market_id}:{query}", ceiling_per_query):
             try:
                 response = company_search(client, query, category, num_results=num_results)
@@ -135,6 +179,11 @@ def source_exa(
             new = [domain for domain in candidates if domain not in before]
             repeat = [
                 domain for domain in before if candidates[domain].query_consensus > before[domain]
+            ]
+            filtered = [
+                result.url
+                for result in response.results
+                if normalize_domain(result.url) not in candidates
             ]
             audit(
                 connection,
@@ -150,20 +199,29 @@ def source_exa(
                 cost_usd=cost,
                 new=new,
                 found_again=repeat,
-                filtered=[
-                    result.url
-                    for result in response.results
-                    if normalize_domain(result.url) not in candidates
-                ],
+                filtered=filtered,
             )
-            persist_leads(connection, run_id, market_id, "exa", candidates.values())
+            persist_leads(
+                connection, run_id, market_id, "exa", [candidates[domain] for domain in new]
+            )
+        outcome = {
+            "query": query,
+            "results": len(response.results),
+            "new": len(new),
+            "found_again": len(repeat),
+            "filtered": len(response.results) - len(new) - len(repeat),
+            "new_examples": [candidates[domain].business_name for domain in new[:5]],
+            "filtered_examples": filtered[:5],
+        }
+        trace(connection, run_id, "exa_query", "searched", outcome)
+        outcomes.append(outcome)
     for lead in candidates.values():
         connection.execute(
             "UPDATE raw_leads SET query_consensus=%s WHERE run_id=%s "
             "AND source='exa' AND source_key=%s",
             (lead.query_consensus, run_id, lead.source_key),
         )
-    return list(candidates.values())
+    return outcomes
 
 
 def exa_client(settings):

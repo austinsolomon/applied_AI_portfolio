@@ -1,18 +1,14 @@
-"""Approved-plan SDK runner with a deterministic stage order and durable checkpoints."""
+"""Approved-plan runner: a deterministic stage loop with durable checkpoints.
+
+The pipeline's order never changes, so plain code runs it. The Claude Agent SDK is used only where
+the next step is not known in advance: adapting sourcing to what the first searches returned, and
+researching a lead the judge could not decide."""
 
 import asyncio
-import json
 import math
 from decimal import Decimal
 
-from claude_agent_sdk import (
-    ClaudeAgentOptions,
-    HookMatcher,
-    ResultMessage,
-    create_sdk_mcp_server,
-    query,
-    tool,
-)
+from claude_agent_sdk import query
 from psycopg.types.json import Jsonb
 
 from leadgen.audit import (
@@ -21,9 +17,8 @@ from leadgen.audit import (
     CRM_UPLOAD,
     DEDUPE,
     PLANNER,
-    SDK_PRE_TOOL_USE_HOOK,
     SDK_RESEARCH_AGENT,
-    SDK_TOOL_CALL,
+    STAGE_GATE,
     STATE_MACHINE,
     audit,
 )
@@ -49,8 +44,9 @@ from leadgen.plans import (
 )
 from leadgen.qualification import gather_evidence, judge_lead
 from leadgen.raw_leads import read_raw_leads
-from leadgen.research_agent import research_lead, sdk_environment
+from leadgen.research_agent import research_lead
 from leadgen.run_closeout import close_out_run, settle_unknown_outcomes, web_service_for
+from leadgen.sourcing_agent import adapt_sourcing, adaptive_ceiling
 from leadgen.sourcing_exa import EXA_CEILING_PER_CALL, exa_client, exa_queries, source_exa
 from leadgen.sourcing_maps import grade_sample, maps_client, source_maps
 from leadgen.web_research import (
@@ -60,8 +56,7 @@ from leadgen.web_research import (
     build_web_researcher,
 )
 
-STAGES = ("maps", "exa", "extract", "dedupe", "enrich", "qualify", "crm")
-TOOL_NAME = "mcp__leadgen__run_stage"
+STAGES = ("maps", "exa", "adapt", "extract", "dedupe", "enrich", "qualify", "crm")
 
 
 def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50, market=None):
@@ -120,6 +115,12 @@ def exa_ceiling(plan, category):
     return exa_calls(plan, category) * EXA_CEILING_PER_CALL
 
 
+def sourcing_ceiling(plan, category):
+    """Worst-case sourcing spend: the planned Maps cells and Exa searches, plus everything the
+    sourcing agent may add."""
+    return plan.estimated_cost_usd + exa_ceiling(plan, category) + adaptive_ceiling()
+
+
 def completed_stages(connection, run_id):
     return dict(
         connection.execute(
@@ -128,41 +129,22 @@ def completed_stages(connection, run_id):
     )
 
 
-def budget_hook(connection, run_id, plan_id):
-    async def hook(input_data, tool_use_id=None, context=None, *, record_allow=True):
-        """`record_allow=False` is the handler's second check of a call the SDK's hook already
-        allowed and recorded: it records only a denial, so each tool call logs one decision."""
-        reason = None
-        arguments = input_data.get("tool_input", {})
-        done = completed_stages(connection, run_id)
-        expected = next((stage for stage in STAGES if stage not in done), None)
-        approval = read_approval(connection, plan_id)
-        if input_data.get("tool_name") != TOOL_NAME:
-            reason = "Tool is outside the approved plan"
-        elif arguments.get("stage") != expected or set(arguments) != {"stage"}:
-            reason = "Stage is outside the approved sequence"
-        elif not approval or plan_spend(connection, plan_id) >= approval.budget_usd:
-            reason = "Approved budget is exhausted or missing"
-        decision = "deny" if reason else "allow"
-        if reason or record_allow:
-            trace(connection, run_id, "PreToolUse", decision, {"reason": reason})
-            audit(
-                connection,
-                SDK_PRE_TOOL_USE_HOOK,
-                f"{decision}s the tool call ({reason or 'approved stage'})",
-                f"run_stage {arguments.get('stage')}",
-                run_id=run_id,
-                tool=input_data.get("tool_name"),
-            )
-        return {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": decision,
-                "permissionDecisionReason": reason or "Approved stage",
-            }
-        }
+def stage_gate(connection, run_id, plan_id, stage):
+    """The check before every stage: it is the next one in order, and budget remains.
 
-    return hook
+    Returns the reason a stage may not run, or None when it may."""
+    done = completed_stages(connection, run_id)
+    expected = next((item for item in STAGES if item not in done), None)
+    approval = read_approval(connection, plan_id)
+    if stage != expected:
+        reason = "Stage is outside the approved sequence"
+    elif not approval or plan_spend(connection, plan_id) >= approval.budget_usd:
+        reason = "Approved budget is exhausted or missing"
+    else:
+        return None
+    trace(connection, run_id, "stage_gate", "deny", {"stage": stage, "reason": reason})
+    audit(connection, STAGE_GATE, f"blocks the stage ({reason})", stage, run_id=run_id)
+    return reason
 
 
 class GuardedWeb:
@@ -253,13 +235,13 @@ class GuardedWeb:
 
 class Pipeline:
     def __init__(
-        self, connection, run, settings, *, maps=None, exa=None, judge=None, research_query=None
+        self, connection, run, settings, *, maps=None, exa=None, judge=None, agent_query=None
     ):
         self.connection, self.run, self.settings = connection, run, settings
         self.category = load_category_config(settings.category_config_path)
         self.maps, self.exa, self.judge = maps, exa, judge
-        # The Agent SDK entry point for inline research; tests replace it.
-        self.research_query = research_query or query
+        # The Agent SDK entry point for both agents (sourcing, research); tests replace it.
+        self.agent_query = agent_query or query
 
     async def execute(self, stage):
         connection, run_id = self.connection, self.run.run_id
@@ -308,67 +290,85 @@ class Pipeline:
         for cell in read_plan(self.connection, self.run.plan_id).cells:
             if cell.status != "planned":
                 continue
-            attempt = start_cell_attempt(self.connection, self.run.run_id, cell.cell_id, "sample")
-            try:
-                client = self.maps or maps_client(self.settings)
-                sample_limit = min(10, cell.expected_raw_leads)
-                sample_budget = (
-                    cell.estimated_cost_usd
-                    if sample_limit == cell.expected_raw_leads
-                    else cell.estimated_cost_usd / 2
+            total += self.source_cell(cell)["sourced"]
+        return {"sourced": total}
+
+    def source_cell(self, cell):
+        """Sample one cell, grade the sample, and scrape it in full if the grade is PROCEED.
+
+        Planned cells and the cells the sourcing agent adds go through this same path."""
+        attempt = start_cell_attempt(self.connection, self.run.run_id, cell.cell_id, "sample")
+        try:
+            client = self.maps or maps_client(self.settings)
+            sample_limit = min(10, cell.expected_raw_leads)
+            sample_budget = (
+                cell.estimated_cost_usd
+                if sample_limit == cell.expected_raw_leads
+                else cell.estimated_cost_usd / 2
+            )
+            leads = source_maps(
+                self.connection,
+                self.run.run_id,
+                cell,
+                client,
+                limit=sample_limit,
+                ceiling=sample_budget,
+            )
+            verdict, metrics = grade_sample(
+                self.connection,
+                self.run.run_id,
+                cell,
+                leads,
+                category=self.category,
+                with_metrics=True,
+            )
+            if verdict == "PROCEED" and len(leads) < cell.expected_raw_leads:
+                refreshed = next(
+                    item
+                    for item in read_plan(self.connection, self.run.plan_id).cells
+                    if item.cell_id == cell.cell_id
+                )
+                full_attempt = start_cell_attempt(
+                    self.connection, self.run.run_id, cell.cell_id, "full"
                 )
                 leads = source_maps(
                     self.connection,
                     self.run.run_id,
-                    cell,
+                    refreshed,
                     client,
-                    limit=sample_limit,
-                    ceiling=sample_budget,
+                    limit=cell.expected_raw_leads,
+                    ceiling=cell.estimated_cost_usd - sample_budget,
+                    stage="full",
                 )
-                verdict = grade_sample(
-                    self.connection, self.run.run_id, cell, leads, category=self.category
-                )
-                if verdict == "PROCEED" and len(leads) < cell.expected_raw_leads:
-                    refreshed = next(
-                        item
-                        for item in read_plan(self.connection, self.run.plan_id).cells
-                        if item.cell_id == cell.cell_id
-                    )
-                    full_attempt = start_cell_attempt(
-                        self.connection, self.run.run_id, cell.cell_id, "full"
-                    )
-                    leads = source_maps(
-                        self.connection,
-                        self.run.run_id,
-                        refreshed,
-                        client,
-                        limit=cell.expected_raw_leads,
-                        ceiling=cell.estimated_cost_usd - sample_budget,
-                        stage="full",
-                    )
-                    finish_cell_attempt(
-                        self.connection,
-                        full_attempt.attempt_id,
-                        succeeded=True,
-                        leads_found=len(leads),
-                    )
-                    self.connection.execute(
-                        "UPDATE scrape_plan_cells SET status='scraped' WHERE cell_id=%s",
-                        (cell.cell_id,),
-                    )
-                finish_cell_attempt(
-                    self.connection, attempt.attempt_id, succeeded=True, leads_found=len(leads)
-                )
-                total += len(leads)
-            except Exception:
                 finish_cell_attempt(
                     self.connection,
-                    attempt.attempt_id,
-                    succeeded=False,
-                    error="Sourcing failed; inspect provider run before resuming",
+                    full_attempt.attempt_id,
+                    succeeded=True,
+                    leads_found=len(leads),
                 )
-                raise
-        return {"sourced": total}
+                self.connection.execute(
+                    "UPDATE scrape_plan_cells SET status='scraped' WHERE cell_id=%s",
+                    (cell.cell_id,),
+                )
+            finish_cell_attempt(
+                self.connection, attempt.attempt_id, succeeded=True, leads_found=len(leads)
+            )
+        except Exception:
+            finish_cell_attempt(
+                self.connection,
+                attempt.attempt_id,
+                succeeded=False,
+                error="Sourcing failed; inspect provider run before resuming",
+            )
+            raise
+        return {
+            "city": cell.city,
+            "keyword": cell.keyword,
+            "verdict": verdict,
+            "category_purity": round(metrics["category_purity"], 2),
+            "in_market_share": round(metrics["in_market_share"], 2),
+            "sourced": len(leads),
+        }
 
     async def run_exa(self):
         total = 0
@@ -389,6 +389,10 @@ class Pipeline:
             "sourced": total,
             "queries": exa_calls(plan, self.category),
         }
+
+    async def run_adapt(self):
+        """The sourcing agent: add Maps cells or Exa searches if planned sourcing fell short."""
+        return await adapt_sourcing(self, query_fn=self.agent_query)
 
     async def run_extract(self):
         """Read phones and emails off page text already cached by sourcing; no network calls."""
@@ -718,7 +722,7 @@ class Pipeline:
                     self.category,
                     self.settings,
                     web,
-                    query_fn=self.research_query,
+                    query_fn=self.agent_query,
                     judge_client=self.judge,
                 )
             )
@@ -778,7 +782,7 @@ class Pipeline:
 
 
 async def run_plan(
-    connection, plan_id, settings, *, query_fn=query, pipeline_factory=Pipeline, resume=False
+    connection, plan_id, settings, *, query_fn=None, pipeline_factory=Pipeline, resume=False
 ):
     previous = connection.execute(
         "SELECT run_id,status FROM runs WHERE plan_id=%s ORDER BY started_at DESC LIMIT 1",
@@ -813,100 +817,21 @@ async def run_plan(
     else:
         run = start_run(connection, plan_id)
     pipeline = pipeline_factory(connection, run, settings)
-    hook = budget_hook(connection, run.run_id, plan_id)
-
-    stage_failure = None
-    # The orchestrator session's final usage, filed on the run's closing audit row.
-    session = {}
-
-    @tool("run_stage", "Run the next approved pipeline stage", {"stage": str})
-    async def run_stage(arguments):
-        nonlocal stage_failure
-        # Enforce the hook's policy again at the handler boundary.
-        verdict = await hook({"tool_name": TOOL_NAME, "tool_input": arguments}, record_allow=False)
-        if verdict["hookSpecificOutput"]["permissionDecision"] != "allow":
-            raise BudgetBlocked(verdict["hookSpecificOutput"]["permissionDecisionReason"])
-        try:
-            audit(
-                connection,
-                SDK_TOOL_CALL,
-                f"calls run_stage({arguments['stage']!r})",
-                arguments["stage"],
-                run_id=run.run_id,
-                model=settings.leadgen_model,
-            )
-            result = await pipeline.execute(arguments["stage"])
-        except Exception as error:
-            stage_failure = str(error)
-            trace(
-                connection,
-                run.run_id,
-                arguments["stage"],
-                "failed",
-                {"error_type": type(error).__name__},
-            )
-            raise
-        return {"content": [{"type": "text", "text": json.dumps(result)}]}
-
-    server = create_sdk_mcp_server(name="leadgen", tools=[run_stage])
-    ceiling = Decimal("0.08")
+    if query_fn is not None:
+        # The agents' Agent SDK entry point (tests pass a replay).
+        pipeline.agent_query = query_fn
     try:
-        session_number = (
-            connection.execute(
-                "SELECT count(*) FROM budget_reservations WHERE run_id=%s "
-                "AND operation LIKE 'sdk:orchestrator%%'",
-                (run.run_id,),
-            ).fetchone()[0]
-            + 1
-        )
-        with paid_operation(connection, run.run_id, f"sdk:orchestrator:{session_number}", ceiling):
-            options = ClaudeAgentOptions(
-                model=settings.leadgen_model,
-                tools=[],
-                allowed_tools=[TOOL_NAME],
-                mcp_servers={"leadgen": server},
-                strict_mcp_config=True,
-                setting_sources=[],
-                hooks={"PreToolUse": [HookMatcher(hooks=[hook])]},
-                max_turns=settings.leadgen_max_turns,
-                max_budget_usd=float(ceiling),
-                env=sdk_environment(settings),
-                permission_mode="dontAsk",
-                system_prompt="Execute approved stages exactly once in order. Never invent stages.",
-            )
-            result_seen = False
-            remaining_stages = [
-                stage for stage in STAGES if stage not in completed_stages(connection, run.run_id)
-            ]
-            async for message in query_fn(
-                prompt=f"Plan {plan_id}: run remaining stages: {', '.join(remaining_stages)}.",
-                options=options,
-            ):
-                if isinstance(message, ResultMessage):
-                    result_seen = True
-                    session = {
-                        "session_subtype": getattr(message, "subtype", None),
-                        "session_turns": getattr(message, "num_turns", None),
-                        "session_duration_ms": getattr(message, "duration_ms", None),
-                        "session_usage": getattr(message, "usage", None),
-                        "cost_usd": Decimal(str(message.total_cost_usd or 0)),
-                    }
-                    record_cost(
-                        connection,
-                        run.run_id,
-                        "claude",
-                        Decimal(str(message.total_cost_usd or 0)),
-                        model=settings.leadgen_model,
-                        endpoint="orchestrator",
-                    )
-                    if message.is_error:
-                        raise ValueError(
-                            "Agent stopped before completion; inspect traces and credits"
-                        )
-            if not result_seen:
-                raise ValueError("Agent did not report its final usage; reconciliation required")
-        if len(completed_stages(connection, run.run_id)) != len(STAGES):
-            raise ValueError(stage_failure or "Agent ended before all pipeline stages completed")
+        for stage in STAGES:
+            if stage in completed_stages(connection, run.run_id):
+                continue
+            reason = stage_gate(connection, run.run_id, plan_id, stage)
+            if reason:
+                raise BudgetBlocked(reason)
+            try:
+                await pipeline.execute(stage)
+            except Exception as error:
+                trace(connection, run.run_id, stage, "failed", {"error_type": type(error).__name__})
+                raise
         # The completion check: a run is finished only when it leaves nothing open behind it.
         close_out_run(
             connection,
@@ -915,7 +840,7 @@ async def run_plan(
             web_service=web_service_for(settings),
             claude_model=settings.leadgen_model,
         )
-        finish_run(connection, run.run_id, "finished", **session)
+        finish_run(connection, run.run_id, "finished")
     except Exception:
         try:
             # Calls that are over but unpriced settle even when the run fails; only an Apify
@@ -927,7 +852,7 @@ async def run_plan(
                 claude_model=settings.leadgen_model,
             )
         finally:
-            finish_run(connection, run.run_id, "failed", **session)
+            finish_run(connection, run.run_id, "failed")
         raise
     return {
         "run_id": str(run.run_id),

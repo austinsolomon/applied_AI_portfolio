@@ -224,7 +224,9 @@ def on_category(maps_category, category):
     )
 
 
-def grade_sample(connection, run_id, cell, leads, *, category=None, discount=0.15):
+def grade_sample(
+    connection, run_id, cell, leads, *, category=None, discount=0.15, with_metrics=False
+):
     if category is None:
         from leadgen.category_config import load_category_config
 
@@ -278,4 +280,4 @@ def grade_sample(connection, run_id, cell, leads, *, category=None, discount=0.1
         f"{cell.keyword} in {cell.city}",
         run_id=run_id,
     )
-    return verdict
+    return (verdict, metrics) if with_metrics else verdict

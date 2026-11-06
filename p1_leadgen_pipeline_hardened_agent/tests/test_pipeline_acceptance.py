@@ -12,16 +12,15 @@ from claude_agent_sdk import ResultMessage
 from pydantic import SecretStr
 
 from leadgen.audit import ACTORS
-from leadgen.budget import BudgetBlocked, paid_operation, plan_spend, reserve
+from leadgen.budget import BudgetBlocked, paid_operation, plan_spend, record_cost, reserve
 from leadgen.category_config import load_category_config
 from leadgen.orchestrator import (
     STAGES,
-    TOOL_NAME,
     Pipeline,
-    budget_hook,
     build_plan,
     exa_calls,
     run_plan,
+    stage_gate,
 )
 from leadgen.plans import PlannedCell, approve_plan, create_plan, start_run
 from leadgen.qualification import Judgment, judge_lead, validate_judgment
@@ -200,16 +199,16 @@ def test_exa_page_reserves_exa_ceiling_plus_one_firecrawl_render(running):
     assert plan_spend(connection, _plan.plan_id) == Decimal("0.006")
 
 
-def test_hook_denies_unknown_tool_and_out_of_order_stage(running):
+def test_stage_gate_allows_only_the_next_stage_within_budget(running):
     connection, plan, run = running
-    hook = budget_hook(connection, run.run_id, plan.plan_id)
-    for name, stage, expected in [
-        ("Bash", "maps", "deny"),
-        (TOOL_NAME, "crm", "deny"),
-        (TOOL_NAME, "maps", "allow"),
-    ]:
-        verdict = asyncio.run(hook({"tool_name": name, "tool_input": {"stage": stage}}))
-        assert verdict["hookSpecificOutput"]["permissionDecision"] == expected
+    assert stage_gate(connection, run.run_id, plan.plan_id, "crm") == (
+        "Stage is outside the approved sequence"
+    )
+    assert stage_gate(connection, run.run_id, plan.plan_id, "maps") is None
+    record_cost(connection, run.run_id, "apify", Decimal("5"), endpoint="test", units=1)
+    assert stage_gate(connection, run.run_id, plan.plan_id, "maps") == (
+        "Approved budget is exhausted or missing"
+    )
 
 
 def fake_maps():
@@ -549,9 +548,7 @@ def test_pipeline_dedupe_and_crm_share_real_schema(running):
     )
 
 
-def test_sdk_runner_executes_stages_and_rerun_spends_nothing(approved, monkeypatch):
-    import leadgen.orchestrator as orchestrator
-
+def test_runner_executes_stages_in_order_and_rerun_spends_nothing(approved):
     connection, plan = approved
     calls = []
 
@@ -567,44 +564,17 @@ def test_sdk_runner_executes_stages_and_rerun_spends_nothing(approved, monkeypat
             )
             return result
 
-    monkeypatch.setattr(orchestrator, "create_sdk_mcp_server", lambda **kwargs: kwargs)
-
-    async def replay(*, prompt, options):
-        handler = options.mcp_servers["leadgen"]["tools"][0].handler
-        sdk_hook = options.hooks["PreToolUse"][0].hooks[0]
-        assert options.tools == []
-        assert options.max_budget_usd <= 0.08
-        for stage in STAGES:
-            # As the real SDK does: the PreToolUse hook first, then the tool's handler.
-            arguments = {"stage": stage}
-            await sdk_hook({"tool_name": TOOL_NAME, "tool_input": arguments}, None, None)
-            await handler(arguments)
-        yield ResultMessage(
-            subtype="success",
-            duration_ms=1,
-            duration_api_ms=1,
-            is_error=False,
-            num_turns=7,
-            session_id="offline",
-            total_cost_usd=0.001,
-            usage={},
-        )
-
     settings = Settings(anthropic_api_key=SecretStr("offline-only"))
     first = asyncio.run(
-        run_plan(
-            connection, plan.plan_id, settings, query_fn=replay, pipeline_factory=ReplayPipeline
-        )
+        run_plan(connection, plan.plan_id, settings, pipeline_factory=ReplayPipeline)
     )
     second = asyncio.run(
-        run_plan(
-            connection, plan.plan_id, settings, query_fn=replay, pipeline_factory=ReplayPipeline
-        )
+        run_plan(connection, plan.plan_id, settings, pipeline_factory=ReplayPipeline)
     )
     assert calls == list(STAGES)
     assert first["run_id"] == second["run_id"]
     assert second["already_finished"]
-    assert plan_spend(connection, plan.plan_id) == Decimal(".001")
+    assert plan_spend(connection, plan.plan_id) == 0
 
 
 def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_url, monkeypatch):
@@ -647,25 +617,6 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
     exa = Mock()
     exa.search.return_value = SimpleNamespace(cost_dollars={"total": 0.005}, results=[])
     monkeypatch.setattr(orchestrator, "exa_client", lambda settings: exa)
-    monkeypatch.setattr(orchestrator, "create_sdk_mcp_server", lambda **kwargs: kwargs)
-
-    async def replay(*, prompt, options):
-        sdk_hook = options.hooks["PreToolUse"][0].hooks[0]
-        for stage in STAGES:
-            # As the real SDK does: the PreToolUse hook first, then the tool's handler.
-            arguments = {"stage": stage}
-            await sdk_hook({"tool_name": TOOL_NAME, "tool_input": arguments}, None, None)
-            await options.mcp_servers["leadgen"]["tools"][0].handler(arguments)
-        yield ResultMessage(
-            subtype="success",
-            duration_ms=1,
-            duration_api_ms=1,
-            is_error=False,
-            num_turns=7,
-            session_id="offline",
-            total_cost_usd=0.001,
-            usage={},
-        )
 
     def pipeline(connection, run, settings):
         return Pipeline(connection, run, settings, judge=judge)
@@ -673,9 +624,7 @@ def test_real_pipeline_end_to_end_with_fake_providers(approved, empty_database_u
     settings = Settings(
         _env_file=None, database_url=empty_database_url, anthropic_api_key=SecretStr("offline")
     )
-    result = asyncio.run(
-        run_plan(connection, plan.plan_id, settings, query_fn=replay, pipeline_factory=pipeline)
-    )
+    result = asyncio.run(run_plan(connection, plan.plan_id, settings, pipeline_factory=pipeline))
     assert result["stages"]["maps"]["sourced"] == 1
     assert result["stages"]["exa"]["sourced"] == 0
     assert result["stages"]["enrich"]["processed"] == 1
@@ -786,6 +735,77 @@ def test_research_agent_only_runs_for_review(running):
     query.assert_not_called()
 
 
+def test_research_hook_denies_unfound_pages_and_calls_over_the_limit(running, monkeypatch):
+    import leadgen.research_agent as research
+
+    connection, plan, run = running
+    persist_leads(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        "google_maps",
+        [RawLead("hooked", "Birch Planning", phone="3105550143")],
+    )
+    lead = read_raw_leads(connection, run.run_id)[0]
+    lead["qualification"] = {"verdict": "review", "reason": "No CFP® credential named"}
+    web = Mock()
+    web.search.return_value = [SimpleNamespace(url="https://birch.example", description="Birch")]
+    monkeypatch.setattr(research, "create_sdk_mcp_server", lambda **kwargs: kwargs)
+    decisions = []
+
+    async def replay(*, prompt, options):
+        hook = options.hooks["PreToolUse"][0].hooks[0]
+        assert "No CFP® credential named" in prompt
+        calls = [(research.FETCH_TOOL, {"url": "https://unfound.example"})] + [
+            (research.SEARCH_TOOL, {"query": f"Birch planning {n}"}) for n in range(5)
+        ]
+        tools = dict(
+            zip(
+                (research.SEARCH_TOOL, research.FETCH_TOOL),
+                options.mcp_servers["research"]["tools"],
+                strict=True,
+            )
+        )
+        for name, arguments in calls:
+            verdict = await hook({"tool_name": name, "tool_input": arguments}, None, None)
+            decisions.append(verdict["hookSpecificOutput"]["permissionDecision"])
+            if decisions[-1] == "allow":
+                await tools[name].handler(arguments)
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=6,
+            session_id="offline",
+            total_cost_usd=0.001,
+            usage={},
+        )
+
+    judge = Mock()
+    judge.messages.parse.return_value = SimpleNamespace(
+        id="research",
+        usage=SimpleNamespace(input_tokens=100, output_tokens=30),
+        parsed_output=None,
+    )
+    asyncio.run(
+        research.research_lead(
+            connection,
+            run.run_id,
+            lead,
+            "Phoenix",
+            {},
+            load_category_config(),
+            Settings(anthropic_api_key=SecretStr("offline")),
+            web,
+            query_fn=replay,
+            judge_client=judge,
+        )
+    )
+    assert decisions == ["deny", "allow", "allow", "allow", "allow", "deny"]
+    assert web.search.call_count == research.MAX_TOOL_CALLS
+
+
 @pytest.mark.parametrize("subtype", ["success", "error_max_turns"])
 def test_research_loop_rejudges_bounded_evidence(running, monkeypatch, subtype):
     import leadgen.research_agent as research
@@ -889,7 +909,6 @@ def test_audit_trail_records_one_execution_as_who_does_what_to_whom(
     # The execution, in the order it happened.
     milestones = [
         "Postgres (State machine) | run ",
-        "Claude Agent SDK (Tool call) | calls run_stage('maps')",
         "Postgres (State machine) | stage maps started",
         "Apify API (Google Maps) | starts the Google Maps scraper",
         "Python (Sample grader) | grades",
@@ -904,14 +923,12 @@ def test_audit_trail_records_one_execution_as_who_does_what_to_whom(
     positions = [first(milestone) for milestone in milestones]
     assert positions == sorted(positions)
     assert not any("@" in line for line in trail), "no email addresses in the audit trail"
-    # Every row comes from one of the 19 actors, and the trail stays readable: the same fake run
+    # Every row comes from one of the 20 actors, and the trail stays readable: the same fake run
     # wrote 94 rows from 25 actors before the trail was cut down to major steps.
     assert {actor for actor, *_ in rows} <= set(ACTORS)
     assert len(rows) <= 50
-    # One hook decision per tool call: the handler's second check records only a denial.
-    hook_rows = [row for row in rows if row[0] == "Claude Agent SDK (PreToolUse hook)"]
-    tool_calls = [row for row in rows if row[0] == "Claude Agent SDK (Tool call)"]
-    assert len(hook_rows) == len(tool_calls) == len(STAGES)
+    # Plain code runs the stages: no agent session and no hook rows unless an agent runs.
+    assert not any(actor == "Claude Agent SDK (PreToolUse hook)" for actor, *_ in rows)
     # Granted reservations and accepted citations are not rows of their own.
     assert not any(actor == "Postgres (Budget reservation)" for actor, *_ in rows)
     assert not any(actor == "Python (Citation check)" for actor, *_ in rows)
@@ -921,7 +938,6 @@ def test_audit_trail_records_one_execution_as_who_does_what_to_whom(
     )
     # Spend is a detail on the API rows, not a row of its own.
     assert any(actor == "Exa API (Search)" and "cost_usd" in detail for actor, *_, detail in rows)
-    assert "cost_usd" in rows[-1][-1], "the run's closing row carries the session's cost"
 
 
 def test_audit_trail_is_off_unless_asked_for(approved, empty_database_url, monkeypatch):
@@ -1049,9 +1065,11 @@ def test_unconfident_verdict_escalates_to_research_inside_qualification(
     settings = Settings(
         _env_file=None, database_url=empty_database_url, anthropic_api_key=SecretStr("offline")
     )
-    pipeline = Pipeline(connection, run, settings, judge=judge, research_query=research_session)
+    pipeline = Pipeline(connection, run, settings, judge=judge, agent_query=research_session)
     assert asyncio.run(pipeline.run_qualify()) == {"judged": 2}
-    assert sessions == ["Find missing evidence for Unclear Planner in Los Angeles, CA."]
+    assert len(sessions) == 1
+    assert sessions[0].startswith("Find missing evidence for Unclear Planner in Los Angeles, CA.")
+    assert "The judge could not decide:" in sessions[0]
     leads = {lead["business_name"]: lead for lead in read_raw_leads(connection, run.run_id)}
     assert leads["Unclear Planner"]["researched"] and not leads["Clear Planner"]["researched"]
     assert {name: lead["qualification"]["verdict"] for name, lead in leads.items()} == {

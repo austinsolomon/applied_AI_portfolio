@@ -1,7 +1,7 @@
 """Audit trail: the major steps of one execution as "actor → action → target".
 
 Off by default. `leadgen plan --audit` and `leadgen run --audit` set LEADGEN_AUDIT=1, and then
-each major actor writes one row per thing it does. There are exactly 19 actors, each named
+each major actor writes one row per thing it does. There are exactly 20 actors, each named
 "Tool (role)" and listed in `ACTORS` in pipeline order: a person or the weekly policy approving
 the plan, the planner pricing it, the Agent SDK calling a stage tool, the budget reserving money,
 each paid API answering, the code checks grading what came back, and Postgres recording stage
@@ -30,8 +30,9 @@ MAX_TEXT = 600
 HUMAN_APPROVAL = "CLI (Human approval)"
 POLICY_APPROVAL = "Python (Policy approval)"
 PLANNER = "Python (Planner)"
-SDK_TOOL_CALL = "Claude Agent SDK (Tool call)"
+STAGE_GATE = "Python (Stage gate)"
 SDK_PRE_TOOL_USE_HOOK = "Claude Agent SDK (PreToolUse hook)"
+SDK_SOURCING_AGENT = "Claude Agent SDK (Sourcing agent)"
 BUDGET_RESERVATION = "Postgres (Budget reservation)"
 APIFY_GOOGLE_MAPS = "Apify API (Google Maps)"
 SAMPLE_GRADER = "Python (Sample grader)"
@@ -52,12 +53,13 @@ ACTORS = (
     HUMAN_APPROVAL,
     POLICY_APPROVAL,
     PLANNER,
-    SDK_TOOL_CALL,
-    SDK_PRE_TOOL_USE_HOOK,
+    STAGE_GATE,
     BUDGET_RESERVATION,
     APIFY_GOOGLE_MAPS,
     SAMPLE_GRADER,
     EXA_SEARCH,
+    SDK_SOURCING_AGENT,
+    SDK_PRE_TOOL_USE_HOOK,
     EXA_CONTENTS,
     FIRECRAWL_RENDER,
     CONTACT_EXTRACTION,
@@ -150,7 +152,7 @@ def component_for_operation(operation: str) -> str:
     if prefix == "web":
         return EXA_CONTENTS if operation.endswith(":fetch_page") else EXA_SEARCH
     if prefix == "sdk":
-        return SDK_RESEARCH_AGENT if operation.startswith("sdk:research") else SDK_TOOL_CALL
+        return SDK_RESEARCH_AGENT if operation.startswith("sdk:research") else SDK_SOURCING_AGENT
     return {
         "maps": APIFY_GOOGLE_MAPS,
         "exa": EXA_SEARCH,

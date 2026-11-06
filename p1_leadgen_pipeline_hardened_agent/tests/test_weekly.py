@@ -10,12 +10,11 @@ from unittest.mock import Mock
 import httpx
 import pytest
 import respx
-from claude_agent_sdk import ResultMessage
 from pydantic import SecretStr
 
 import leadgen.orchestrator as orchestrator
 from leadgen.demo_seed import seed_demo_data
-from leadgen.orchestrator import STAGES, Pipeline
+from leadgen.orchestrator import Pipeline
 from leadgen.places import load_places
 from leadgen.qualification import Judgment
 from leadgen.settings import Settings
@@ -76,7 +75,7 @@ def offline_judge():
 
 @pytest.fixture
 def fake_providers(monkeypatch):
-    """Apify, Exa, the web and the judge answer offline; the SDK replays every stage in order."""
+    """Apify, Exa, the web and the judge answer offline."""
     from datetime import UTC, datetime
 
     from leadgen.web_research import FetchedPage, WebResearcher
@@ -100,26 +99,11 @@ def fake_providers(monkeypatch):
     monkeypatch.setattr(WebResearcher, "search", lambda *args, **kwargs: [])
     monkeypatch.setattr(orchestrator, "maps_client", lambda settings: fake_maps())
     monkeypatch.setattr(orchestrator, "exa_client", lambda settings: exa)
-    monkeypatch.setattr(orchestrator, "create_sdk_mcp_server", lambda **kwargs: kwargs)
-
-    async def replay(*, prompt, options):
-        for stage in STAGES:
-            await options.mcp_servers["leadgen"]["tools"][0].handler({"stage": stage})
-        yield ResultMessage(
-            subtype="success",
-            duration_ms=1,
-            duration_api_ms=1,
-            is_error=False,
-            num_turns=7,
-            session_id="offline",
-            total_cost_usd=0.001,
-            usage={},
-        )
 
     def pipeline(connection, run, settings):
         return Pipeline(connection, run, settings, judge=judge)
 
-    return {"query_fn": replay, "pipeline_factory": pipeline}
+    return {"pipeline_factory": pipeline}
 
 
 def weekly(connection, settings, the_policy, **options):
@@ -275,7 +259,6 @@ def test_run_settles_a_skipped_unpriced_call_before_it_reports_finished(
         demo,
         offline_settings(empty_database_url),
         policy(),
-        query_fn=fake_providers["query_fn"],
         pipeline_factory=swallowing_pipeline(judge, "web:crm:1:fetch_page"),
     )
     assert exit_code == EXIT_OK and summary["status"] == "finished", summary
@@ -295,7 +278,6 @@ def test_run_that_leaves_an_apify_actor_open_is_never_reported_finished(
         demo,
         offline_settings(empty_database_url),
         policy(),
-        query_fn=fake_providers["query_fn"],
         pipeline_factory=swallowing_pipeline(judge, "maps:99:sample"),
     )
     assert exit_code == EXIT_ERROR and summary["status"] == "failed"
@@ -335,19 +317,20 @@ def test_dry_run_shows_the_plan_and_stores_nothing(demo, empty_database_url):
 
 
 def test_failed_pipeline_reports_error_with_spend(demo, empty_database_url, fake_providers):
-    async def broken(*, prompt, options):
-        raise RuntimeError("SDK session ended")
-        yield  # pragma: no cover
+    def broken(connection, run, settings):
+        pipeline = fake_providers["pipeline_factory"](connection, run, settings)
+
+        async def failing_exa():
+            raise RuntimeError("Exa stage broke")
+
+        pipeline.run_exa = failing_exa
+        return pipeline
 
     exit_code, summary = weekly(
-        demo,
-        offline_settings(empty_database_url),
-        policy(),
-        query_fn=broken,
-        pipeline_factory=fake_providers["pipeline_factory"],
+        demo, offline_settings(empty_database_url), policy(), pipeline_factory=broken
     )
     assert exit_code == EXIT_ERROR and summary["status"] == "failed", summary.get("error")
-    assert "SDK session ended" in summary["error"]
+    assert "Exa stage broke" in summary["error"]
 
 
 def test_slack_post_is_best_effort():

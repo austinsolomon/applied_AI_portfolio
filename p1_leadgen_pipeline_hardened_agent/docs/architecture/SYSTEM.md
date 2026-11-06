@@ -200,7 +200,7 @@ Steps:
 
 Find business homepages with plain-language Exa searches.
 
-Each phrasing in category.yaml runs once per planned city as an Exa search with type auto and category company (25 results). Directories and shared platforms are excluded in the request and again locally. A business found by several phrasings gets a higher query consensus and is processed first. Page text returned with each result is cached for qualification.
+Each phrasing in category.yaml runs once per planned city as an Exa search with type auto and category company (25 results). Directories and shared platforms are excluded in the request and again locally. A business found by several phrasings gets a higher query consensus and is processed first. Page text returned with each result is cached for qualification. If sourcing fell short or a Maps sample was weak, the sourcing agent (Claude Agent SDK) then tries another Maps keyword or city and rewritten Exa queries or other cities, only from the approved cities and keywords, at most 2 Maps cells and 4 searches.
 
 Source: [src/leadgen/sourcing_exa.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/sourcing_exa.py).
 
@@ -209,6 +209,7 @@ Steps:
 1. **Build queries** — Plain-language phrasings × planned cities.
 2. **Search** — Exa company search, directories excluded.
 3. **Combine** — Count query consensus and cache page text.
+4. **Adapt** — Sourcing agent: new keyword or city on Maps, rewritten query or city on Exa.
 
 - **Q-EX1:** Was Exa exercised live? — The earlier seed-lookalike version ran 2026-11-04: 37 businesses, 31% of judged qualified vs 13% from Maps. The plain-language version has not run live yet.
 
@@ -272,23 +273,23 @@ Steps:
 
 ### PIPE · Lead pipeline
 
-Execute the approved stages through one restricted SDK tool.
+Run the approved stages in a fixed order, in plain code.
 
-The pipeline is deliberately collapsed in this view. Its SDK can request only the next permitted stage; it has no shell or arbitrary built-in tools. Open the pipeline perspective to see the individual stages.
+The pipeline is deliberately collapsed in this view. A Python loop runs the stages; a stage gate checks each is next and budget remains. Only two steps are Agent SDK agents, the sourcing agent and the research agent, each limited to its own in-process tools by a PreToolUse hook. Open the pipeline perspective to see the individual stages.
 
 Source: [src/leadgen/orchestrator.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/orchestrator.py).
 
 Steps:
 
 1. **Load approval** — Read the stored plan.
-2. **Run next stage** — Enforce stage order in both the hook and handler.
+2. **Gate the stage** — Next in order and budget remaining.
 3. **Checkpoint** — Persist the stage result before advancing.
 
 ### BG · Budget guard
 
 Reserve budget atomically before each paid operation starts.
 
-The pre-tool hook restricts stage and plan scope. A locked approval row serializes reservations so concurrent workers cannot both spend the same remaining budget. Spent money plus held reservations counts against the plan; model calls also share a 0.75 USD allowance.
+The stage gate restricts stage order; each agent's PreToolUse hook restricts it to the approved cities, keywords and allowances. A locked approval row serializes reservations so concurrent workers cannot both spend the same remaining budget. Spent money plus held reservations counts against the plan; model calls also share a 0.75 USD allowance.
 
 Source: [src/leadgen/budget.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/budget.py).
 
@@ -436,7 +437,7 @@ Steps:
 
 Escalate a review verdict to research in the same job, then judge again.
 
-Inside the qualification job, a review verdict escalates at once: the SDK starts from Tier 1 evidence and can search and fetch discovered URLs, with at most four tool calls and four turns and a small model budget. Saved evidence can be reused during recovery. A turn-limit result is a bounded stop, not permission to restart research. All 32 Phoenix first-pass review cases were researched.
+Inside the qualification job, a review verdict escalates at once: the SDK starts from Tier 1 evidence and is told why the judge could not decide and can search and fetch the URLs its searches found, with at most four tool calls (enforced by a PreToolUse hook) and a small model budget. Saved evidence can be reused during recovery. A turn-limit result is a bounded stop, not permission to restart research. All 32 Phoenix first-pass review cases were researched.
 
 Source: [src/leadgen/research_agent.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/research_agent.py).
 
