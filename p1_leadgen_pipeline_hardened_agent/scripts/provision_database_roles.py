@@ -24,8 +24,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import psycopg
 from psycopg import sql
 
-# The only relations the hosted dashboard may read: market and run aggregates, no contacts.
-DASHBOARD_VIEWS = ("gap_view",)
+from leadgen.run_status import DASHBOARD_VIEWS  # market and run aggregates only, no contacts
 
 APP_GRANTS = [
     "GRANT USAGE ON SCHEMA public TO leadgen_app",

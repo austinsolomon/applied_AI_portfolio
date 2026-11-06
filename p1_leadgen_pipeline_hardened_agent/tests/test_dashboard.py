@@ -239,3 +239,56 @@ def test_audit_rows_are_labelled_with_the_stage_they_ran_in() -> None:
         "Write to CRM",
         "Close-out",
     ]
+
+
+@pytest.fixture
+def read_only_dashboard_role(
+    migrated_connection: psycopg.Connection,
+    empty_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Log the dashboard in as a role that may read only the dashboard views, as in production."""
+    from urllib.parse import urlsplit, urlunsplit
+    from uuid import uuid4
+
+    from psycopg import sql
+
+    from leadgen.run_status import DASHBOARD_VIEWS
+
+    seed_demo_data(migrated_connection)
+    role = f"dashboard_test_{uuid4().hex[:8]}"
+    migrated_connection.execute(
+        sql.SQL("CREATE ROLE {} LOGIN PASSWORD 'dashboard-test'").format(sql.Identifier(role))
+    )
+    database = migrated_connection.info.dbname
+    migrated_connection.execute(
+        sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+            sql.Identifier(database), sql.Identifier(role)
+        )
+    )
+    migrated_connection.execute(
+        sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(role))
+    )
+    for view in DASHBOARD_VIEWS:
+        migrated_connection.execute(
+            sql.SQL("GRANT SELECT ON {} TO {}").format(sql.Identifier(view), sql.Identifier(role))
+        )
+    parts = urlsplit(empty_database_url)
+    host = parts.netloc.rsplit("@", 1)[1]
+    monkeypatch.setenv(
+        "DATABASE_URL", urlunsplit(parts._replace(netloc=f"{role}:dashboard-test@{host}"))
+    )
+    monkeypatch.setenv("LEADGEN_DASHBOARD_MODE", "hosted")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+    migrated_connection.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+    migrated_connection.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+@pytest.mark.usefixtures("read_only_dashboard_role")
+def test_hosted_dashboard_renders_from_views_with_a_read_only_role() -> None:
+    app = render_dashboard()
+
+    assert [tab.label for tab in app.tabs] == ["Demand gaps", "Run history", "Sources and spend"]
+    assert not app.error, [element.value for element in app.error]

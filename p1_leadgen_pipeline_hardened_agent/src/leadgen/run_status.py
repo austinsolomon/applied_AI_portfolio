@@ -170,37 +170,35 @@ def read_run_detail(connection: psycopg.Connection, run_id: UUID) -> RunDetail |
     )
 
 
-RUN_HISTORY_SQL = """
-SELECT
-    r.run_id,
-    r.plan_id,
-    r.status,
-    r.started_at,
-    r.finished_at,
-    a.budget_usd,
-    count(l.raw_lead_id) FILTER (WHERE l.source = 'google_maps') AS maps_sourced,
-    count(l.raw_lead_id) FILTER (WHERE l.source = 'exa') AS exa_sourced,
-    count(l.raw_lead_id) FILTER (WHERE NOT l.duplicate) AS new_leads,
-    count(l.raw_lead_id) FILTER (WHERE l.qualification->>'verdict' = 'qualified') AS qualified,
-    count(l.raw_lead_id) FILTER (WHERE l.qualification->>'verdict' = 'review') AS review,
-    count(l.raw_lead_id) FILTER (WHERE l.qualification->>'verdict' = 'rejected') AS rejected,
-    (SELECT count(*) FROM crm_leads c WHERE c.run_id = r.run_id) AS crm_inserted,
-    (SELECT coalesce(sum(cost_usd), 0) FROM cost_ledger k WHERE k.run_id = r.run_id) AS spend_usd
-FROM runs r
-LEFT JOIN approvals a USING (plan_id)
-LEFT JOIN raw_leads l ON l.run_id = r.run_id
-GROUP BY r.run_id, a.budget_usd
-ORDER BY r.started_at DESC
-LIMIT %s
-"""
+# Dashboard aggregates come from views (migration 0022), the only relations the hosted
+# dashboard's database role may read.
+DASHBOARD_VIEWS = (
+    "gap_view",
+    "run_history_view",
+    "source_yield_view",
+    "consensus_yield_view",
+    "spend_by_service_view",
+)
+
+
+def _rows(connection: psycopg.Connection, query: str, parameters=()) -> list[dict[str, Any]]:
+    with connection.cursor(row_factory=dict_row) as cursor:
+        return cursor.execute(query, parameters).fetchall()
+
+
+def _add_rate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    for row in rows:
+        row["qualified_rate"] = row["qualified"] / row["judged"] if row["judged"] else None
+    return rows
 
 
 def read_run_history(connection: psycopg.Connection, limit: int = 50) -> list[dict[str, Any]]:
     """One summary row per run, newest first, with the market and cost per qualified lead."""
-    with connection.cursor(row_factory=dict_row) as cursor:
-        rows = cursor.execute(RUN_HISTORY_SQL, (limit,)).fetchall()
+    rows = _rows(
+        connection, "SELECT * FROM run_history_view ORDER BY started_at DESC LIMIT %s", (limit,)
+    )
     for row in rows:
-        row["market"] = _market_label(connection, row["plan_id"])
+        row["market"] = row["market"] or ""
         row["cost_per_qualified_usd"] = (
             row["spend_usd"] / row["qualified"] if row["qualified"] else None
         )
@@ -209,52 +207,19 @@ def read_run_history(connection: psycopg.Connection, limit: int = 50) -> list[di
 
 def read_source_yield(connection: psycopg.Connection) -> list[dict[str, Any]]:
     """Per source across all runs: sourced, new, judged, qualified, and qualified ÷ judged."""
-    with connection.cursor(row_factory=dict_row) as cursor:
-        rows = cursor.execute(
-            """
-            SELECT source,
-                   count(*) AS sourced,
-                   count(*) FILTER (WHERE NOT duplicate) AS new_leads,
-                   count(qualification) AS judged,
-                   count(*) FILTER (WHERE qualification->>'verdict' = 'qualified') AS qualified
-            FROM raw_leads GROUP BY source ORDER BY source
-            """
-        ).fetchall()
-    for row in rows:
-        row["qualified_rate"] = row["qualified"] / row["judged"] if row["judged"] else None
-    return rows
+    return _add_rate(_rows(connection, "SELECT * FROM source_yield_view ORDER BY source"))
 
 
 def read_consensus_yield(connection: psycopg.Connection) -> list[dict[str, Any]]:
     """Exa leads by how many query phrasings found them, with qualified ÷ judged for each."""
-    with connection.cursor(row_factory=dict_row) as cursor:
-        rows = cursor.execute(
-            """
-            SELECT query_consensus,
-                   count(*) AS leads,
-                   count(qualification) AS judged,
-                   count(*) FILTER (WHERE qualification->>'verdict' = 'qualified') AS qualified
-            FROM raw_leads WHERE source = 'exa' GROUP BY 1 ORDER BY 1
-            """
-        ).fetchall()
-    for row in rows:
-        row["qualified_rate"] = row["qualified"] / row["judged"] if row["judged"] else None
-    return rows
+    return _add_rate(
+        _rows(connection, "SELECT * FROM consensus_yield_view ORDER BY query_consensus")
+    )
 
 
 def read_spend_by_service(connection: psycopg.Connection) -> list[dict[str, Any]]:
     """All-time spend per service, split into provider-reported and estimated amounts."""
-    with connection.cursor(row_factory=dict_row) as cursor:
-        return cursor.execute(
-            """
-            SELECT service,
-                   count(*) AS calls,
-                   sum(cost_usd) FILTER (WHERE cost_basis <> 'estimated') AS reported_usd,
-                   sum(cost_usd) FILTER (WHERE cost_basis = 'estimated') AS estimated_usd,
-                   sum(cost_usd) AS total_usd
-            FROM cost_ledger GROUP BY service ORDER BY total_usd DESC
-            """
-        ).fetchall()
+    return _rows(connection, "SELECT * FROM spend_by_service_view ORDER BY total_usd DESC")
 
 
 def read_audit_events(connection: psycopg.Connection, plan_id: int) -> list[dict[str, Any]]:
