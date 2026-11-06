@@ -37,9 +37,21 @@ def render_dashboard() -> AppTest:
 
 
 @pytest.mark.usefixtures("dashboard_database")
-def test_demand_columns_are_goal_available_needed_and_percent() -> None:
-    table = render_dashboard().dataframe[0].value
+def test_demand_tab_shows_the_progress_chart_and_no_duplicate_table() -> None:
+    demand_tab = render_dashboard().tabs[0]
+    assert demand_tab.label == "Demand gaps"
+    # Summary metrics, the progress chart (AppTest has no chart element type) and a caption.
+    assert len(demand_tab.children) == 3 and demand_tab.caption
+    assert not demand_tab.dataframe, "the same numbers are not repeated as a table"
 
+
+def test_markets_are_charted_furthest_from_goal_first(migrated_connection) -> None:
+    from leadgen.dashboard import demand_table
+    from leadgen.demo_seed import seed_demo_data
+    from leadgen.gaps import read_market_demand
+
+    seed_demo_data(migrated_connection)
+    table = demand_table(read_market_demand(migrated_connection))
     assert list(table.columns) == [
         "Market",
         "Lead Goal",
@@ -47,12 +59,6 @@ def test_demand_columns_are_goal_available_needed_and_percent() -> None:
         "Leads Needed",
         "Leads Available %",
     ]
-
-
-@pytest.mark.usefixtures("dashboard_database")
-def test_markets_are_listed_furthest_from_goal_first() -> None:
-    table = render_dashboard().dataframe[0].value
-
     rows = table.values.tolist()
     assert rows[:2] == [["Phoenix, AZ", 100, 10, 90, 10], ["Los Angeles, CA", 100, 18, 82, 18]]
     assert rows[-1] == ["Seattle, WA", 100, 100, 0, 100]
