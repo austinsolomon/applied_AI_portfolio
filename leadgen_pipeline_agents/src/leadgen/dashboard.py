@@ -156,15 +156,6 @@ def render_demand(connection: psycopg.Connection) -> None:
     summary_columns[2].metric("Leads needed", sum(market.leads_needed for market in markets))
     table = demand_table(markets)
     streamlit.altair_chart(progress_chart(table), use_container_width=True)
-    streamlit.dataframe(
-        table,
-        hide_index=True,
-        column_config={
-            "Leads Available %": streamlit.column_config.ProgressColumn(
-                "Leads Available %", format="%d%%", min_value=0, max_value=100
-            )
-        },
-    )
     streamlit.caption(
         "Leads Available % = Leads Available ÷ Lead Goal. Leads Needed = Lead Goal − Leads "
         "Available: the new qualified leads the market still needs."

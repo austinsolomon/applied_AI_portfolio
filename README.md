@@ -5,7 +5,7 @@ folder with its own README, design doc, tests and dependencies.
 
 | Project | What it is | Status |
 |---|---|---|
-| [Lead-gen pipeline](p1_leadgen_pipeline_hardened_agent/) | An autonomous lead-generation pipeline: finds the markets furthest below their lead goal, plans and prices the sourcing, gets one approval, then sources, dedupes, enriches, qualifies with cited evidence, and writes qualified leads to the CRM, within a budget | Running weekly on Google Cloud |
+| [Lead-gen pipeline](leadgen_pipeline_agents/) | An autonomous lead-generation pipeline: finds the markets furthest below their lead goal, plans and prices the sourcing, gets one approval, then sources, dedupes, enriches, qualifies with cited evidence, and writes qualified leads to the CRM, within a budget | Running weekly on Google Cloud |
 
 ## Lead-gen pipeline: full-stack architecture
 
@@ -76,7 +76,7 @@ flowchart LR
 - Every run is reproducible from its ledger and audit trail: which stages ran, what each agent
   decided, and what each call cost.
 
-Details: [project README](p1_leadgen_pipeline_hardened_agent/README.md),
-[design](p1_leadgen_pipeline_hardened_agent/docs/design.md),
-[operations runbook](p1_leadgen_pipeline_hardened_agent/docs/operations.md),
-[architecture maps](p1_leadgen_pipeline_hardened_agent/docs/architecture/README.md).
+Details: [project README](leadgen_pipeline_agents/README.md),
+[design](leadgen_pipeline_agents/docs/design.md),
+[operations runbook](leadgen_pipeline_agents/docs/operations.md),
+[architecture maps](leadgen_pipeline_agents/docs/architecture/README.md).

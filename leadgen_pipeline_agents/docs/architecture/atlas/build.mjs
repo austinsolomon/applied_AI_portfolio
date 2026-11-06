@@ -14,7 +14,7 @@ const files = new Map();
 const plain = text => text.replace(/<code>(.*?)<\/code>/g, '`$1`').replace(/<mark>(.*?)<\/mark>/g, '**$1**').replace(/<[^>]+>/g, '');
 const json = value => JSON.stringify(value).replace(/</g, '\\u003c');
 const viewById = Object.fromEntries(VIEWS.map(view => [view.id, view]));
-const sourceUrl = path => `${REPO}/blob/main/p1_leadgen_pipeline_hardened_agent/${path}`;
+const sourceUrl = path => `${REPO}/blob/main/leadgen_pipeline_agents/${path}`;
 
 for (const view of VIEWS) {
   const ids = new Set(view.NODES.map(node => node.id));

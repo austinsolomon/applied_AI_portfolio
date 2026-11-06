@@ -142,7 +142,7 @@ its first live run will replace this row.
 Requires [uv](https://docs.astral.sh/uv/) (it installs the pinned Python version itself) and Docker.
 
 ```bash
-cd p1_leadgen_pipeline_hardened_agent
+cd leadgen_pipeline_agents
 uv sync                       # create .venv from uv.lock
 docker compose up -d --wait db   # local Postgres 16 on 127.0.0.1:5433
 cp .env.example .env          # DATABASE_URL for the local database
