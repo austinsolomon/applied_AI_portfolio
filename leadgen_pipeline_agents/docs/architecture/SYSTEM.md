@@ -12,7 +12,7 @@ Generated from one component catalog. Implementation baseline: [5ac8398](https:/
 
 These maps explain one Python application with one Postgres database. A store shape represents a logical data responsibility, not a separate service. It runs weekly as a Cloud Run Job against Neon Postgres. Packet payloads are representative; live totals are dated observations.
 
-Phoenix, 2026-10-11: **50 sourced → 12 qualified → 10 saved**; 14 rejected and 24 review. Ledger: 1.385297 USD including 0.374400 USD in conservative estimates. See [the sample report](../sample_run.md).
+Phoenix, 2026-11-06: **175 sourced → 45 qualified → 44 saved**; 62 rejected and 30 review. Ledger: 3.199395 USD including 0.040849 USD in conservative estimates. See [the sample report](../sample_run.md).
 
 ## Lead pipeline
 
@@ -31,9 +31,9 @@ How does a market gap become usable leads?
 |---|---|
 | Scope | One category and one approval; configured keyword order. |
 | Identity | Exact normalized keys, including CRM constraints. |
-| Observed result | 2026-10-11: 50 raw → 12 qualified → 10 saved. 2026-11-04 Exa: 37 leads, 31% of judged qualified. |
+| Observed result | 2026-11-06 San Diego, CFP® planners: 175 sourced → 45 qualified → 44 saved, 3.20 USD. |
 
-### Flow: Phoenix campaign
+### Flow: San Diego weekly run
 
 | From | To | Handoff |
 |---|---|---|
@@ -171,7 +171,7 @@ Steps:
 
 Approve the plan and total budget once, before paid work.
 
-The terminal records who approved which plan and its budget. Runtime tools cannot invent new cells or keywords. The Phoenix campaign had a 5 USD total budget and a separate 0.75 USD model allowance.
+The terminal records who approved which plan and its budget. Runtime tools cannot invent new cells or keywords. The San Diego weekly run had a 5 USD total budget, approved by the standing policy, and a separate 0.75 USD model allowance.
 
 Source: [src/leadgen/plans.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/plans.py).
 
@@ -185,7 +185,7 @@ Steps:
 
 Sample, grade and retain businesses from an approved Maps search.
 
-Apify is polled and aborted at the sample count or ceiling; a poll can return extra results. Category purity and distance gate continuation. Partial results are persisted even after abort. The Phoenix campaign yielded 50 businesses.
+Apify is polled and aborted at the sample count or ceiling; a poll can return extra results. Category purity and distance gate continuation. Partial results are persisted even after abort. The San Diego weekly run kept 138 businesses from Maps.
 
 Source: [src/leadgen/sourcing_maps.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/sourcing_maps.py).
 
@@ -260,7 +260,7 @@ Steps:
 
 Save qualified businesses with a usable contact in one transaction.
 
-A qualified decision alone is not enough: at least one usable phone or email is required. Unique keys reject races and normalized duplicates. Contradictions are recorded for later review. Phoenix saved 10 of its 12 qualified businesses; two lacked usable contacts.
+A qualified decision alone is not enough: at least one usable phone or email is required. Unique keys reject races and normalized duplicates. Contradictions are recorded for later review. San Diego saved 44 of its 45 qualified planners; one lacked a usable contact.
 
 Source: [src/leadgen/crm_write.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/crm_write.py).
 
@@ -350,7 +350,7 @@ Steps:
 
 Make spend, latency, blocked work and reconciliations inspectable.
 
-The ledger records provider units and model usage; traces record outcomes. Unknown web charges are marked estimated. The live ledger totaled 1.385297 USD, including 0.374400 USD of conservative Firecrawl estimates. Exact Firecrawl invoice reconciliation remains open.
+The ledger records provider units and model usage; traces record outcomes. Unknown web charges are marked estimated. The San Diego ledger totaled 3.199395 USD, including 0.040849 USD of conservative estimates. Exact Firecrawl invoice reconciliation remains open.
 
 Source: [src/leadgen/budget.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/budget.py).
 
@@ -437,7 +437,7 @@ Steps:
 
 Research each review verdict in its own Review stage, then judge again.
 
-After qualification, the Review stage takes every lead marked review: the review agent (Agent SDK) starts from Tier 1 evidence and is told why the judge could not decide and can search and fetch the URLs its searches found, with at most four tool calls (enforced by a PreToolUse hook) and a small model budget. Saved evidence can be reused during recovery. A turn-limit result is a bounded stop, not permission to restart research. All 32 Phoenix first-pass review cases were researched.
+After qualification, the Review stage takes every lead marked review: the review agent (Agent SDK) starts from Tier 1 evidence and is told why the judge could not decide and can search and fetch the URLs its searches found, with at most four tool calls (enforced by a PreToolUse hook) and a small model budget. Saved evidence can be reused during recovery. A turn-limit result is a bounded stop, not permission to restart research. In San Diego, 39 unresolved leads were researched.
 
 Source: [src/leadgen/research_agent.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/research_agent.py).
 
@@ -452,7 +452,7 @@ Steps:
 
 Let an operator label recorded decisions and contradictions.
 
-All judge decisions are captured, not just the successful ones. Following Hamel Husain's "Your AI Product Needs Evals", the Streamlit review page shows one decision at a time beside its evidence page with the quote highlighted, hides the judge's verdict in blind mode, and records a pass/fail label with a critique, the correct verdict and failure-mode tags. A judge-alignment panel reports per-verdict precision and recall. Phoenix ended with 24 review decisions. Human labels do not automatically retrain or change the model.
+All judge decisions are captured, not just the successful ones. Following Hamel Husain's "Your AI Product Needs Evals", the Streamlit review page shows one decision at a time beside its evidence page with the quote highlighted, hides the judge's verdict in blind mode, and records a pass/fail label with a critique, the correct verdict and failure-mode tags. A judge-alignment panel reports per-verdict precision and recall. San Diego ended with 30 review decisions. Human labels do not automatically retrain or change the model.
 
 Source: [src/leadgen/eval_review.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/eval_review.py).
 
@@ -467,7 +467,7 @@ Steps:
 
 Use reviewed cases and redacted observations to check behavior offline.
 
-Fixture export supports human-labelled cases. The committed Phoenix examples are redacted machine observations, not human-labelled accuracy benchmarks. Tests validate contracts without paid calls; any exported contacts or full pages must be reviewed before committing.
+Fixture export supports human-labelled cases. The committed live examples are redacted machine observations, not human-labelled accuracy benchmarks. Tests validate contracts without paid calls; any exported contacts or full pages must be reviewed before committing.
 
 Source: [tests/test_live_replay.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/tests/test_live_replay.py).
 

@@ -84,7 +84,7 @@ FIRECRAWL_SEARCH_RESPONSE = {
             {
                 "url": "https://pasadena-advisor-directory.example/planners",
                 "title": "Financial planners in Pasadena",
-                "description": "A directory of local therapists.",
+                "description": "A directory of local financial planners.",
             },
         ]
     },
@@ -152,7 +152,7 @@ def test_firecrawl_search_sends_the_query_and_parses_web_results(
         SearchResult(
             "https://pasadena-advisor-directory.example/planners",
             "Financial planners in Pasadena",
-            "A directory of local therapists.",
+            "A directory of local financial planners.",
         ),
     ]
 

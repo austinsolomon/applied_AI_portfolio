@@ -98,19 +98,18 @@ matches on meaning.
   search) and records Exa's reported `cost_dollars`. Observed prices: 0.004 USD for a 10-result
   search without text, 0.007 USD with text, about 0.0001 USD per page of contents.
 
-Live Phoenix comparison, same plan and market (run `f2423f88`, 2026-11-04). Details are in
-[sample run](docs/sample_run.md#exa-live-run--2026-11-04).
+Live results for independent CFP® financial planners: three runs on 2026-11-05 and 2026-11-06
+(Phoenix, Los Angeles, San Diego; the San Diego run started on its own from Cloud Scheduler).
+Details are in [sample run](docs/sample_run.md#cfp-financial-planner-live-runs--2026-11-05-and-2026-11-06).
 
-| Source | Sourced | New after dedupe | Judged | Qualified | Qualified ÷ judged | Sourcing cost (USD) | Sourcing cost per qualified lead |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Google Maps | 18 | 15 | 15 | 2 | 13% | 0.0002* | — |
-| Exa (seed lookalikes)† | 37 | 37 | 35 | 11 | 31% | 0.024 | 0.0022 |
+| Source | Sourced | New after dedupe | Qualified | Qualified ÷ judged | Written to CRM |
+|---|---:|---:|---:|---:|---:|
+| Google Maps | 365 | 300 | 61 | 20% | 58 |
+| Exa company search | 117 | 102 | 43 | 42% | 42 |
 
-\* Apify's reported usage had not settled when it was recorded, so the Maps figure is understated.
-The 2026-10-11 Maps run cost 0.2002 USD for 50 businesses.
-† This run used the earlier seed-lookalike sourcing (`find_similar` on 6 qualified leads). Exa has
-since dropped `find_similar` from its docs, and sourcing now uses plain-language company search;
-its first live run will replace this row.
+The three runs cost 9.72 USD in total for 104 qualified leads (0.09 USD each, all services). Exa
+accounts for 7.45 USD of that because it also supplies the evidence for every lead, from Maps and
+Exa alike: page text with each sourcing result, an on-site search and a web search per lead.
 
 ## Status
 
@@ -130,7 +129,7 @@ its first live run will replace this row.
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
 | Web search and page fetching with a page cache (Exa evidence, Firecrawl rendering only) | done |
 | Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
-| Maps and Exa sourcing, qualification, review, CRM write | done; live runs verified end to end (2026-11-05, massage category); CFP® planner category not yet run live |
+| Maps and Exa sourcing, qualification, review, CRM write | done; three live CFP® planner runs end to end (Phoenix, Los Angeles, San Diego; 104 qualified, 100 written to the CRM) |
 | Eval capture, weekly review page, labels exported as test fixtures | done |
 | Deterministic stage runner, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
 | Two Agent SDK agents: adaptive sourcing (Maps + Exa) and research for unclear leads | done; fake-tested, not yet run live |
