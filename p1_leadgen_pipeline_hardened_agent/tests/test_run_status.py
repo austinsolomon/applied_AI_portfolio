@@ -18,6 +18,7 @@ def test_a_running_run_marks_the_next_stage_running_and_the_rest_waiting():
         "waiting",
         "waiting",
         "waiting",
+        "waiting",
     ]
 
 
@@ -28,7 +29,7 @@ def test_a_failed_run_is_blocked_only_while_a_paid_call_is_unresolved():
 
 
 def test_a_finished_run_shows_every_stage_done():
-    stages = ("maps", "exa", "adapt", "extract", "dedupe", "enrich", "qualify", "crm")
+    stages = ("maps", "exa", "adapt", "extract", "dedupe", "enrich", "qualify", "review", "crm")
     completed = {stage: ({}, None) for stage in stages}
     assert set(statuses("finished", completed)) == {"done"}
 

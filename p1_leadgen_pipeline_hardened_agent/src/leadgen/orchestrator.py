@@ -56,7 +56,7 @@ from leadgen.web_research import (
     build_web_researcher,
 )
 
-STAGES = ("maps", "exa", "adapt", "extract", "dedupe", "enrich", "qualify", "crm")
+STAGES = ("maps", "exa", "adapt", "extract", "dedupe", "enrich", "qualify", "review", "crm")
 
 
 def build_plan(connection, category, *, max_cities=1, max_keywords=1, target=50, market=None):
@@ -670,14 +670,8 @@ class Pipeline:
                     self.settings,
                     client=self.judge,
                 )
-                verdict = judgment.verdict
-                if verdict == "review":
-                    # Not confident: escalate this lead to bounded research now, inside the same
-                    # job, starting from the evidence tier 1 already gathered.
-                    verdict = self.research_inline(
-                        connection, lead["raw_lead_id"], market, evidence
-                    )
-                return {"verdict": verdict, "researched": judgment.verdict == "review"}
+                # A "review" verdict waits for the Review stage, which researches it.
+                return {"verdict": judgment.verdict}
 
         async def handler(job):
             return await asyncio.to_thread(qualify_one, job)
@@ -691,7 +685,90 @@ class Pipeline:
         )
         if report.failed:
             raise ValueError("Qualification jobs failed; inspect cell_jobs and provider usage")
-        return {"judged": report.succeeded}
+        return {"judged": report.succeeded, **self.verdict_counts(("qualified", "rejected"))}
+
+    def verdict_counts(self, verdicts):
+        counts = dict(
+            self.connection.execute(
+                "SELECT qualification->>'verdict', count(*) FROM raw_leads "
+                "WHERE run_id=%s AND NOT duplicate AND qualification IS NOT NULL GROUP BY 1",
+                (self.run.run_id,),
+            ).fetchall()
+        )
+        result = {verdict: counts.get(verdict, 0) for verdict in verdicts}
+        if "qualified" in verdicts and "review" not in verdicts:
+            result["to_review"] = counts.get("review", 0)
+        return result
+
+    async def run_review(self):
+        """Research every lead the judge marked review, then judge it again.
+
+        Each ends Qualified, Rejected, or Human escalation: still unclear after research, or the
+        research itself failed. The stored verdict for a human escalation stays "review"."""
+        leads = [
+            lead
+            for lead in read_raw_leads(self.connection, self.run.run_id, by_consensus=True)
+            if not lead["duplicate"]
+            and lead["qualification"]
+            and lead["qualification"]["verdict"] == "review"
+            and not lead["researched"]
+        ]
+        requeue_failed_jobs(self.connection, self.run.run_id, "review")
+        enqueue_jobs(
+            self.connection,
+            self.run.run_id,
+            "review",
+            [
+                JobSpec(str(lead["raw_lead_id"]), {"lead": lead["raw_lead_id"]}, max_attempts=1)
+                for lead in leads
+            ],
+        )
+
+        def review_one(job):
+            with connect(str(self.settings.database_url)) as connection:
+                lead_id = job.payload["lead"]
+                market, evidence = self.tier_one_evidence(connection, lead_id)
+                return {"verdict": self.research_inline(connection, lead_id, market, evidence)}
+
+        async def handler(job):
+            return await asyncio.to_thread(review_one, job)
+
+        report = await run_worker_pool(
+            str(self.settings.database_url),
+            handler,
+            run_id=self.run.run_id,
+            kinds=["review"],
+            concurrency=2,
+        )
+        if report.failed:
+            raise ValueError("Review jobs failed; inspect cell_jobs and provider usage")
+        counts = self.verdict_counts(("qualified", "rejected", "review"))
+        return {
+            "reviewed": report.succeeded,
+            "qualified": counts["qualified"],
+            "rejected": counts["rejected"],
+            "human_escalated": counts["review"],
+        }
+
+    def tier_one_evidence(self, connection, raw_lead_id):
+        """The market and evidence the first judgment read, from its eval record."""
+        row = connection.execute(
+            "SELECT evidence->'sources', evidence->>'market' FROM eval_records "
+            "WHERE run_id=%s AND kind='judge_decision' AND evidence->>'tier'='1' "
+            "AND evidence->>'raw_lead_id'=%s ORDER BY eval_record_id DESC LIMIT 1",
+            (self.run.run_id, str(raw_lead_id)),
+        ).fetchone()
+        lead = next(
+            item
+            for item in read_raw_leads(connection, self.run.run_id)
+            if item["raw_lead_id"] == raw_lead_id
+        )
+        if row and row[1]:
+            return row[1], row[0] or {}
+        name, state = connection.execute(
+            "SELECT name,state FROM markets WHERE market_id=%s", (lead["market_id"],)
+        ).fetchone()
+        return f"{name}, {state}", (row and row[0]) or {}
 
     def research_inline(self, connection, raw_lead_id, market, evidence):
         """Run the research agent for one review lead and return its final verdict."""
@@ -703,7 +780,7 @@ class Pipeline:
         audit(
             connection,
             SDK_RESEARCH_AGENT,
-            "starts research (tier 1 said review)",
+            "starts review research (tier 1 said review)",
             lead["business_name"],
             run_id=self.run.run_id,
             reason=lead["qualification"]["reason"],

@@ -231,7 +231,9 @@ def render_run(connection: psycopg.Connection) -> None:
 
 
 def history_table(rows: list[dict]) -> pandas.DataFrame:
-    return pandas.DataFrame(
+    """New = Qualified + Rejected + Human escalated (+ Not judged, shown only when a run left
+    leads unjudged). Human escalated: still unclear after the Review stage, for a person."""
+    table = pandas.DataFrame(
         [
             {
                 "Started": row["started_at"].strftime("%Y-%m-%d %H:%M"),
@@ -241,8 +243,9 @@ def history_table(rows: list[dict]) -> pandas.DataFrame:
                 "Exa": row["exa_sourced"],
                 "New": row["new_leads"],
                 "Qualified": row["qualified"],
-                "Review": row["review"],
                 "Rejected": row["rejected"],
+                "Human escalated": row["human_escalated"],
+                "Not judged": row["not_judged"],
                 "In CRM": row["crm_inserted"],
                 "Spend": usd(row["spend_usd"]),
                 "Budget": usd(row["budget_usd"]),
@@ -252,6 +255,9 @@ def history_table(rows: list[dict]) -> pandas.DataFrame:
             for row in rows
         ]
     )
+    if rows and not table["Not judged"].any():
+        table = table.drop(columns="Not judged")
+    return table
 
 
 def render_history(connection: psycopg.Connection) -> None:

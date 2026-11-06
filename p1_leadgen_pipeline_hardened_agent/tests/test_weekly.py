@@ -149,6 +149,7 @@ def test_unattended_run_is_approved_by_the_policy_and_completes(
     )
     assert summary["sourced"] == {"google_maps": 1, "exa": 0}
     assert (summary["qualified"], summary["crm_inserted"]) == (1, 1)
+    assert summary["human_escalated"] == 0 and "review" not in summary
     assert Decimal(summary["spend_usd"]) <= Decimal(summary["budget_usd"])
     assert set(summary["spend_by_service"]) >= {"apify", "exa", "claude"}
     stored = demo.execute("SELECT details FROM traces WHERE operation='weekly'").fetchone()[0]

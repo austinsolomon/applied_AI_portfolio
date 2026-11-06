@@ -269,6 +269,8 @@ def judge_lead(
                 "sources": evidence,
                 "judgment": judgment.model_dump(),
                 "tier": tier,
+                # The Review stage resumes from exactly the evidence tier 1 read.
+                "raw_lead_id": lead.get("raw_lead_id"),
                 "source": lead.get("source"),
                 "query_consensus": lead.get("query_consensus"),
                 "market": market,

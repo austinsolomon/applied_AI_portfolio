@@ -166,6 +166,7 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
         "Dedupe",
         "Enrich contacts",
         "Qualify",
+        "Review",
         "Write to CRM",
     ]
     positions = [track.index(f"{number}. {label}") for number, label in enumerate(labels, 1)]
@@ -173,7 +174,7 @@ def test_current_run_shows_each_stage_and_flags_the_human_step(
     stage_cells = track.split('<div style="flex:1')[1:]
     assert "#1840ED" in stage_cells[1] and "done" in stage_cells[1]  # Exa search: blue
     assert "needs a human" in stage_cells[2]
-    assert "#E3E5EA" in stage_cells[7] and "waiting" in stage_cells[7]  # CRM: still gray
+    assert "#E3E5EA" in stage_cells[8] and "waiting" in stage_cells[8]  # CRM: still gray
     # The open-call note is a small caption under the run's numbers, never a banner on top.
     assert not app.warning
     assert any("web:tier1:1:1:fetch_page" in caption.value for caption in app.caption)
@@ -342,3 +343,43 @@ def test_operator_dashboard_shows_every_tab_and_may_write_only_labels(
             operator.execute("DELETE FROM crm_leads")
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             operator.execute("CREATE TABLE operator_check (x int)")
+
+
+def test_run_history_sorts_new_leads_into_qualified_rejected_and_human_escalated() -> None:
+    from datetime import datetime
+    from decimal import Decimal
+
+    from leadgen.dashboard import history_table
+
+    def row(**counts):
+        base = {
+            "started_at": datetime(2026, 11, 6, 8, 0),
+            "market": "San Diego, CA",
+            "status": "finished",
+            "maps_sourced": 138,
+            "exa_sourced": 37,
+            "new_leads": 137,
+            "qualified": 45,
+            "rejected": 62,
+            "human_escalated": 30,
+            "not_judged": 0,
+            "crm_inserted": 44,
+            "spend_usd": Decimal("3.20"),
+            "budget_usd": Decimal("5"),
+            "cost_per_qualified_usd": Decimal("0.07"),
+            "run_id": "6f8dd39e-e101",
+        }
+        return {**base, **counts}
+
+    table = history_table([row()])
+    assert "Review" not in table.columns and "Not judged" not in table.columns
+    first = table.iloc[0]
+    assert first["New"] == first["Qualified"] + first["Rejected"] + first["Human escalated"]
+    # A run that left leads unjudged shows them, so the columns still add up to New.
+    unfinished = history_table([row(), row(new_leads=140, not_judged=3)]).iloc[1]
+    assert unfinished["New"] == (
+        unfinished["Qualified"]
+        + unfinished["Rejected"]
+        + unfinished["Human escalated"]
+        + unfinished["Not judged"]
+    )

@@ -185,7 +185,7 @@ def summarize(connection, plan_id: int, budget_usd: Decimal) -> dict:
             "SELECT count(*) FROM raw_leads WHERE run_id=%s AND duplicate", (run_id,)
         ).fetchone()[0],
         "qualified": verdicts.get("qualified", 0),
-        "review": verdicts.get("review", 0),
+        "human_escalated": verdicts.get("review", 0),
         "rejected": verdicts.get("rejected", 0),
         "not_judged": verdicts.get("not judged", 0),
         "crm_inserted": (crm[0] or {}).get("inserted", 0) if crm else 0,

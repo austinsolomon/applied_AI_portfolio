@@ -99,7 +99,7 @@ def test_audit_never_raises_on_a_broken_connection(migrated_connection, monkeypa
         ("web:tier1:7:1:fetch_page", "Exa API (Contents)"),
         ("judge:1:7", "Claude API (LLM call)"),
         ("sdk:sourcing:1", "Claude Agent SDK (Sourcing agent)"),
-        ("sdk:research:7", "Claude Agent SDK (Research agent)"),
+        ("sdk:research:7", "Claude Agent SDK (Review agent)"),
         ("enrich:7", "BlitzAPI (Enrichment)"),
     ],
 )
