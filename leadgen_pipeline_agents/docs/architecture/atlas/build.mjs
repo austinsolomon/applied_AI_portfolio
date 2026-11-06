@@ -60,7 +60,7 @@ const lines = ['# P1 architecture — three connected perspectives', '',
   `Generated from one component catalog. Implementation baseline: [${BUILD}](${REPO}/commit/${BUILD}).`, '',
   '## Explore', '', ...VIEWS.map(view => `- [${view.title}](${view.file}) — ${view.question}`), '',
   '## Boundaries', '',
-  'These maps explain one Python application with one Postgres database. A store shape represents a logical data responsibility, not a separate service. Cloud deployment is planned. Packet payloads are representative; live totals are dated observations.', '',
+  'These maps explain one Python application with one Postgres database. A store shape represents a logical data responsibility, not a separate service. It runs weekly as a Cloud Run Job against Neon Postgres. Packet payloads are representative; live totals are dated observations.', '',
   `Phoenix, ${SAMPLE.date}: **${SAMPLE.sourced} sourced → ${SAMPLE.qualified} qualified → ${SAMPLE.saved} saved**; ${SAMPLE.rejected} rejected and ${SAMPLE.review} review. Ledger: ${SAMPLE.ledger_usd} USD including ${SAMPLE.estimated_usd} USD in conservative estimates. See [the sample report](../sample_run.md).`, ''];
 for (const view of VIEWS) {
   lines.push(`## ${view.title}`, '', view.question, '', '### Chapters', '');

@@ -1101,8 +1101,8 @@ def test_review_stage_researches_unconfident_verdicts_after_qualification(
 @pytest.mark.parametrize(
     "domain,public",
     [
-        ("anthonyserrano.", False),
-        ("anthonyserrano", False),
+        ("jordanexample.", False),
+        ("jordanexample", False),
         ("", False),
         ("anna-planning.com", True),
         ("anna.square.site", True),
@@ -1121,7 +1121,7 @@ def test_exa_skips_a_result_whose_host_has_no_top_level_domain(running):
         cost_dollars=SimpleNamespace(total=0.007),
         results=[
             SimpleNamespace(
-                url="https://anthonyserrano./", title="Anthony Serrano Planning", text=""
+                url="https://jordanexample./", title="Jordan Example Planning", text=""
             ),
             SimpleNamespace(url="https://anna-planning.com/", title="Anna Planning", text=""),
         ],
