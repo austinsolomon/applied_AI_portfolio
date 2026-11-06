@@ -31,7 +31,7 @@ representative packet. Click a moving packet to pause it. Pan, zoom, and switch 
 
 The pipeline cube in safeguards opens the stage map. Qualification opens the evidence map.
 Shared components such as page cache link between views. Stores represent logical data roles in
-one Postgres database, not separate services. Cloud deployment is visibly marked planned.
+one Postgres database, not separate services. Cloud deployment (Cloud Run Jobs, Cloud Scheduler, Neon) is shown as built.
 
 ## Maintain the maps
 

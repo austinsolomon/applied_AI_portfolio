@@ -10,7 +10,7 @@ Generated from one component catalog. Implementation baseline: [5ac8398](https:/
 
 ## Boundaries
 
-These maps explain one Python application with one Postgres database. A store shape represents a logical data responsibility, not a separate service. Cloud deployment is planned. Packet payloads are representative; live totals are dated observations.
+These maps explain one Python application with one Postgres database. A store shape represents a logical data responsibility, not a separate service. It runs weekly as a Cloud Run Job against Neon Postgres. Packet payloads are representative; live totals are dated observations.
 
 Phoenix, 2026-10-11: **50 sourced → 12 qualified → 10 saved**; 14 rejected and 24 review. Ledger: 1.385297 USD including 0.374400 USD in conservative estimates. See [the sample report](../sample_run.md).
 
@@ -366,7 +366,7 @@ Steps:
 
 Ship the same locked package in a tested non-root container.
 
-CI runs lint, secret scanning, migrations, fake-provider tests, container builds and image smoke checks. The live-tested build had 356 passing tests. Provider credentials are absent from CI; the image excludes the local environment file. This does not constitute cloud deployment.
+CI runs lint, secret scanning, migrations, fake-provider tests, container builds and image smoke checks. The live-tested build had 356 passing tests. Provider credentials are absent from CI; the image excludes the local environment file. Deploys go to Cloud Run Jobs through GitHub Actions and Workload Identity Federation.
 
 Source: [Dockerfile](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/Dockerfile).
 

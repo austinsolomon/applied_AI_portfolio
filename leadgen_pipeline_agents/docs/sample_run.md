@@ -93,7 +93,7 @@ contacts and pages remain in Postgres; no business phone numbers or emails are i
 | Provider dollar reconciliation | Apify settled usage reconciled; model usage captured; Firecrawl estimates remain unresolved against an invoice |
 | Key/credit failures give plain messages | Mocked invalid-key, empty-balance and CLI failure tests |
 
-Cloud deployment, scheduling and secret management remain out of scope. The Exa network path was
+Cloud deployment, scheduling and secret management were out of scope for this sample (they are now deployed; see [operations](operations.md#production-deployment)). The Exa network path was
 covered by fakes but was not exercised by this live sample; see the Exa live run below. This run validates the pipeline and
 recovery mechanisms; it is not a claim of unattended cloud production readiness.
 
