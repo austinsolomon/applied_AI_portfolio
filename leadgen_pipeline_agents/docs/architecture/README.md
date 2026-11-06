@@ -17,7 +17,7 @@ The maps are static HTML with no runtime dependencies or external requests. GitH
 source, so open them locally in a browser or serve the project docs:
 
 ```bash
-# From p1_leadgen_pipeline_hardened_agent/
+# From leadgen_pipeline_agents/
 python3 -m http.server 8767 --bind 127.0.0.1 --directory docs
 ```
 

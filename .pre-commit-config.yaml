@@ -22,13 +22,13 @@ repos:
     hooks:
       - id: ruff-check-p1
         name: ruff check (p1)
-        entry: uv run --project p1_leadgen_pipeline_hardened_agent ruff check --fix
+        entry: uv run --project leadgen_pipeline_agents ruff check --fix
         language: system
         types: [python]
-        files: ^p1_leadgen_pipeline_hardened_agent/
+        files: ^leadgen_pipeline_agents/
       - id: ruff-format-p1
         name: ruff format (p1)
-        entry: uv run --project p1_leadgen_pipeline_hardened_agent ruff format
+        entry: uv run --project leadgen_pipeline_agents ruff format
         language: system
         types: [python]
-        files: ^p1_leadgen_pipeline_hardened_agent/
+        files: ^leadgen_pipeline_agents/

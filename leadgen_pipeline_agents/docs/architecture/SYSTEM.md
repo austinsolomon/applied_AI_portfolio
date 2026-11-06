@@ -146,7 +146,7 @@ Find the market furthest below its available-lead goal.
 
 The dashboard and planner read the same Postgres demand view. Low coverage determines where to look next; the model does not invent a market.
 
-Source: [src/leadgen/gaps.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/gaps.py).
+Source: [src/leadgen/gaps.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/gaps.py).
 
 Steps:
 
@@ -159,7 +159,7 @@ Turn a real market into priced city and keyword cells.
 
 Census places supply the geography. The operator sets the raw target and city/keyword caps; reviewed configuration supplies keyword order. Learned keyword ranking is not implemented.
 
-Source: [src/leadgen/orchestrator.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/orchestrator.py).
+Source: [src/leadgen/orchestrator.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/orchestrator.py).
 
 Steps:
 
@@ -173,7 +173,7 @@ Approve the plan and total budget once, before paid work.
 
 The terminal records who approved which plan and its budget. Runtime tools cannot invent new cells or keywords. The Phoenix campaign had a 5 USD total budget and a separate 0.75 USD model allowance.
 
-Source: [src/leadgen/plans.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/plans.py).
+Source: [src/leadgen/plans.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/plans.py).
 
 Steps:
 
@@ -187,7 +187,7 @@ Sample, grade and retain businesses from an approved Maps search.
 
 Apify is polled and aborted at the sample count or ceiling; a poll can return extra results. Category purity and distance gate continuation. Partial results are persisted even after abort. The Phoenix campaign yielded 50 businesses.
 
-Source: [src/leadgen/sourcing_maps.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/sourcing_maps.py).
+Source: [src/leadgen/sourcing_maps.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/sourcing_maps.py).
 
 Steps:
 
@@ -202,7 +202,7 @@ Find business homepages with plain-language Exa searches.
 
 Each phrasing in category.yaml runs once per planned city as an Exa search with type auto and category company (25 results). Directories and shared platforms are excluded in the request and again locally. A business found by several phrasings gets a higher query consensus and is processed first. Page text returned with each result is cached for qualification. If sourcing fell short or a Maps sample was weak, the sourcing agent (Claude Agent SDK) then tries another Maps keyword or city and rewritten Exa queries or other cities, only from the approved cities and keywords, at most 2 Maps cells and 4 searches.
 
-Source: [src/leadgen/sourcing_exa.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/sourcing_exa.py).
+Source: [src/leadgen/sourcing_exa.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/sourcing_exa.py).
 
 Steps:
 
@@ -219,7 +219,7 @@ Drop known businesses before enrichment and qualification.
 
 Exact normalized place ID, phone, email and domain keys are compared against the CRM and the current batch. Shared hosting domains do not count as business identity. Cross-run rejected-lead memory is not part of this pipeline.
 
-Source: [src/leadgen/dedupe.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/dedupe.py).
+Source: [src/leadgen/dedupe.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/dedupe.py).
 
 Steps:
 
@@ -233,7 +233,7 @@ Use existing contacts first, then a cached Blitz lookup if needed.
 
 This is a plain function, not an agent. Two workers process enrichment jobs. Domain results are cached; existing phone or email data avoids unnecessary provider work.
 
-Source: [src/leadgen/contacts.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/contacts.py).
+Source: [src/leadgen/contacts.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/contacts.py).
 
 Steps:
 
@@ -247,7 +247,7 @@ Decide eligibility from cited service and market evidence.
 
 A fixed gather and structured judge handle the first pass. Only review cases enter bounded agent research. Mechanical checks establish citation provenance; human review is still needed to assess accuracy.
 
-Source: [src/leadgen/qualification.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/qualification.py).
+Source: [src/leadgen/qualification.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/qualification.py).
 
 Steps:
 
@@ -262,7 +262,7 @@ Save qualified businesses with a usable contact in one transaction.
 
 A qualified decision alone is not enough: at least one usable phone or email is required. Unique keys reject races and normalized duplicates. Contradictions are recorded for later review. Phoenix saved 10 of its 12 qualified businesses; two lacked usable contacts.
 
-Source: [src/leadgen/crm_write.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/crm_write.py).
+Source: [src/leadgen/crm_write.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/crm_write.py).
 
 Steps:
 
@@ -277,7 +277,7 @@ Run the approved stages in a fixed order, in plain code.
 
 The pipeline is deliberately collapsed in this view. A Python loop runs the stages; a stage gate checks each is next and budget remains. Only two steps are Agent SDK agents, the sourcing agent and the research agent, each limited to its own in-process tools by a PreToolUse hook. Open the pipeline perspective to see the individual stages.
 
-Source: [src/leadgen/orchestrator.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/orchestrator.py).
+Source: [src/leadgen/orchestrator.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/orchestrator.py).
 
 Steps:
 
@@ -291,7 +291,7 @@ Reserve budget atomically before each paid operation starts.
 
 The stage gate restricts stage order; each agent's PreToolUse hook restricts it to the approved cities, keywords and allowances. A locked approval row serializes reservations so concurrent workers cannot both spend the same remaining budget. Spent money plus held reservations counts against the plan; model calls also share a 0.75 USD allowance.
 
-Source: [src/leadgen/budget.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/budget.py).
+Source: [src/leadgen/budget.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/budget.py).
 
 Steps:
 
@@ -308,7 +308,7 @@ Keep checkpoints and uncertain outcomes across process failure.
 
 Completed stages are skipped. A finished plan returns without provider calls. Failed runs require explicit resume, and unresolved paid operations block that resume. An operator must reconcile ambiguous outcomes rather than simply retrying a request.
 
-Source: [src/leadgen/orchestrator.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/orchestrator.py).
+Source: [src/leadgen/orchestrator.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/orchestrator.py).
 
 Steps:
 
@@ -323,7 +323,7 @@ Give each job to one worker and fence stale completions.
 
 Postgres SKIP LOCKED claims jobs concurrently. Completion requires the owning worker and attempt number. General jobs can retry with jitter; paid pipeline jobs use one attempt because a timeout may already have consumed credits. Enrichment uses two workers and qualification uses four.
 
-Source: [src/leadgen/job_queue.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/job_queue.py).
+Source: [src/leadgen/job_queue.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/job_queue.py).
 
 Steps:
 
@@ -338,7 +338,7 @@ Reuse a fetched page for seven days before paying to fetch again.
 
 Pages are stored by normalized URL in the same Postgres database. Exa search and contents, Firecrawl (only for pages Exa cannot read) and the free fallback share a web interface. Local free fetching rejects internal destinations, checks redirects and caps response size. The cache is not a distributed single-flight lock.
 
-Source: [src/leadgen/web_research.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/web_research.py).
+Source: [src/leadgen/web_research.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/web_research.py).
 
 Steps:
 
@@ -352,7 +352,7 @@ Make spend, latency, blocked work and reconciliations inspectable.
 
 The ledger records provider units and model usage; traces record outcomes. Unknown web charges are marked estimated. The live ledger totaled 1.385297 USD, including 0.374400 USD of conservative Firecrawl estimates. Exact Firecrawl invoice reconciliation remains open.
 
-Source: [src/leadgen/budget.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/budget.py).
+Source: [src/leadgen/budget.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/budget.py).
 
 Steps:
 
@@ -368,7 +368,7 @@ Ship the same locked package in a tested non-root container.
 
 CI runs lint, secret scanning, migrations, fake-provider tests, container builds and image smoke checks. The live-tested build had 356 passing tests. Provider credentials are absent from CI; the image excludes the local environment file. This does not constitute cloud deployment.
 
-Source: [Dockerfile](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/Dockerfile).
+Source: [Dockerfile](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/Dockerfile).
 
 Steps:
 
@@ -383,7 +383,7 @@ Run the weekly job on Google Cloud against hosted Postgres.
 
 Cloud Scheduler starts the leadgen-weekly Cloud Run Job on Fridays at 08:00 Pacific; it reads its keys from Secret Manager and logs in to Neon Postgres as a rows-only role. GitHub Actions deploys through Workload Identity Federation and migrates first. The schedule stays paused until a supervised first cloud run.
 
-Source: [docs/operations.md](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/docs/operations.md).
+Source: [docs/operations.md](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/docs/operations.md).
 
 Steps:
 
@@ -397,7 +397,7 @@ Collect bounded evidence from business pages and one search.
 
 Tier 1 reads the homepage (Exa contents, usually cached at sourcing), searches the business’s own site, and runs one open Exa search, through the shared web interface. Firecrawl renders only pages Exa returns no text for. It limits the evidence block to 18,000 characters. Web text is untrusted data, not instructions for the agent.
 
-Source: [src/leadgen/qualification.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/qualification.py).
+Source: [src/leadgen/qualification.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/qualification.py).
 
 Steps:
 
@@ -411,7 +411,7 @@ Return qualified, rejected or review with a reason and citation.
 
 A single Messages API call returns a typed decision: verdict, reason, evidence quote, source URL, eligible services and market coverage. Missing evidence or incomplete output stays review. The live run used Haiku 5.5; model choice is separate from deterministic validation.
 
-Source: [src/leadgen/qualification.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/qualification.py).
+Source: [src/leadgen/qualification.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/qualification.py).
 
 Steps:
 
@@ -425,7 +425,7 @@ Verify the cited quote and eligibility fields before accepting qualification.
 
 A qualified result needs an exact quote in a supplied URL, an eligible service and affirmative market coverage. Failed checks downgrade it to review; an explicit market no becomes rejected. This proves provenance, not that every model interpretation is correct.
 
-Source: [src/leadgen/qualification.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/qualification.py).
+Source: [src/leadgen/qualification.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/qualification.py).
 
 Steps:
 
@@ -439,7 +439,7 @@ Research each review verdict in its own Review stage, then judge again.
 
 After qualification, the Review stage takes every lead marked review: the review agent (Agent SDK) starts from Tier 1 evidence and is told why the judge could not decide and can search and fetch the URLs its searches found, with at most four tool calls (enforced by a PreToolUse hook) and a small model budget. Saved evidence can be reused during recovery. A turn-limit result is a bounded stop, not permission to restart research. All 32 Phoenix first-pass review cases were researched.
 
-Source: [src/leadgen/research_agent.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/research_agent.py).
+Source: [src/leadgen/research_agent.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/research_agent.py).
 
 Steps:
 
@@ -454,7 +454,7 @@ Let an operator label recorded decisions and contradictions.
 
 All judge decisions are captured, not just the successful ones. Following Hamel Husain's "Your AI Product Needs Evals", the Streamlit review page shows one decision at a time beside its evidence page with the quote highlighted, hides the judge's verdict in blind mode, and records a pass/fail label with a critique, the correct verdict and failure-mode tags. A judge-alignment panel reports per-verdict precision and recall. Phoenix ended with 24 review decisions. Human labels do not automatically retrain or change the model.
 
-Source: [src/leadgen/eval_review.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/eval_review.py).
+Source: [src/leadgen/eval_review.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/src/leadgen/eval_review.py).
 
 Steps:
 
@@ -469,7 +469,7 @@ Use reviewed cases and redacted observations to check behavior offline.
 
 Fixture export supports human-labelled cases. The committed Phoenix examples are redacted machine observations, not human-labelled accuracy benchmarks. Tests validate contracts without paid calls; any exported contacts or full pages must be reviewed before committing.
 
-Source: [tests/test_live_replay.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/tests/test_live_replay.py).
+Source: [tests/test_live_replay.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/leadgen_pipeline_agents/tests/test_live_replay.py).
 
 Steps:
 
