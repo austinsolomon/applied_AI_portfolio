@@ -32,5 +32,14 @@ except FileNotFoundError:
     pass  # No secrets file: fall back to an exported DATABASE_URL, read-only mode.
 os.environ["LEADGEN_DASHBOARD_MODE"] = mode
 
+# Community Cloud pulls new commits into the running process. The page below is re-read on every
+# rerun, but modules it imports stay cached, so a merge can pair a new page with an old module
+# (an AttributeError). When any source file changes, drop the cached leadgen modules first.
+source_version = max(path.stat().st_mtime for path in (PROJECT / "src" / "leadgen").rglob("*.py"))
+if getattr(sys, "_leadgen_source_version", None) != source_version:
+    for name in [name for name in sys.modules if name == "leadgen" or name.startswith("leadgen.")]:
+        del sys.modules[name]
+    sys._leadgen_source_version = source_version
+
 # Run the page on every rerun; a plain import would render only once per process.
 runpy.run_path(str(PROJECT / "src" / "leadgen" / "dashboard.py"), run_name="__main__")
