@@ -1,4 +1,4 @@
-# Lead-gen agent: design
+# Leadgen pipeline agents: design
 
 This document describes the target design. The [README](../README.md) tracks which parts are built.
 

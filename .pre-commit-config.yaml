@@ -21,13 +21,13 @@ repos:
   - repo: local
     hooks:
       - id: ruff-check-p1
-        name: ruff check (p1)
+        name: ruff check (leadgen_pipeline_agents)
         entry: uv run --project leadgen_pipeline_agents ruff check --fix
         language: system
         types: [python]
         files: ^leadgen_pipeline_agents/
       - id: ruff-format-p1
-        name: ruff format (p1)
+        name: ruff format (leadgen_pipeline_agents)
         entry: uv run --project leadgen_pipeline_agents ruff format
         language: system
         types: [python]

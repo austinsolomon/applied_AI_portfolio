@@ -140,8 +140,7 @@ gcloud scheduler jobs resume leadgen-weekly-friday --location=$R --project=$P
 ```
 
 **Deploy.** Merging to `main` deploys after CI passes: the workflow builds the image, runs
-`leadgen-migrate`, then moves `leadgen-weekly` to the new image. Actions → "Deploy p1 to Google
-Cloud" → Run workflow redeploys by hand. A migration that adds a dashboard view also needs the
+`leadgen-migrate`, then moves `leadgen-weekly` to the new image. Actions → "Deploy leadgen pipeline agents to Google Cloud" → Run workflow redeploys by hand. A migration that adds a dashboard view also needs the
 grant: rerun `scripts/provision_database_roles.py` (no `--rotate`).
 
 **Rotate a provider key.** Create the new key with the provider, then
