@@ -243,8 +243,11 @@ flowchart LR
 - **Deploys:** after CI passes on `main`, GitHub Actions signs in to Google through Workload
   Identity Federation (a short-lived token, accepted only from this repository's `main`), builds
   the image, migrates, and points the weekly job at the new image.
-- **Dashboard:** Streamlit Community Cloud runs `streamlit_cloud/streamlit_app.py`: demand gaps,
-  run history and sources. Contacts, evidence and eval review stay on the operator's machine.
+- **Dashboard:** Streamlit Community Cloud runs `streamlit_cloud/streamlit_app.py` as a private
+  app (viewers invited by email) with every tab, including the audit log, data model and eval
+  labeling. It logs in as `leadgen_operator`, which reads every table and writes only eval
+  labels. Without the operator setting it shows only demand gaps, run history and sources, from
+  views that hold no contact details.
 - **Cost:** hosting fits free tiers, plus cents for image storage; provider spend per run is
   capped by the policy budget. The [operations runbook](docs/operations.md#production-deployment)
   covers logs, pausing, rotating secrets and backups.

@@ -179,6 +179,9 @@ DASHBOARD_VIEWS = (
     "consensus_yield_view",
     "spend_by_service_view",
 )
+# The private operator dashboard (every tab, as on the operator's machine) reads every table and
+# writes only eval labels.
+OPERATOR_WRITABLE_TABLES = ("eval_labels",)
 
 
 def _rows(connection: psycopg.Connection, query: str, parameters=()) -> list[dict[str, Any]]:

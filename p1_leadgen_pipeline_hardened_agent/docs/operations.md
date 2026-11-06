@@ -95,10 +95,18 @@ a new run. Never interpret a missing final usage report as zero spend.
 | Dashboard | Streamlit Community Cloud | `streamlit_cloud/streamlit_app.py`, read-only login |
 | Deploys | GitHub Actions | `.github/workflows/deploy.yml`, after CI passes on `main` |
 
-Three database logins, each with the least it needs: the owner (`DATABASE_URL`) only for
-migrations; `leadgen_app` for the weekly job (reads and writes rows, cannot change the schema);
-`leadgen_dashboard` (reads only the views in `run_status.DASHBOARD_VIEWS`, never contacts or
-evidence). `scripts/gcp_setup.sh` records how the Google project was built.
+Four database logins, each with the least it needs (`leadgen.database_roles`): the owner
+(`DATABASE_URL`) only for migrations; `leadgen_app` for the weekly job (reads and writes rows,
+cannot change the schema); `leadgen_operator` for the private dashboard (reads every table,
+writes only eval labels); `leadgen_dashboard` for a public or shared dashboard (reads only the
+views in `run_status.DASHBOARD_VIEWS`, never contacts or evidence). `scripts/gcp_setup.sh` records
+how the Google project was built.
+
+The Streamlit Cloud app is private (viewers invited by email) and runs in operator mode: every tab
+as on the operator's machine, including evidence, contacts and eval labeling. Its secrets are
+`DATABASE_URL` = the `OPERATOR_DATABASE_URL` secret and `DASHBOARD_MODE = "operator"`. Without
+that second line it falls back to the three read-only tabs, which is also what a public app
+should run, with `DASHBOARD_DATABASE_URL`.
 
 Set `P=leadgen-prod-austin R=us-west1` for the commands below.
 
@@ -139,7 +147,7 @@ Jobs read `latest` at start, so the next execution uses it; revoke the old key a
 
 **Rotate the database logins.**
 `DATABASE_URL="$(gcloud secrets versions access latest --secret=DATABASE_URL --project=$P)" uv run python scripts/provision_database_roles.py --project $P --rotate`,
-then paste the new `DASHBOARD_DATABASE_URL` into the Streamlit Cloud app's secrets. Rotate the
+then paste the new `OPERATOR_DATABASE_URL` into the Streamlit Cloud app's secrets. Rotate the
 owner password in the Neon console and add it as a new `DATABASE_URL` version.
 
 **Back up.** Neon's free plan keeps a short restore window, not long-term backups. Before risky

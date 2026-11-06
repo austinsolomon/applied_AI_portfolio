@@ -508,9 +508,9 @@ HEADER = """
 """
 
 
-# Set by the Streamlit Community Cloud entrypoint (streamlit_cloud/streamlit_app.py). The hosted
-# page logs in as the read-only dashboard role and shows only views of market and run totals; the
-# live run, audit log, eval review and data model read evidence and contacts, so they stay local.
+# Set by the Streamlit Community Cloud entrypoint (streamlit_cloud/streamlit_app.py). "hosted" logs
+# in as the read-only dashboard role and shows only market and run totals. "operator" (a private
+# app, viewers invited by email) logs in as the operator role and shows every tab, as locally.
 HOSTED = os.environ.get("LEADGEN_DASHBOARD_MODE") == "hosted"
 
 
