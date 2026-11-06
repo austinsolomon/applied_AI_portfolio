@@ -97,17 +97,25 @@ def progress_chart(table: pandas.DataFrame) -> altair.LayerChart:
         goal=100,
     )
     market_axis = altair.Y("Market:N", sort=None, title=None)
+    # Ticks every 20 points: 0, 20, … 100.
+    percent_axis = altair.Axis(values=list(range(0, 101, 20)))
     track = (
         altair.Chart(chartable)
         .mark_bar(color="#E4E1DC", cornerRadius=4)
-        .encode(x=altair.X("goal:Q", scale=altair.Scale(domain=[0, 100])), y=market_axis)
+        .encode(
+            x=altair.X("goal:Q", scale=altair.Scale(domain=[0, 100]), axis=percent_axis),
+            y=market_axis,
+        )
     )
     filled = (
         altair.Chart(chartable)
         .mark_bar(cornerRadius=4)
         .encode(
             x=altair.X(
-                "filled:Q", title="Leads Available % of goal", scale=altair.Scale(domain=[0, 100])
+                "filled:Q",
+                title="Leads Available % of goal",
+                scale=altair.Scale(domain=[0, 100]),
+                axis=percent_axis,
             ),
             y=market_axis,
             color=altair.Color(
