@@ -981,7 +981,7 @@ def test_malformed_judge_json_becomes_review_without_stopping_the_run(running):
     assert connection.execute("SELECT cost_basis FROM cost_ledger").fetchone() == ("estimated",)
 
 
-def test_unconfident_verdict_escalates_to_research_inside_qualification(
+def test_review_stage_researches_unconfident_verdicts_after_qualification(
     running, empty_database_url, monkeypatch
 ):
     from datetime import UTC, datetime
@@ -1066,7 +1066,19 @@ def test_unconfident_verdict_escalates_to_research_inside_qualification(
         _env_file=None, database_url=empty_database_url, anthropic_api_key=SecretStr("offline")
     )
     pipeline = Pipeline(connection, run, settings, judge=judge, agent_query=research_session)
-    assert asyncio.run(pipeline.run_qualify()) == {"judged": 2}
+    assert asyncio.run(pipeline.run_qualify()) == {
+        "judged": 2,
+        "qualified": 1,
+        "rejected": 0,
+        "to_review": 1,
+    }
+    assert sessions == [], "qualification writes first verdicts only; Review researches"
+    assert asyncio.run(pipeline.run_review()) == {
+        "reviewed": 1,
+        "qualified": 2,
+        "rejected": 0,
+        "human_escalated": 0,
+    }
     assert len(sessions) == 1
     assert sessions[0].startswith("Find missing evidence for Unclear Planner in Los Angeles, CA.")
     assert "The judge could not decide:" in sessions[0]
@@ -1264,7 +1276,13 @@ def test_failed_research_keeps_review_and_the_run_goes_on(
         _env_file=None, database_url=empty_database_url, anthropic_api_key=SecretStr("offline")
     )
     pipeline = Pipeline(connection, run, settings, judge=judge, agent_query=failing_session)
-    assert asyncio.run(pipeline.run_qualify()) == {"judged": 1}
+    asyncio.run(pipeline.run_qualify())
+    assert asyncio.run(pipeline.run_review()) == {
+        "reviewed": 1,
+        "qualified": 0,
+        "rejected": 0,
+        "human_escalated": 1,
+    }
     assert read_raw_leads(connection, run.run_id)[0]["qualification"]["verdict"] == "review"
     error_type, message = connection.execute(
         "SELECT details->>'error_type', details->>'message' FROM traces "

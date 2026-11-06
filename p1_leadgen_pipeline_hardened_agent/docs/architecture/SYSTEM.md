@@ -435,9 +435,9 @@ Steps:
 
 ### RA · Bounded research
 
-Escalate a review verdict to research in the same job, then judge again.
+Research each review verdict in its own Review stage, then judge again.
 
-Inside the qualification job, a review verdict escalates at once: the SDK starts from Tier 1 evidence and is told why the judge could not decide and can search and fetch the URLs its searches found, with at most four tool calls (enforced by a PreToolUse hook) and a small model budget. Saved evidence can be reused during recovery. A turn-limit result is a bounded stop, not permission to restart research. All 32 Phoenix first-pass review cases were researched.
+After qualification, the Review stage takes every lead marked review: the review agent (Agent SDK) starts from Tier 1 evidence and is told why the judge could not decide and can search and fetch the URLs its searches found, with at most four tool calls (enforced by a PreToolUse hook) and a small model budget. Saved evidence can be reused during recovery. A turn-limit result is a bounded stop, not permission to restart research. All 32 Phoenix first-pass review cases were researched.
 
 Source: [src/leadgen/research_agent.py](https://github.com/austinsolomon/applied_AI_portfolio/blob/main/p1_leadgen_pipeline_hardened_agent/src/leadgen/research_agent.py).
 

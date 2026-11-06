@@ -39,9 +39,9 @@ flowchart LR
     XC --> DD[Dedupe vs CRM]
     DD --> E[Paid enrichment only if<br/>still missing contacts]
     E --> Q[Qualify: Exa evidence<br/>+ Claude JSON judge]
-    Q -. review .-> R{{Research agent:<br/>its own Exa searches}}
-    R -. re-judge .-> Q
-    Q --> C[(CRM)]
+    Q --> R{{Review stage: review agent<br/>runs its own Exa searches,<br/>then the judge decides again}}
+    R --> V[Qualified · Rejected ·<br/>Human escalated]
+    V --> C[(CRM)]
     C --> D
 ```
 
@@ -54,7 +54,7 @@ code) and the CRM write. The Claude Agent SDK is used only for two decisions:
 | Agent | Runs when | Decides | Tools | Limits (enforced by a PreToolUse hook and again in each tool) |
 |---|---|---|---|---|
 | **Sourcing agent** (`adapt` stage) | Planned sourcing fell short of the target, or a Maps sample graded RECONFIGURE/ABORT | Google Maps: try a different keyword or city when keyword purity or in-market share was low. Exa: rewrite a search whose results were mostly filtered or repeated, or run a good phrasing for another city | `sourcing_status`, `try_maps_cell(city, keyword)`, `exa_search(query)` | Only the market's 10 largest Census cities and the category's keywords; at most 2 Maps cells and 4 Exa searches; no repeats; every call reserves budget first; 0.05 USD of model spend |
-| **Research agent** (inside qualification) | The judge returned `review` | Which extra searches to run and which found pages to read, starting from the judge's reason and the evidence already read | `search(query)`, `fetch_page(url)` | 4 calls; only pages its own searches found; 0.03 USD; the judge decides again afterwards |
+| **Review agent** (`review` stage, after qualification) | The judge returned `review` | Which extra searches to run and which found pages to read, starting from the judge's reason and the evidence already read | `search(query)`, `fetch_page(url)` | 4 calls; only pages its own searches found; 0.03 USD; the judge decides again afterwards |
 
 A run whose planned sourcing met its target with clean samples never starts the sourcing agent.
 Agent-added Maps cells are stored with `origin = 'agent'`, so every change the agent made is
@@ -130,7 +130,7 @@ its first live run will replace this row.
 | Contact enrichment (BlitzAPI): cached per domain, every call in the cost ledger | done |
 | Web search and page fetching with a page cache (Exa evidence, Firecrawl rendering only) | done |
 | Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
-| Maps and Exa sourcing, qualification with inline research, CRM write | done; live runs verified end to end (2026-11-05, massage category); CFP® planner category not yet run live |
+| Maps and Exa sourcing, qualification, review, CRM write | done; live runs verified end to end (2026-11-05, massage category); CFP® planner category not yet run live |
 | Eval capture, weekly review page, labels exported as test fixtures | done |
 | Deterministic stage runner, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
 | Two Agent SDK agents: adaptive sourcing (Maps + Exa) and research for unclear leads | done; fake-tested, not yet run live |
@@ -165,7 +165,7 @@ Add `--audit` to both commands to record an audit trail of that execution: one r
 from 20 actors named "Tool (role)" in pipeline order (`ACTORS` in `src/leadgen/audit.py`): the
 approval (CLI or weekly policy), the planner, the stage gate, both agents and their PreToolUse hook decisions,
 budget reservations, each paid Apify, Exa, Firecrawl, BlitzAPI and Claude call with its
-`cost_usd`, the sample grader, contact extraction, dedupe and citation checks, the research agent,
+`cost_usd`, the sample grader, contact extraction, dedupe and citation checks, the review agent,
 stage and run state, and the CRM upload. Cache hits, ledger rows and job claims are not rows of
 their own. Read it in the dashboard's Audit log tab while the run executes. It is off by default.
 
@@ -173,10 +173,12 @@ The planner selects the market with the lowest available-lead coverage, expands 
 places, and displays its cells, the Maps and Exa ceilings and the sourcing agent cap before asking for one approval. The total budget
 covers all services. `--approve --approved-by NAME` records approval already given by an operator.
 The runner executes the stages in a fixed order: Maps, Exa, adapt (the sourcing agent), contact
-extraction, dedupe, enrichment, qualification and CRM writing. When the judge cannot decide a lead
-confidently (verdict `review`), the same qualification job escalates that lead to a bounded
-research agent at once, starting from the evidence already gathered, and the judge decides
-again; there is no separate research stage.
+extraction, dedupe, enrichment, qualification, review and CRM writing.
+Qualification writes each lead's first verdict. A lead the judge cannot decide confidently
+(verdict `review`) goes to the Review stage, where the review agent runs its own Exa searches
+starting from the evidence and the judge's reason, and the judge decides again. Each reviewed lead
+ends Qualified, Rejected or Human escalated (still unclear, or research failed: its stored verdict
+stays `review` for a person in Eval review).
 
 Contact extraction reads the phone numbers and emails printed on page text Exa sourcing already
 cached, with no network call, so Exa leads reach dedupe with the same phone and email keys Maps
@@ -287,8 +289,8 @@ logo and implies no endorsement.
 | Tab | Shows |
 |---|---|
 | Demand gaps | Leads Available % per market, biggest gap first |
-| Current run | The eight stages in order, each done, running, failed, waiting or "needs a human", with stage results, job progress, spend vs budget and recent events; refreshes every 10 s |
-| Audit log | For a plan run with `--audit`: each major step with the pipeline Stage it ran in (Plan & approve, the eight stages, Close-out), the Subcomponent that did it, and a plain-language Summary (for example "Company search returns 25 results — independent CFP® financial planners … in Phoenix, AZ" or "Allows the tool call (approved stage) — run_stage maps"); filter by the 19 subcomponents in pipeline order, search, newest first; refreshes every 5 s |
+| Current run | The nine stages in order, each done, running, failed, waiting or "needs a human", with stage results, job progress, spend vs budget and recent events; refreshes every 10 s |
+| Audit log | For a plan run with `--audit`: each major step with the pipeline Stage it ran in (Plan & approve, the nine stages, Close-out), the Subcomponent that did it, and a plain-language Summary (for example "Company search returns 25 results — independent CFP® financial planners … in Phoenix, AZ" or "Allows the tool call (approved stage) — run_stage maps"); filter by the 19 subcomponents in pipeline order, search, newest first; refreshes every 5 s |
 | Run history | One row per run: market, status, Maps and Exa sourced, new, qualified, review, rejected, CRM inserted, spend vs budget, cost per qualified lead |
 | Sources and spend | Qualification rate per source, Exa query-consensus breakdown, spend per service (provider-reported vs estimated) |
 | Eval review | One judge decision per screen (business, market, source, run, tier) beside the page text it read with the judge's quote highlighted; blind mode hides the verdict until you pick your own; a Pass/Fail label, with a one-line critique, the correct verdict and failure-mode tags on a fail; automatic checks as plain sentences; a judge-alignment panel (confusion matrix, raw agreement, precision and recall per verdict); failure-mode counts; JSONL export. The workflow follows Hamel Husain's "Your AI Product Needs Evals" |

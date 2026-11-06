@@ -44,7 +44,7 @@ DEDUPE = "Postgres (Dedupe)"
 BLITZ_ENRICHMENT = "BlitzAPI (Enrichment)"
 CLAUDE_LLM_CALL = "Claude API (LLM call)"
 CITATION_CHECK = "Python (Citation check)"
-SDK_RESEARCH_AGENT = "Claude Agent SDK (Research agent)"
+SDK_RESEARCH_AGENT = "Claude Agent SDK (Review agent)"
 STATE_MACHINE = "Postgres (State machine)"
 CRM_UPLOAD = "Postgres (CRM upload)"
 

@@ -108,10 +108,10 @@ a reasoning step, and a fixed JSON answer that later steps can rely on.
 3. **Tier 1, judgment.** One Claude call reads the rubric and the evidence and returns schema-validated JSON:
    verdict (`qualified`, `rejected` or `review`), reason, evidence quote, source URL, eligible services found, and
    whether the business serves the market.
-4. **Tier 2, only when Tier 1 returns `review`, in the same job.** The lead escalates at once to an Agent SDK
+4. **Tier 2, the Review stage, only for leads Tier 1 marked `review`.** After qualification, each such lead goes to an Agent SDK
    research loop with a turn limit, which starts from Tier 1's evidence and decides which pages to read next;
-   then the judgment runs again. There is no separate research stage, so each lead's decision finishes in one
-   place.
+   then the judgment runs again. Each reviewed lead ends qualified, rejected or human escalated (still unclear,
+   or research failed), so the first verdicts never wait on, or fail with, research.
 
 Most leads finish at Tier 1's cost. Only unclear leads pay for an agent. When evidence stays unclear, the answer is
 `review`, never a guess.
