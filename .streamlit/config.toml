@@ -1,0 +1,7 @@
+# Streamlit Community Cloud runs the hosted dashboard from the repository root and reads this file.
+# It applies the same Exa theme that `leadgen dashboard` passes on the command line.
+[theme]
+base = "leadgen_pipeline_agents/src/leadgen/exa_theme.toml"
+
+[browser]
+gatherUsageStats = false

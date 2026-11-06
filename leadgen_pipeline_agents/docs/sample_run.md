@@ -1,9 +1,40 @@
-# Phoenix live sample — 2026-10-11
+# Live runs
 
-> These runs used the first demo category, mobile and in-home massage; the numbers below are kept
-> as recorded. The category then became independent private chefs on 2026-11-05; that day's chef
-> runs (plans 7 and 9) are history under that previous category and are not reported here. The
-> demo category is now independent CFP® financial planners.
+## CFP® financial planner live runs — 2026-11-05 and 2026-11-06
+
+All three runs searched for independent CFP® financial planners with the keyword "financial
+planner", one city each, under a 5 USD budget. Plans 3 and 9 were approved by the weekly policy
+(`policy:weekly@<sha>`); plan 9 was the first run started by Cloud Scheduler on Cloud Run with no
+person involved. Plan 5 was approved by the operator.
+
+| Plan | Market | Approved by | Duration | Sourced (Maps / Exa) | New after dedupe | Qualified | Review | Rejected | Written to CRM | Spend (USD) |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 3 | Phoenix, AZ | weekly policy | 11 min | 156 / 37 | 164 | 38 | 34 | 92 | 37 | 4.20 |
+| 5 | Los Angeles, CA | operator | 7 min | 71 / 43 | 101 | 21 | 22 | 58 | 19 | 2.32 |
+| 9 | San Diego, CA | weekly policy, Cloud Scheduler | 35 min | 138 / 37 | 137 | 45 | 30 | 62 | 44 | 3.20 |
+| **Total** | | | | **365 / 117** | **402** | **104** | **86** | **212** | **100** | **9.72** |
+
+Per source across the three runs:
+
+| Source | Sourced | New after dedupe | Qualified | Qualified ÷ judged | Written to CRM |
+|---|---:|---:|---:|---:|---:|
+| Google Maps | 365 | 300 | 61 | 20% | 58 |
+| Exa company search | 117 | 102 | 43 | 42% | 42 |
+
+Spend by service: Exa 7.45 USD, Apify 1.19, Anthropic 1.00, Firecrawl 0.08, BlitzAPI 0.00
+(the free extract stage found most contacts first). Exa is most of the spend because it supplies
+the evidence for every lead, not only the leads it sourced. Every run stayed within its 5 USD
+budget; four qualified leads lacked a usable phone or email and were not written to the CRM.
+
+Plan 9 first stopped at qualification when one research session returned an error; that rule was
+changed so an unresolved lead goes to review instead, and the run finished with 44 leads written.
+
+## Earlier category: mobile massage (history)
+
+> The runs below are from development, when the demo category was mobile and in-home massage
+> providers. Their numbers are kept as recorded.
+
+### Phoenix live sample — 2026-10-11
 
 One approved plan targeted 50 mobile-massage businesses in Phoenix, Arizona, using one city and
 one keyword. It finished with **12 qualified, 14 rejected and 24 review decisions**. Ten qualified
@@ -14,7 +45,7 @@ The total approved budget was 5 USD, with a 1 USD Maps ceiling and a separate 0.
 allowance. The final ledger total is **1.385297 USD**, including **0.374400 USD in conservative
 web estimates**. Anthropic usage was **0.097097 USD** on `claude-haiku-5-5`.
 
-## Results
+#### Results
 
 | Step | Result |
 |---|---|
@@ -30,7 +61,7 @@ The run retained the same ID through recovery: `b1d352b5-2159-4153-b522-1f647cfb
 Stage checkpoint counters report work in the successful resumed invocation (48 judged and
 24 researched); the table above counts all persisted decisions across the entire run.
 
-## Accounting
+#### Accounting
 
 | Service | Ledger USD | Basis |
 |---|---:|---|
@@ -53,7 +84,7 @@ billing information; their full ceilings are marked estimated. Credit conversion
 the configured subscription rate. **Exact Firecrawl invoice reconciliation remains open**; this
 sample does not claim that every provider's invoice matches the ledger within rounding.
 
-## Recoveries and replay
+#### Recoveries and replay
 
 This was one campaign resumed from durable checkpoints, with no second sourcing campaign:
 
@@ -79,7 +110,7 @@ Total Medical & Wellness rejected, and Get Better Faster Injury & Sports recover
 These are machine observations, not human-labelled quality benchmarks. Full source records,
 contacts and pages remain in Postgres; no business phone numbers or emails are in the fixtures.
 
-## Hardening acceptance evidence
+#### Hardening acceptance evidence
 
 | Requirement | Evidence |
 |---|---|
@@ -97,7 +128,7 @@ Cloud deployment, scheduling and secret management were out of scope for this sa
 covered by fakes but was not exercised by this live sample; see the Exa live run below. This run validates the pipeline and
 recovery mechanisms; it is not a claim of unattended cloud production readiness.
 
-## Exa live run — 2026-11-04
+### Exa live run — 2026-11-04
 
 A second approved plan targeted Phoenix again, so Exa could use the ten real qualified leads from
 the first run as seeds: `leadgen plan --market "Phoenix, AZ" --target 30 --max-cities 1
@@ -108,7 +139,7 @@ Exa had three roles in this run: lookalike sourcing (`find_similar`), and, once 
 backend was switched to Exa during recovery, search with page text and page contents for
 qualification.
 
-### Sourcing
+#### Sourcing
 
 | Step | Result |
 |---|---|
@@ -119,7 +150,7 @@ qualification.
 | Dedupe | 52 new, 3 duplicates (all Maps); no Exa lead was already in the CRM |
 | Seed consensus | 30 leads found by 1 seed, 4 by 2 seeds, 3 by 3 seeds |
 
-### Qualification
+#### Qualification
 
 | | Maps | Exa |
 |---|---:|---:|
@@ -136,7 +167,7 @@ Consensus ordering did its job: every lead found by two or more seeds was judged
 failure stopped qualification. The two unjudged Exa leads were both consensus 1. The samples
 are small; the consensus split is a signal to keep measuring, not a result.
 
-### Cost
+#### Cost
 
 | Service | Ledger USD | Notes |
 |---|---:|---|
@@ -151,7 +182,7 @@ Exa sourcing cost 0.024 USD for 11 qualified leads: **0.0022 USD per qualified l
 run, all services, cost 0.058 USD per qualified lead (13 qualified). The code reserves 0.02 USD
 per Exa call; Exa's reported prices were 5× (find_similar) to 200× (contents) below that.
 
-### What stopped the run, and what changed
+#### What stopped the run, and what changed
 
 1. **First invocation.** Qualification used Firecrawl for evidence. Firecrawl `/v2/search`
    failed in about 300 ms for 14 leads (rate limited), and the free DuckDuckGo fallback returned
@@ -165,7 +196,7 @@ per Exa call; Exa's reported prices were 5× (find_similar) to 200× (contents) 
    instead of an unreadable page. 16 Firecrawl fallback scrapes ended `uncertain` and need
    reconciliation before the research tier and CRM write can resume.
 
-### Open items from this run
+#### Open items from this run
 
 - Exa returned no text for 24 of 27 pages. Qualification guesses subpages (`/services`,
   `/about`) that often do not exist, and `max_age_hours=168` forces live recrawls that small sites
