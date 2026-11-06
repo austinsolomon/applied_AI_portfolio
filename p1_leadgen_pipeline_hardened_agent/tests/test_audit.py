@@ -1,4 +1,4 @@
-"""The audit trail names exactly 19 actors, and no call site can write a row for another."""
+"""The audit trail names exactly 20 actors, and no call site can write a row for another."""
 
 import ast
 from pathlib import Path
@@ -50,14 +50,14 @@ def actor_value(expression):
     return None
 
 
-def test_actors_are_19_tool_role_names():
-    assert len(ACTORS) == len(set(ACTORS)) == 19
+def test_actors_are_20_tool_role_names():
+    assert len(ACTORS) == len(set(ACTORS)) == 20
     for actor in ACTORS:
         tool, _, role = actor.partition(" (")
         assert tool and role.endswith(")"), actor
 
 
-def test_every_call_site_uses_one_of_the_19_actors():
+def test_every_call_site_uses_one_of_the_20_actors():
     sites = list(actor_arguments())
     assert len(sites) > 30, "the scan found the audit call sites"
     for location, expression in sites:
@@ -66,7 +66,7 @@ def test_every_call_site_uses_one_of_the_19_actors():
         values = actor_value(expression)
         assert values is not None, f"{location}: actor {ast.unparse(expression)} is not checkable"
         for value in values:
-            assert value in ACTORS, f"{location}: {value!r} is not one of the 19 audit actors"
+            assert value in ACTORS, f"{location}: {value!r} is not one of the 20 audit actors"
 
 
 def test_an_unknown_actor_is_skipped_without_raising(migrated_connection, monkeypatch):
@@ -98,7 +98,7 @@ def test_audit_never_raises_on_a_broken_connection(migrated_connection, monkeypa
         ("web:tier1:7:2:search", "Exa API (Search)"),
         ("web:tier1:7:1:fetch_page", "Exa API (Contents)"),
         ("judge:1:7", "Claude API (LLM call)"),
-        ("sdk:orchestrator:1", "Claude Agent SDK (Tool call)"),
+        ("sdk:sourcing:1", "Claude Agent SDK (Sourcing agent)"),
         ("sdk:research:7", "Claude Agent SDK (Research agent)"),
         ("enrich:7", "BlitzAPI (Enrichment)"),
     ],

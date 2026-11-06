@@ -8,8 +8,8 @@ The steps, each of which can stop the run with a plain reason:
 3. Gaps: no market below its goal means nothing to do.
 4. Plan within policy: the planner's Maps and Exa ceilings must leave room under the budget.
 5. Approval recorded as `policy:weekly@<policy file sha>`, through the same `approve_plan` a
-   person uses, so the budget hook and reservations enforce it exactly as they would a human's.
-6. The approved plan runs through the Agent SDK orchestrator (`run_plan`), as `leadgen run` does.
+   person uses, so the stage gate and reservations enforce it exactly as they would a human's.
+6. The approved plan runs through the same stage loop (`run_plan`) as `leadgen run`.
 7. A summary goes to stdout, to traces and, if SLACK_WEBHOOK_URL is set, to Slack.
 """
 

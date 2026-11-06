@@ -141,7 +141,7 @@ uv run leadgen run --plan latest
 ```
 
 Add `--audit` to both commands to record an audit trail of that execution: one row per major step,
-from 19 actors named "Tool (role)" in pipeline order (`ACTORS` in `src/leadgen/audit.py`): the
+from 20 actors named "Tool (role)" in pipeline order (`ACTORS` in `src/leadgen/audit.py`): the
 approval (CLI or weekly policy), the planner, Agent SDK tool calls and PreToolUse hook decisions,
 budget reservations, each paid Apify, Exa, Firecrawl, BlitzAPI and Claude call with its
 `cost_usd`, the sample grader, contact extraction, dedupe and citation checks, the research agent,

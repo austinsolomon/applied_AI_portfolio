@@ -495,7 +495,7 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
             TableGuide(
                 "audit_events",
                 "The opt-in trail of one execution (--audit): each major step as who does "
-                "what to whom, from 19 actors named Tool (role).",
+                "what to whom, from 20 actors named Tool (role).",
                 [
                     {
                         "audit_event_id": 203,
