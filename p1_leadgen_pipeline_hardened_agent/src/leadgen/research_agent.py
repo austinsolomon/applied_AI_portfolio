@@ -1,15 +1,31 @@
-"""A bounded SDK research loop used only for unresolved first-tier decisions."""
+"""The research agent: a bounded Agent SDK loop for leads the judge marked "review".
+
+It starts from the evidence tier 1 already gathered and the judge's reason for not deciding, then
+chooses its own searches and which found pages to read. A PreToolUse hook (and each handler again)
+enforces the limits: at most MAX_TOOL_CALLS calls, and only pages its own searches surfaced. The
+judge then decides again on everything gathered."""
 
 import json
 from contextlib import aclosing
 from decimal import Decimal
 
-from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, create_sdk_mcp_server, query, tool
+from claude_agent_sdk import (
+    ClaudeAgentOptions,
+    HookMatcher,
+    ResultMessage,
+    create_sdk_mcp_server,
+    query,
+    tool,
+)
 from psycopg.types.json import Jsonb
 
-from leadgen.audit import SDK_RESEARCH_AGENT, audit
+from leadgen.audit import SDK_PRE_TOOL_USE_HOOK, SDK_RESEARCH_AGENT, audit
 from leadgen.budget import paid_operation, record_cost
 from leadgen.qualification import QualificationError, judge_lead
+
+MAX_TOOL_CALLS = 4
+SEARCH_TOOL = "mcp__research__search"
+FETCH_TOOL = "mcp__research__fetch_page"
 
 
 async def research_lead(
@@ -28,20 +44,56 @@ async def research_lead(
     if not lead.get("qualification") or lead["qualification"]["verdict"] != "review":
         return lead.get("qualification")
     gathered = dict(evidence)
+    undecided_because = lead["qualification"].get("reason") or "no reason given"
     calls = denied = 0
     # The session's final usage, reported on the research agent's result row.
     session = {}
 
+    def refusal(tool_name, arguments):
+        """Why a research call is outside its limits, or None if it may run."""
+        if tool_name not in (SEARCH_TOOL, FETCH_TOOL):
+            return "Tool is outside the research agent's tools"
+        if calls >= MAX_TOOL_CALLS:
+            return f"Research tool limit reached ({MAX_TOOL_CALLS} calls)"
+        if tool_name == FETCH_TOOL and arguments.get("url") not in gathered:
+            return "Only pages found by this research can be read"
+        return None
+
+    def check(tool_name, arguments, *, record_allow=True):
+        nonlocal denied
+        reason = refusal(tool_name, arguments)
+        if reason:
+            denied += 1
+        if reason or record_allow:
+            audit(
+                connection,
+                SDK_PRE_TOOL_USE_HOOK,
+                f"{'deny' if reason else 'allow'}s the research agent's call "
+                f"({reason or 'within limits'})",
+                f"{tool_name.rsplit('__', 1)[-1]} {json.dumps(arguments)}",
+                run_id=run_id,
+            )
+        return reason
+
+    async def hook(input_data, tool_use_id=None, context=None):
+        reason = check(input_data.get("tool_name"), input_data.get("tool_input", {}))
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny" if reason else "allow",
+                "permissionDecisionReason": reason or "Within research limits",
+            }
+        }
+
+    def refused(reason):
+        return {"content": [{"type": "text", "text": reason}], "isError": True}
+
     @tool("search", "Find evidence of this business's services and service area", {"query": str})
     async def search_tool(arguments):
-        nonlocal calls, denied
+        nonlocal calls
+        if reason := check(SEARCH_TOOL, arguments, record_allow=False):
+            return refused(reason)
         calls += 1
-        if calls > 4:
-            denied += 1
-            return {
-                "content": [{"type": "text", "text": "Research tool limit reached"}],
-                "isError": True,
-            }
         results = researcher.search(arguments["query"], limit=3)
         for result in results:
             gathered[result.url] = result.description[:3000]
@@ -49,14 +101,10 @@ async def research_lead(
 
     @tool("fetch_page", "Read a previously found evidence URL", {"url": str})
     async def fetch_tool(arguments):
-        nonlocal calls, denied
+        nonlocal calls
+        if reason := check(FETCH_TOOL, arguments, record_allow=False):
+            return refused(reason)
         calls += 1
-        if calls > 4 or arguments["url"] not in gathered:
-            denied += 1
-            return {
-                "content": [{"type": "text", "text": "URL or tool limit denied"}],
-                "isError": True,
-            }
         page = researcher.fetch_page(arguments["url"])
         gathered[page.final_url] = page.text[:6000]
         return {"content": [{"type": "text", "text": page.text[:6000]}]}
@@ -75,7 +123,8 @@ async def research_lead(
             options = ClaudeAgentOptions(
                 model=settings.leadgen_model,
                 tools=[],
-                allowed_tools=["mcp__research__search", "mcp__research__fetch_page"],
+                allowed_tools=[SEARCH_TOOL, FETCH_TOOL],
+                hooks={"PreToolUse": [HookMatcher(hooks=[hook])]},
                 mcp_servers={"research": server},
                 strict_mcp_config=True,
                 setting_sources=[],
@@ -92,7 +141,11 @@ async def research_lead(
             result_seen = False
             async with aclosing(
                 query_fn(
-                    prompt=f"Find missing evidence for {lead['business_name']} in {market}.",
+                    prompt=(
+                        f"Find missing evidence for {lead['business_name']} in {market}. "
+                        f"The judge could not decide: {undecided_because} "
+                        f"Evidence already read: {', '.join(evidence) or 'none'}."
+                    ),
                     options=options,
                 )
             ) as messages:

@@ -735,6 +735,77 @@ def test_research_agent_only_runs_for_review(running):
     query.assert_not_called()
 
 
+def test_research_hook_denies_unfound_pages_and_calls_over_the_limit(running, monkeypatch):
+    import leadgen.research_agent as research
+
+    connection, plan, run = running
+    persist_leads(
+        connection,
+        run.run_id,
+        plan.cells[0].market_id,
+        "google_maps",
+        [RawLead("hooked", "Birch Planning", phone="3105550143")],
+    )
+    lead = read_raw_leads(connection, run.run_id)[0]
+    lead["qualification"] = {"verdict": "review", "reason": "No CFP® credential named"}
+    web = Mock()
+    web.search.return_value = [SimpleNamespace(url="https://birch.example", description="Birch")]
+    monkeypatch.setattr(research, "create_sdk_mcp_server", lambda **kwargs: kwargs)
+    decisions = []
+
+    async def replay(*, prompt, options):
+        hook = options.hooks["PreToolUse"][0].hooks[0]
+        assert "No CFP® credential named" in prompt
+        calls = [(research.FETCH_TOOL, {"url": "https://unfound.example"})] + [
+            (research.SEARCH_TOOL, {"query": f"Birch planning {n}"}) for n in range(5)
+        ]
+        tools = dict(
+            zip(
+                (research.SEARCH_TOOL, research.FETCH_TOOL),
+                options.mcp_servers["research"]["tools"],
+                strict=True,
+            )
+        )
+        for name, arguments in calls:
+            verdict = await hook({"tool_name": name, "tool_input": arguments}, None, None)
+            decisions.append(verdict["hookSpecificOutput"]["permissionDecision"])
+            if decisions[-1] == "allow":
+                await tools[name].handler(arguments)
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=6,
+            session_id="offline",
+            total_cost_usd=0.001,
+            usage={},
+        )
+
+    judge = Mock()
+    judge.messages.parse.return_value = SimpleNamespace(
+        id="research",
+        usage=SimpleNamespace(input_tokens=100, output_tokens=30),
+        parsed_output=None,
+    )
+    asyncio.run(
+        research.research_lead(
+            connection,
+            run.run_id,
+            lead,
+            "Phoenix",
+            {},
+            load_category_config(),
+            Settings(anthropic_api_key=SecretStr("offline")),
+            web,
+            query_fn=replay,
+            judge_client=judge,
+        )
+    )
+    assert decisions == ["deny", "allow", "allow", "allow", "allow", "deny"]
+    assert web.search.call_count == research.MAX_TOOL_CALLS
+
+
 @pytest.mark.parametrize("subtype", ["success", "error_max_turns"])
 def test_research_loop_rejudges_bounded_evidence(running, monkeypatch, subtype):
     import leadgen.research_agent as research
@@ -996,7 +1067,9 @@ def test_unconfident_verdict_escalates_to_research_inside_qualification(
     )
     pipeline = Pipeline(connection, run, settings, judge=judge, agent_query=research_session)
     assert asyncio.run(pipeline.run_qualify()) == {"judged": 2}
-    assert sessions == ["Find missing evidence for Unclear Planner in Los Angeles, CA."]
+    assert len(sessions) == 1
+    assert sessions[0].startswith("Find missing evidence for Unclear Planner in Los Angeles, CA.")
+    assert "The judge could not decide:" in sessions[0]
     leads = {lead["business_name"]: lead for lead in read_raw_leads(connection, run.run_id)}
     assert leads["Unclear Planner"]["researched"] and not leads["Clear Planner"]["researched"]
     assert {name: lead["qualification"]["verdict"] for name, lead in leads.items()} == {
