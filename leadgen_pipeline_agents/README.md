@@ -1,8 +1,8 @@
-# Lead-gen agent
+# Leadgen pipeline agents
 
 [![CI](https://github.com/austinsolomon/applied_AI_portfolio/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/austinsolomon/applied_AI_portfolio/actions/workflows/ci.yml)
 
-A lead-generation agent that does the job of a lead-generation operator. It reads a demand dashboard, finds the
+Leadgen pipeline agents does the job of a lead-generation operator. It reads a demand dashboard, finds the
 markets furthest below their lead goal, plans the scrapes, and asks a human (or a standing policy) to approve the
 plan and a budget once. From there it runs unattended: sources businesses from Google Maps and Exa, drops leads
 already in the CRM, enriches contact details, qualifies each lead against a category rubric with cited evidence,

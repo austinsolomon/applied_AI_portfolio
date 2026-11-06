@@ -5,9 +5,9 @@ folder with its own README, design doc, tests and dependencies.
 
 | Project | What it is | Status |
 |---|---|---|
-| [Lead-gen pipeline](leadgen_pipeline_agents/) | An autonomous lead-generation pipeline: finds the markets furthest below their lead goal, plans and prices the sourcing, gets one approval, then sources, dedupes, enriches, qualifies with cited evidence, and writes qualified leads to the CRM, within a budget | Running weekly on Google Cloud |
+| [Leadgen pipeline agents](leadgen_pipeline_agents/) | An autonomous lead-generation pipeline with two bounded agents: finds the markets furthest below their lead goal, plans and prices the sourcing, gets one approval, then sources, dedupes, enriches, qualifies with cited evidence, and writes qualified leads to the CRM, within a budget | Running weekly on Google Cloud |
 
-## Lead-gen pipeline: full-stack architecture
+## Leadgen pipeline agents: full-stack architecture
 
 A deterministic Python pipeline runs every stage in a fixed order. The Claude Agent SDK is used
 only where the next step is not known in advance: two bounded agents, each limited by a PreToolUse

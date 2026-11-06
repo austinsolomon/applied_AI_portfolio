@@ -1,4 +1,4 @@
-name: Deploy p1 to Google Cloud
+name: Deploy leadgen pipeline agents to Google Cloud
 
 # Runs after CI passes on main (or by hand). Signs in to Google Cloud through Workload Identity
 # Federation: GitHub's short-lived OIDC token is exchanged for the leadgen-deployer service
