@@ -183,7 +183,8 @@ GROUPS: list[tuple[str, list[TableGuide]]] = [
             TableGuide(
                 "scrape_plan_cells",
                 "The rows of a plan: one market, city and keyword each, with the expected number "
-                "of businesses and the Google Maps spending cap.",
+                "of businesses, the Google Maps spending cap, and whether the plan or the sourcing "
+                "agent added it.",
                 [
                     {
                         "cell_id": 7,

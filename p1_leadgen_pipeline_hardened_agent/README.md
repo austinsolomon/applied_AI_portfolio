@@ -2,11 +2,14 @@
 
 [![CI](https://github.com/austinsolomon/applied_AI_portfolio/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/austinsolomon/applied_AI_portfolio/actions/workflows/ci.yml)
 
-A Claude Agent SDK agent that does the job of a lead-generation operator. It reads a demand dashboard, finds the
-markets furthest below their lead goal, plans the scrapes, and asks a human to approve the plan and a budget once.
-From there it runs unattended: sources businesses from Google Maps and Exa, drops leads already in the CRM, enriches
-contact details, qualifies each lead against a category rubric with cited evidence, and writes qualified leads to
-the CRM.
+A lead-generation agent that does the job of a lead-generation operator. It reads a demand dashboard, finds the
+markets furthest below their lead goal, plans the scrapes, and asks a human (or a standing policy) to approve the
+plan and a budget once. From there it runs unattended: sources businesses from Google Maps and Exa, drops leads
+already in the CRM, enriches contact details, qualifies each lead against a category rubric with cited evidence,
+and writes qualified leads to the CRM.
+
+The pipeline is deterministic code that runs its stages in a fixed order. Two Claude Agent SDK agents make the
+decisions whose next step is not known in advance (see [Where the agents decide](#where-the-agents-decide)).
 
 **Exa is central to the pipeline:** plain-language Exa searches find the businesses, and Exa supplies
 the page text Claude must quote to qualify a lead. See [Why Exa](#why-exa). Every decision is recorded for a recurring evaluation review.
@@ -31,14 +34,31 @@ flowchart LR
     P --> A{Human approves<br/>plan + budget}
     A --> S[Sample, grade,<br/>full run: Google Maps]
     S --> X[Exa company search]
-    X --> XC[Extract phone + email<br/>from Exa page text, free]
-    S --> XC
+    X --> AG{{Sourcing agent:<br/>new Maps keyword or city,<br/>rewritten Exa queries}}
+    AG --> XC[Extract phone + email<br/>from Exa page text, free]
     XC --> DD[Dedupe vs CRM]
     DD --> E[Paid enrichment only if<br/>still missing contacts]
     E --> Q[Qualify: Exa evidence<br/>+ Claude JSON judge]
+    Q -. review .-> R{{Research agent:<br/>its own Exa searches}}
+    R -. re-judge .-> Q
     Q --> C[(CRM)]
     C --> D
 ```
+
+## Where the agents decide
+
+Everything with a known sequence is plain Python: planning, the stage order, budget reservations,
+dedupe, contact extraction, the judge (one structured Claude call whose citation is checked in
+code) and the CRM write. The Claude Agent SDK is used only for two decisions:
+
+| Agent | Runs when | Decides | Tools | Limits (enforced by a PreToolUse hook and again in each tool) |
+|---|---|---|---|---|
+| **Sourcing agent** (`adapt` stage) | Planned sourcing fell short of the target, or a Maps sample graded RECONFIGURE/ABORT | Google Maps: try a different keyword or city when keyword purity or in-market share was low. Exa: rewrite a search whose results were mostly filtered or repeated, or run a good phrasing for another city | `sourcing_status`, `try_maps_cell(city, keyword)`, `exa_search(query)` | Only the market's 10 largest Census cities and the category's keywords; at most 2 Maps cells and 4 Exa searches; no repeats; every call reserves budget first; 0.05 USD of model spend |
+| **Research agent** (inside qualification) | The judge returned `review` | Which extra searches to run and which found pages to read, starting from the judge's reason and the evidence already read | `search(query)`, `fetch_page(url)` | 4 calls; only pages its own searches found; 0.03 USD; the judge decides again afterwards |
+
+A run whose planned sourcing met its target with clean samples never starts the sourcing agent.
+Agent-added Maps cells are stored with `origin = 'agent'`, so every change the agent made is
+visible next to the plan it was approved under.
 
 ## Why Exa
 
@@ -112,7 +132,8 @@ its first live run will replace this row.
 | Job queue and worker pool (`cell_jobs`, `FOR UPDATE SKIP LOCKED`, jittered retries) | done |
 | Maps and Exa sourcing, qualification with inline research, CRM write | done; live runs verified end to end (2026-11-05, massage category); CFP® planner category not yet run live |
 | Eval capture, weekly review page, labels exported as test fixtures | done |
-| SDK orchestrator, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
+| Deterministic stage runner, terminal approval, budget reservations and traces | done; live recovery and no-spend rerun verified |
+| Two Agent SDK agents: adaptive sourcing (Maps + Exa) and research for unclear leads | done; fake-tested, not yet run live |
 | Unattended weekly run approved by a standing policy (`leadgen weekly`) | done; tested with fake providers |
 | Scheduled cloud deployment | deployed: Cloud Run Jobs + Cloud Scheduler (Fridays 08:00 PT, paused until the first supervised cloud run), Neon Postgres, Secret Manager, keyless GitHub deploys; cloud migrate and dry run verified |
 
@@ -142,17 +163,17 @@ uv run leadgen run --plan latest
 
 Add `--audit` to both commands to record an audit trail of that execution: one row per major step,
 from 20 actors named "Tool (role)" in pipeline order (`ACTORS` in `src/leadgen/audit.py`): the
-approval (CLI or weekly policy), the planner, Agent SDK tool calls and PreToolUse hook decisions,
+approval (CLI or weekly policy), the planner, the stage gate, both agents and their PreToolUse hook decisions,
 budget reservations, each paid Apify, Exa, Firecrawl, BlitzAPI and Claude call with its
 `cost_usd`, the sample grader, contact extraction, dedupe and citation checks, the research agent,
 stage and run state, and the CRM upload. Cache hits, ledger rows and job claims are not rows of
 their own. Read it in the dashboard's Audit log tab while the run executes. It is off by default.
 
 The planner selects the market with the lowest available-lead coverage, expands it using Census
-places, and displays its cells and Maps and Exa ceilings before asking for one approval. The total budget
+places, and displays its cells, the Maps and Exa ceilings and the sourcing agent cap before asking for one approval. The total budget
 covers all services. `--approve --approved-by NAME` records approval already given by an operator.
-The runner exposes only the next pipeline stage to the SDK: Maps, Exa, contact extraction,
-dedupe, enrichment, qualification and CRM writing. When the judge cannot decide a lead
+The runner executes the stages in a fixed order: Maps, Exa, adapt (the sourcing agent), contact
+extraction, dedupe, enrichment, qualification and CRM writing. When the judge cannot decide a lead
 confidently (verdict `review`), the same qualification job escalates that lead to a bounded
 research agent at once, starting from the evidence already gathered, and the judge decides
 again; there is no separate research stage.
@@ -203,11 +224,13 @@ optional pinned market, and a minimum number of days between runs. It then:
    duplicate guard, 12 hours; Cloud Scheduler sets the weekly cadence), or if
    every market is at its goal.
 3. Builds the plan for the biggest gap (or the pinned market) and refuses it if the Maps and
-   Exa ceilings leave no room under the policy budget.
+   Exa ceilings plus the sourcing agent's worst case (1.17 USD) leave no room under the policy
+   budget.
 4. Approves it as `policy:weekly@<policy file sha>` through the same approval path a person
-   uses, so the audit trail names the policy version. The pre-tool-use hook and budget
-   reservations enforce that budget on every paid call, exactly as for a human approval.
-5. Runs every stage through the Agent SDK orchestrator, the same path as `leadgen run`.
+   uses, so the audit trail names the policy version. The stage gate, the agents' PreToolUse
+   hooks and budget reservations enforce that budget on every paid call, exactly as for a human
+   approval.
+5. Runs every stage through the same stage loop as `leadgen run`, including both agents.
 6. Prints a JSON summary (run, market, sourced by source, duplicates, verdicts, CRM inserts,
    spend by service vs budget), stores it in `traces`, and posts it to `SLACK_WEBHOOK_URL` if
    that is set. A failed post never fails the run.
@@ -225,7 +248,7 @@ The exit codes let a scheduler such as cron or Cloud Scheduler tell these cases 
 
 ```mermaid
 flowchart LR
-    CS[Cloud Scheduler<br/>Fridays 08:00 PT] --> CR[Cloud Run Job<br/>leadgen weekly<br/>Agent SDK pipeline]
+    CS[Cloud Scheduler<br/>Fridays 08:00 PT] --> CR[Cloud Run Job<br/>leadgen weekly<br/>pipeline + 2 agents]
     SM[Secret Manager<br/>DB URLs + API keys] --> CR
     CR --> API[Maps · Exa · Claude<br/>Blitz · Firecrawl]
     CR --> DB[(Neon Postgres)]
@@ -264,8 +287,8 @@ logo and implies no endorsement.
 | Tab | Shows |
 |---|---|
 | Demand gaps | Leads Available % per market, biggest gap first |
-| Current run | The seven stages in order, each done, running, failed, waiting or "needs a human", with stage results, job progress, spend vs budget and recent events; refreshes every 10 s |
-| Audit log | For a plan run with `--audit`: each major step with the pipeline Stage it ran in (Plan & approve, the seven stages, Close-out), the Subcomponent that did it, and a plain-language Summary (for example "Company search returns 25 results — independent CFP® financial planners … in Phoenix, AZ" or "Allows the tool call (approved stage) — run_stage maps"); filter by the 19 subcomponents in pipeline order, search, newest first; refreshes every 5 s |
+| Current run | The eight stages in order, each done, running, failed, waiting or "needs a human", with stage results, job progress, spend vs budget and recent events; refreshes every 10 s |
+| Audit log | For a plan run with `--audit`: each major step with the pipeline Stage it ran in (Plan & approve, the eight stages, Close-out), the Subcomponent that did it, and a plain-language Summary (for example "Company search returns 25 results — independent CFP® financial planners … in Phoenix, AZ" or "Allows the tool call (approved stage) — run_stage maps"); filter by the 19 subcomponents in pipeline order, search, newest first; refreshes every 5 s |
 | Run history | One row per run: market, status, Maps and Exa sourced, new, qualified, review, rejected, CRM inserted, spend vs budget, cost per qualified lead |
 | Sources and spend | Qualification rate per source, Exa query-consensus breakdown, spend per service (provider-reported vs estimated) |
 | Eval review | One judge decision per screen (business, market, source, run, tier) beside the page text it read with the judge's quote highlighted; blind mode hides the verdict until you pick your own; a Pass/Fail label, with a one-line critique, the correct verdict and failure-mode tags on a fail; automatic checks as plain sentences; a judge-alignment panel (confusion matrix, raw agreement, precision and recall per verdict); failure-mode counts; JSONL export. The workflow follows Hamel Husain's "Your AI Product Needs Evals" |
@@ -475,9 +498,10 @@ The full design, including the trade-offs behind each choice, is in [docs/design
 
 - **Claude Agent SDK, not a hosted agent platform**, so the loop, approval, budget, state and scheduling are
   built and understood here, and cost stays fully controlled.
-- **One human decision per run.** After approval, a pre-tool-use hook blocks any action outside the approved plan or
-  budget instead of asking again.
+- **One human decision per run.** After approval, a stage gate and budget reservations stop anything outside the
+  plan or budget, and each agent's PreToolUse hook confines it to the approved cities, keywords and allowances.
 - **One Postgres database** serves as CRM, plan store, run state, job queue, page cache, cost ledger and eval log.
-- **Agents only where reasoning is needed.** Contact enrichment is a plain API call. Qualification is one
-  structured-output model call over gathered evidence, and escalates to an agentic research loop only when the
-  evidence is unclear.
+- **Agents only where reasoning is needed.** The stage order is a loop, not an agent. Contact enrichment is a plain
+  API call. Qualification is one structured-output model call over gathered evidence, and escalates to the research
+  agent only when the evidence is unclear. The sourcing agent adapts Maps keywords and cities and Exa queries only
+  when the planned searches fell short.

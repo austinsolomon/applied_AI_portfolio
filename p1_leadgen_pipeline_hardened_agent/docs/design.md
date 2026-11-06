@@ -37,8 +37,8 @@ repeatable at scale.
 | 11 | Contact enrichment | Pipeline | Phone and email per lead: a fixed chain of API calls (domain → company page → best-placed person → email, phone), cached per domain, every call in the cost ledger | BlitzAPI · httpx · Postgres `contact_cache` |
 | 12 | Qualification | Pipeline | Gathers evidence and judges each lead against the rubric, citing sources | Claude API structured outputs · Claude Agent SDK for hard cases · Exa search and contents (Firecrawl only to render JavaScript pages) |
 | 13 | CRM write | Pipeline | Inserts qualified leads with at least one real phone or email (junk mailboxes blanked) in one transaction; conflicts reported, never lost; a negation-aware contradiction scan of each reason goes to `eval_records` without blocking | Postgres `INSERT … ON CONFLICT DO NOTHING` |
-| 14 | Orchestrator agent | Pipeline | Runs the pipeline in order, retries, reconfigures within the approved budget | Claude Agent SDK · skills in `.claude/skills/` |
-| 15 | Budget guard | Hardening | After approval, blocks any tool call outside the approved plan or budget | Agent SDK pre-tool-use hook |
+| 14 | Stage runner and sourcing agent | Pipeline | Plain code runs the stages in a fixed order; an Agent SDK sourcing agent adds Maps cells (another keyword or city) or rewritten Exa searches when planned sourcing fell short, from approved pools only | Python loop · Claude Agent SDK with in-process MCP tools |
+| 15 | Budget guard | Hardening | After approval, a stage gate blocks out-of-order or over-budget stages, and each agent's PreToolUse hook blocks calls outside its pools and allowances | Python stage gate · Agent SDK PreToolUse hooks · Postgres reservations |
 | 16 | Run state | Hardening | Nothing runs twice; completed stages are checkpointed; uncertain paid operations require reconciliation: a plan has one run in progress, a cell has one success per stage, a business is new once | Postgres `runs`, `run_ledger`, `seen_leads`, enforced by unique indexes |
 | 17 | Cost ledger and traces | Hardening | Tokens, dollars, latency and outcome of every model and tool call | Postgres `cost_ledger`, `traces` |
 | 18 | Eval capture and review | Hardening | Every sample verdict and qualification decision recorded; reviewed weekly; labels become test fixtures | Postgres `eval_records`, `eval_labels` · Streamlit |
@@ -62,9 +62,10 @@ repeatable at scale.
 | 3 | Plan | Each gap market is expanded into cities and keywords; the plan is sized to the goal and priced | |
 | 4 | Approve | The plan, expected leads and total estimated cost are shown; the human approves once and sets a budget | **yes** |
 | 5 | Sample | A small scrape per cell, graded for purity and in-market share | |
-| 6 | Reconfigure or abort | Weak cells retain a reconfigure or abort verdict; only already-approved cells may be sourced | |
+| 6 | Reconfigure or abort | Weak cells retain a reconfigure or abort verdict | |
 | 7 | Full run | Passing cells are scraped in full; the same business is never stored twice | |
-| 8 | Exa sourcing | Markets still under target get plain-language Exa company searches for each planned city | |
+| 8 | Exa sourcing | Plain-language Exa company searches for each planned city | |
+| 8a | Adapt | If sourcing fell short or a sample was weak, the sourcing agent tries other keywords or cities on Maps and rewritten queries or other cities on Exa, within the approved pools and allowances | |
 | 9 | Dedupe | Leads already in the CRM are dropped before anything is spent on them | |
 | 10 | Enrich | Phone and email lookup per lead | |
 | 11 | Qualify | Evidence gathered and judged; unclear cases escalate to agentic research | |
@@ -161,11 +162,14 @@ keeps cost fully controlled: tokens only, a model per role, turn caps and a ledg
 | Tracing | Session viewer | LangSmith, Langfuse | `traces` table |
 
 **One approval, then a guard instead of more questions.** Approving every scrape does not scale and trains people
-to click through. The human approves scope and budget once; the hook enforces both on every tool call; the weekly
-review catches quality problems after the fact.
+to click through. The human approves scope and budget once (a market, its candidate cities and keywords, and a
+budget); the stage gate, budget reservations and each agent's PreToolUse hook enforce it on every stage and tool
+call; the weekly review catches quality problems after the fact.
 
-**Agents only where judgment is needed.** Contact lookup has a fixed input and output, so it is a function.
-Qualification is a single structured-output call by default and an agent only for hard cases.
+**Agents only where judgment is needed.** The stage order never changes, so a loop runs it; an agent there would add
+cost and failure modes without making a decision. Contact lookup has a fixed input and output, so it is a function.
+Qualification is a single structured-output call by default and an agent only for hard cases. Sourcing is planned
+deterministically and an agent adapts it only when the results call for a different keyword, city or query.
 
 **Public data for geography.** City lists come from the US Census Gazetteer, not from a model.
 

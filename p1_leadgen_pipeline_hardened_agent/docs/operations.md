@@ -6,7 +6,10 @@ Cloud hosting and automated scheduling are not configured by this repository.
 
 `leadgen plan` creates a draft and asks for approval once. Check the cell count, target and total
 budget. `leadgen run --plan ID` executes it. A completed run can be queried again without new paid
-work. The SDK is limited to the pipeline's MCP stage tool; changing scope requires a new plan.
+work. Plain code runs the stages in order. The two Agent SDK agents get only their own in-process
+tools: the sourcing agent may add Maps cells and Exa searches from the market's approved cities and
+the category's keywords (at most 2 and 4 per run), and the research agent may search and read
+pages it found (4 calls per lead). Changing the market or budget requires a new plan.
 
 ## Run close-out
 
