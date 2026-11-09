@@ -1,7 +1,10 @@
 # Applied AI portfolio
 
-Production AI systems for go-to-market work, built on Claude. Each project is a self-contained
-folder with its own README, design doc, tests and dependencies.
+Production AI systems for go-to-market work, built on Claude.
+
+![Demand gaps tab of the live lead-gen dashboard: 8 markets ranked by leads available as a percent of goal](leadgen_pipeline_agents/docs/images/demand_gaps_live.png)
+
+Each project is a self-contained folder with its own README, design doc, tests and dependencies.
 
 | Project | What it is | Status |
 |---|---|---|
