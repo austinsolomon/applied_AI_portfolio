@@ -113,8 +113,15 @@ def read_eval_records(
     kind: EvalKind | None = None,
     unlabeled_only: bool = False,
     limit: int = 500,
+    with_page_text: bool = True,
 ) -> list[EvalRecord]:
-    """Newest first, each with its label joined in. Filters narrow the weekly review."""
+    """Newest first, each with its label joined in. Filters narrow the weekly review.
+
+    `evidence.sources` holds the full text of every page the judge read, almost all of a
+    record's size. The review page asks without it and loads one decision's pages at a time
+    (read_eval_sources): reading every record's pages on each redraw sent tens of megabytes per
+    click out of the database, which Neon's free plan meters.
+    """
     conditions = ["TRUE"]
     parameters: list[Any] = []
     if kind is not None:
@@ -123,11 +130,13 @@ def read_eval_records(
     if unlabeled_only:
         conditions.append("labels.label IS NULL")
     parameters.append(limit)
+    evidence_column = "records.evidence" if with_page_text else "records.evidence - 'sources'"
     with connection.cursor(row_factory=dict_row) as cursor:
         rows = cursor.execute(
             f"""
             SELECT records.eval_record_id, records.kind, records.subject, records.verdict,
-                   records.reason, records.evidence, records.model, records.run_id,
+                   records.reason, {evidence_column} AS evidence, records.model,
+                   records.run_id,
                    records.created_at,
                    labels.label, labels.note, labels.labeled_by, labels.labeled_at,
                    labels.correct_verdict, labels.failure_modes, labels.critique
@@ -150,6 +159,15 @@ def read_eval_records(
         )
         for row in rows
     ]
+
+
+def read_eval_sources(connection: psycopg.Connection, eval_record_id: int) -> dict[str, str]:
+    """One record's evidence pages (URL -> page text), for the decision being reviewed."""
+    row = connection.execute(
+        "SELECT evidence -> 'sources' FROM eval_records WHERE eval_record_id = %s",
+        (eval_record_id,),
+    ).fetchone()
+    return row[0] if row and isinstance(row[0], dict) else {}
 
 
 def read_decision_markets(connection: psycopg.Connection) -> dict[tuple[UUID, str], str]:
