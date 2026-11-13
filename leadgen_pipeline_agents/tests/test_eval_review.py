@@ -371,3 +371,27 @@ def test_exports_carry_the_human_verdict_failure_modes_and_critique(
     assert fixture["failure_modes"] == ["national-firm branch advisor missed"]
     assert fixture["critique"] == "Edward Jones advisor"
     assert [json.loads(line) for line in lines] == [fixture]
+
+
+def test_the_review_list_leaves_out_page_text_and_loads_it_per_decision(migrated_connection):
+    """Page text is almost all of a record's size; the list must not resend it on every click."""
+    from leadgen.eval_review import read_eval_sources
+
+    record_id = record_eval(
+        migrated_connection,
+        kind="judge_decision",
+        subject="Cedar Financial Planning",
+        verdict="qualified",
+        reason="names a CFP® planner serving Phoenix",
+        evidence={
+            "judgment": {"source_url": "https://cedar.example"},
+            "sources": {"https://cedar.example": "Jordan Example, CFP®, Phoenix " * 500},
+        },
+    )
+    (listed,) = read_eval_records(migrated_connection, with_page_text=False)
+    assert "sources" not in listed.evidence and listed.evidence["judgment"]
+    assert read_eval_sources(migrated_connection, record_id)["https://cedar.example"].startswith(
+        "Jordan Example"
+    )
+    (full,) = read_eval_records(migrated_connection)
+    assert "sources" in full.evidence  # fixture export still gets everything

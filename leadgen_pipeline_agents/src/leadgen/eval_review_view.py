@@ -13,6 +13,7 @@ you label here is exactly what becomes a fixture. The page shows business contac
 page text, so it is for local use only.
 """
 
+import dataclasses
 import html
 import re
 from collections.abc import Sequence
@@ -40,6 +41,7 @@ from leadgen.eval_review import (
     labeled_jsonl,
     read_decision_markets,
     read_eval_records,
+    read_eval_sources,
     review_queue,
 )
 from leadgen.qualification import UNVERIFIED_REASON_PREFIX
@@ -430,6 +432,23 @@ def remember_blind_pick(record_id: int) -> None:
     ]
 
 
+def with_page_text(record: EvalRecord) -> EvalRecord:
+    """The record with its evidence pages, read once per record and kept for the session."""
+    if "sources" in record.evidence:
+        return record
+    held = streamlit.session_state.setdefault("eval_page_text", {})
+    if record.eval_record_id not in held:
+        try:
+            with connect() as connection:
+                held[record.eval_record_id] = read_eval_sources(connection, record.eval_record_id)
+        except psycopg.Error as error:
+            streamlit.error(f"Cannot read the evidence pages from the database: {error}")
+            return record
+    return dataclasses.replace(
+        record, evidence={**record.evidence, "sources": held[record.eval_record_id]}
+    )
+
+
 def render_decision(
     queue: list[EvalRecord],
     *,
@@ -443,7 +462,7 @@ def render_decision(
     ids = [record.eval_record_id for record in queue]
     current_id = streamlit.session_state.get("eval_current_id")
     position = ids.index(current_id) if current_id in ids else 0
-    record = queue[position]
+    record = with_page_text(queue[position])
 
     navigation = streamlit.columns([1, 1, 4])
     navigation[0].button(
@@ -736,7 +755,7 @@ def render_eval_review() -> None:
 
     try:
         with connect() as connection:
-            records = read_eval_records(connection, limit=RECORD_LIMIT)
+            records = read_eval_records(connection, limit=RECORD_LIMIT, with_page_text=False)
             markets = read_decision_markets(connection)
             run_labels = dict(list_runs(connection, limit=500))
     except ValidationError:
