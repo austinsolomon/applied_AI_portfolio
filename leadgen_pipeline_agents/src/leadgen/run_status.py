@@ -35,6 +35,9 @@ STAGE_WAITING = "waiting"
 # A finished run that predates a stage (e.g. runs before the sourcing agent existed).
 STAGE_SKIPPED = "skipped"
 
+# A run still marked running after this long is treated as crashed, not live (see run_in_progress).
+RUN_LIVE_HOURS = 6
+
 
 @dataclass(frozen=True)
 class StageState:
@@ -231,14 +234,34 @@ def read_spend_by_service(connection: psycopg.Connection) -> list[dict[str, Any]
     return _rows(connection, "SELECT * FROM spend_by_service_view ORDER BY total_usd DESC")
 
 
-def read_audit_events(connection: psycopg.Connection, plan_id: int) -> list[dict[str, Any]]:
-    """Every audit row for one plan: planning and approval, then each run of it, in order."""
+def read_audit_events(
+    connection: psycopg.Connection, plan_id: int, after_event_id: int = 0
+) -> list[dict[str, Any]]:
+    """Audit rows for one plan, in order: planning and approval, then each run of it.
+
+    The trail is append-only, so a reader that already holds rows up to `after_event_id` asks
+    only for the newer ones.
+    """
     with connection.cursor(row_factory=dict_row) as cursor:
         return cursor.execute(
             "SELECT audit_event_id, recorded_at, run_id, actor, action, target, detail "
-            "FROM audit_events WHERE plan_id = %s ORDER BY audit_event_id",
-            (plan_id,),
+            "FROM audit_events WHERE plan_id = %s AND audit_event_id > %s "
+            "ORDER BY audit_event_id",
+            (plan_id, after_event_id),
         ).fetchall()
+
+
+def run_in_progress(connection: psycopg.Connection) -> bool:
+    """Whether a run is still running: the only time the dashboard refreshes itself.
+
+    A run left 'running' by a crash would otherwise keep every open page polling the database
+    forever, so a run started more than RUN_LIVE_HOURS ago no longer counts.
+    """
+    return connection.execute(
+        "SELECT EXISTS (SELECT 1 FROM runs WHERE status = 'running' "
+        "AND started_at > now() - make_interval(hours => %s))",
+        (RUN_LIVE_HOURS,),
+    ).fetchone()[0]
 
 
 def audited_plans(connection: psycopg.Connection) -> list[tuple[int, str]]:
