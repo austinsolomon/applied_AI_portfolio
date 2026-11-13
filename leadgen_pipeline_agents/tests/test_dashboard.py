@@ -414,3 +414,69 @@ def test_demand_progress_axis_ticks_every_20_points() -> None:
         if "axis" in layer["encoding"]["x"]
     ]
     assert tick_lists and all(ticks == [0, 20, 40, 60, 80, 100] for ticks in tick_lists)
+
+
+def test_the_page_does_not_poll_the_database_with_no_run_in_progress(
+    dashboard_database, migrated_connection: psycopg.Connection
+) -> None:
+    """Neon meters data sent out; an idle page left open must not keep re-reading it."""
+    seed_blocked_run(migrated_connection)  # the run has ended (failed), so nothing is live
+    app = render_dashboard()
+    assert app.session_state["live_refresh"] is False
+    assert any("does not refresh itself" in caption.value for caption in app.caption)
+
+
+def test_the_page_refreshes_while_a_run_is_in_progress_and_stops_after(
+    dashboard_database, migrated_connection: psycopg.Connection
+) -> None:
+    _, run = seed_blocked_run(migrated_connection)
+    migrated_connection.execute(
+        "UPDATE runs SET status='running', finished_at=NULL WHERE run_id=%s", (run.run_id,)
+    )
+    app = render_dashboard()
+    assert app.session_state["live_refresh"] is True
+    assert any("Refreshes every 10 seconds" in caption.value for caption in app.caption)
+
+    migrated_connection.execute(
+        "UPDATE runs SET status='finished', finished_at=now() WHERE run_id=%s", (run.run_id,)
+    )
+    app.run()
+    assert app.session_state["live_refresh"] is False
+
+
+def test_audit_reads_fetch_only_events_newer_than_the_ones_held(
+    migrated_connection: psycopg.Connection,
+) -> None:
+    from leadgen.demo_seed import seed_demo_data
+    from leadgen.run_status import read_audit_events
+
+    seed_demo_data(migrated_connection)
+    plan, run = seed_blocked_run(migrated_connection)
+    for action in ["first", "second", "third"]:
+        migrated_connection.execute(
+            "INSERT INTO audit_events (run_id, plan_id, actor, action, target) "
+            "VALUES (%s, %s, 'Postgres (State machine)', %s, 'x')",
+            (run.run_id, plan.plan_id, action),
+        )
+    events = read_audit_events(migrated_connection, plan.plan_id)
+    newer = read_audit_events(migrated_connection, plan.plan_id, events[0]["audit_event_id"])
+    assert [event["action"] for event in newer] == [event["action"] for event in events[1:]]
+
+
+def test_a_run_stuck_as_running_for_hours_does_not_keep_pages_polling(
+    migrated_connection: psycopg.Connection,
+) -> None:
+    from leadgen.demo_seed import seed_demo_data
+    from leadgen.run_status import RUN_LIVE_HOURS, run_in_progress
+
+    seed_demo_data(migrated_connection)
+    _, run = seed_blocked_run(migrated_connection)
+    migrated_connection.execute(
+        "UPDATE runs SET status='running', finished_at=NULL WHERE run_id=%s", (run.run_id,)
+    )
+    assert run_in_progress(migrated_connection)
+    migrated_connection.execute(
+        "UPDATE runs SET started_at = now() - make_interval(hours => %s) WHERE run_id=%s",
+        (RUN_LIVE_HOURS + 1, run.run_id),
+    )
+    assert not run_in_progress(migrated_connection)

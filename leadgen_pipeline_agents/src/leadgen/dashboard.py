@@ -201,6 +201,7 @@ def render_run(connection: psycopg.Connection) -> None:
     run_id = streamlit.selectbox(
         "Run", list(labels), format_func=labels.get, key="run_choice", help="Newest first"
     )
+    streamlit.caption(refresh_note())
     detail = run_status.read_run_detail(connection, run_id)
     # The same one-line summary as the Run history tab, for this run only.
     summary = [row for row in run_status.read_run_history(connection) if row["run_id"] == run_id]
@@ -409,7 +410,7 @@ def render_audit(connection: psycopg.Connection) -> None:
     plan_id = streamlit.selectbox(
         "Plan", list(labels), format_func=labels.get, key="audit_plan", help="Newest first"
     )
-    events = run_status.read_audit_events(connection, plan_id)
+    events = cached_audit_events(connection, plan_id)
     table = audit_table(events)
     controls = streamlit.columns([2, 2, 1])
     # The 19 audit actors in pipeline order, whether or not this plan's trail has them yet.
@@ -428,7 +429,7 @@ def render_audit(connection: psycopg.Connection) -> None:
         shown = shown.iloc[::-1]
     streamlit.caption(
         f"{len(shown)} of {len(table)} events. Each row: the pipeline stage it ran in, the "
-        "subcomponent that did it, and a plain-language summary. Refreshes every 5 seconds."
+        "subcomponent that did it, and a plain-language summary. " + refresh_note()
     )
     streamlit.dataframe(
         shown,
@@ -480,23 +481,58 @@ def render_data_model(connection: psycopg.Connection) -> None:
             streamlit.dataframe(example_frame(guide.examples), hide_index=True)
 
 
-@streamlit.fragment(run_every="5s")
+# How often the Current run and Audit log tabs redraw while a run is in progress. With no run in
+# progress they do not redraw at all: Neon's free plan meters data sent out (5 GB a month), and a
+# page left open that re-read the audit trail every 5 seconds used all of it in November 2026.
+LIVE_REFRESH_SECONDS = 10
+
+
+def refresh_note() -> str:
+    if streamlit.session_state.get("live_refresh"):
+        return f"Refreshes every {LIVE_REFRESH_SECONDS} seconds while a run is in progress."
+    return "No run in progress, so this tab does not refresh itself; reload the page for new data."
+
+
+def cached_audit_events(connection: psycopg.Connection, plan_id: int) -> list[dict]:
+    """The plan's audit trail, fetching only rows newer than the ones this session holds."""
+    cache = streamlit.session_state.get("audit_cache")
+    if not cache or cache["plan_id"] != plan_id:
+        cache = {"plan_id": plan_id, "events": []}
+    after = cache["events"][-1]["audit_event_id"] if cache["events"] else 0
+    cache["events"] = cache["events"] + run_status.read_audit_events(connection, plan_id, after)
+    streamlit.session_state["audit_cache"] = cache
+    return cache["events"]
+
+
+def end_live_refresh_when_idle(connection: psycopg.Connection) -> None:
+    """Once the run ends, redraw the whole page so the refresh timers switch off."""
+    if streamlit.session_state.get("live_refresh") and not run_status.run_in_progress(connection):
+        streamlit.session_state["live_refresh"] = False
+        streamlit.rerun(scope="app")
+
+
 def live_audit() -> None:
     try:
         with connect() as connection:
+            end_live_refresh_when_idle(connection)
             render_audit(connection)
     except psycopg.Error as error:
         streamlit.error(f"Cannot read the audit trail from the database: {error}")
 
 
-@streamlit.fragment(run_every="10s")
 def live_run() -> None:
-    """The Current run tab redraws itself every 10 seconds while the page is open."""
     try:
         with connect() as connection:
+            end_live_refresh_when_idle(connection)
             render_run(connection)
     except psycopg.Error as error:
         streamlit.error(f"Cannot read the run from the database: {error}")
+
+
+def live_fragment(body) -> None:
+    """Run a tab as a fragment that redraws itself only while a run is in progress."""
+    live = streamlit.session_state.get("live_refresh", False)
+    streamlit.fragment(body, run_every=LIVE_REFRESH_SECONDS if live else None)()
 
 
 HEADER = """
@@ -582,6 +618,7 @@ def render() -> None:
                 render_sources(connection)
             with data_model_tab:
                 render_data_model(connection)
+            streamlit.session_state["live_refresh"] = run_status.run_in_progress(connection)
     except ValidationError:
         streamlit.error(DATABASE_URL_HELP)
         return
@@ -589,9 +626,9 @@ def render() -> None:
         streamlit.error(f"Cannot read from the database: {error}")
         return
     with run_tab:
-        live_run()
+        live_fragment(live_run)
     with audit_tab:
-        live_audit()
+        live_fragment(live_audit)
     with evals_tab:
         render_eval_review()
 
