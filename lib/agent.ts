@@ -1,5 +1,10 @@
-/**
- * Fill in the agent by following the course instructions:
- * https://vercel.com/academy/filesystem-agents/agent-skeleton
- */
-export let agent: any;
+import { ToolLoopAgent } from 'ai';
+
+// Free-tier model; course default is 'anthropic/claude-opus-4.6' (needs paid credits)
+const MODEL = 'nvidia/nemotron-3.5-lightning-free';
+
+export const agent = new ToolLoopAgent({
+  model: MODEL,
+  instructions: '',
+  tools: {}
+});
