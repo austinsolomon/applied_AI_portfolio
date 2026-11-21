@@ -1,0 +1,19 @@
+{
+  "name": "teensycode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.107",
+    "ai": "^7.0.178",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.5",
+    "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "dev": "bun --watch server.ts",
+    "agent": "bun run index.ts"
+  }
+}
