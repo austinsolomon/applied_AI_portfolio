@@ -86,9 +86,22 @@ class ReadInput(BaseModel):
 @tool(
     "read",
     """Read a file from the project. Returns numbered lines.
-WHEN TO USE: viewing file contents, checking configs, reading source code.
-WHEN NOT TO USE: searching across files (use grep instead).
-DO NOT USE FOR: running commands, listing directories.""",
+
+WHEN TO USE: viewing file contents, checking configurations, reading source code,
+  examining specific lines with offset/limit.
+
+WHEN NOT TO USE: searching for patterns across files (use grep instead).
+  Running commands (use bash instead).
+
+DO NOT USE FOR: searching code (use grep), executing commands (use bash),
+  listing directories (use bash).
+
+USAGE: path is relative to working directory. offset (1-indexed) and limit
+  are optional. Output is capped at 500 lines.
+
+EXAMPLES:
+  - Read a config: path "package.json"
+  - Read lines 40-60 of a file: path "index.ts" offset 40 limit 21""",
     ReadInput.model_json_schema(),
 )
 async def read(args: dict) -> dict:
@@ -131,18 +144,28 @@ class GrepInput(BaseModel):
     glob: str | None = Field(default=None, description="File glob filter, e.g. '*.ts'")
 
 
-# Same four-section contract as the TS description: WHEN TO USE,
-# WHEN NOT TO USE, DO NOT USE FOR, EXAMPLES. The model routes on this text.
+# Same five-section contract as the TS description: WHEN TO USE,
+# WHEN NOT TO USE, DO NOT USE FOR, USAGE, EXAMPLES. The model routes on this text.
 @tool(
     "grep",
     """Search file contents using regex. Returns matching lines with file paths.
+
 WHEN TO USE: finding patterns across multiple files, locating function definitions,
   searching for imports, finding TODOs or error messages.
+
 WHEN NOT TO USE: reading a known file (use read instead).
-DO NOT USE FOR: running commands, listing directories.
+  Running commands (use bash instead).
+
+DO NOT USE FOR: reading files (use read), listing directories (use bash).
+
+USAGE: pattern is an extended regex string. glob filters by file name
+  (default: all files). node_modules and .git are skipped.
+  Results are capped at 50 matches.
+
 EXAMPLES:
   - Find all TODO comments: pattern "TODO" glob "*.ts"
-  - Find function definitions: pattern "function \\w+" glob "*.ts\"""",
+  - Find function definitions: pattern "function \\w+" glob "*.ts"
+  - Find imports of a package: pattern "from 'express'" glob "*.ts\"""",
     GrepInput.model_json_schema(),
 )
 async def grep(args: dict) -> dict:
@@ -189,15 +212,28 @@ class BashInput(BaseModel):
     command: str = Field(description="Shell command to execute")
 
 
-# Same four-section contract as the TS description.
+# Same five-section contract as the TS description.
 @tool(
     "bash",
     """Execute a shell command in the working directory.
+
 WHEN TO USE: running build commands, installing packages, running tests,
   git operations, directory listings.
+
 WHEN NOT TO USE: reading file contents (use read instead).
   Searching for patterns (use grep instead).
-DO NOT USE FOR: reading files (use read), searching code (use grep).""",
+
+DO NOT USE FOR: reading files (use read), searching code (use grep).
+
+USAGE: command is a single shell string; pipes, redirects, ; and && are blocked.
+  Read-only commands (ls, git status...) run immediately. Commands that change
+  files or install packages (mkdir, rm, git commit, bun add...) wait for the
+  user's approval. Anything else is blocked with an error. 30s timeout.
+
+EXAMPLES:
+  - List files: command "ls -la"
+  - Check git status: command "git status"
+  - Run the test suite (needs approval): command "bun test\"""",
     BashInput.model_json_schema(),
 )
 async def bash(args: dict) -> dict:

@@ -40,9 +40,22 @@ function classify(command: string): Verdict {
 
 const read = tool({
   description: `Read a file from the project. Returns numbered lines.
-WHEN TO USE: viewing file contents, checking configs, reading source code.
-WHEN NOT TO USE: searching across files (use grep instead).
-DO NOT USE FOR: running commands, listing directories.`,
+
+WHEN TO USE: viewing file contents, checking configurations, reading source code,
+  examining specific lines with offset/limit.
+
+WHEN NOT TO USE: searching for patterns across files (use grep instead).
+  Running commands (use bash instead).
+
+DO NOT USE FOR: searching code (use grep), executing commands (use bash),
+  listing directories (use bash).
+
+USAGE: path is relative to working directory. offset (1-indexed) and limit
+  are optional. Output is capped at 500 lines.
+
+EXAMPLES:
+  - Read a config: path "package.json"
+  - Read lines 40-60 of a file: path "index.ts" offset 40 limit 21`,
   inputSchema: z.object({
     path: z.string().describe("File path relative to working directory"),
     offset: z.number().optional().describe("Start line (1-indexed)"),
@@ -69,13 +82,23 @@ DO NOT USE FOR: running commands, listing directories.`,
 
 const grep = tool({
   description: `Search file contents using regex. Returns matching lines with file paths.
+
 WHEN TO USE: finding patterns across multiple files, locating function definitions,
   searching for imports, finding TODOs or error messages.
+
 WHEN NOT TO USE: reading a known file (use read instead).
-DO NOT USE FOR: running commands, listing directories.
+  Running commands (use bash instead).
+
+DO NOT USE FOR: reading files (use read), listing directories (use bash).
+
+USAGE: pattern is an extended regex string. glob filters by file name
+  (default: all files). node_modules and .git are skipped.
+  Results are capped at 50 matches.
+
 EXAMPLES:
   - Find all TODO comments: pattern "TODO" glob "*.ts"
-  - Find function definitions: pattern "function \\w+" glob "*.ts"`,
+  - Find function definitions: pattern "function \\w+" glob "*.ts"
+  - Find imports of a package: pattern "from 'express'" glob "*.ts"`,
   inputSchema: z.object({
     pattern: z.string().describe("Regex pattern to search for"),
     path: z.string().optional().describe("Directory to search (default: working dir)"),
@@ -117,11 +140,24 @@ EXAMPLES:
 
 const bash = tool({
   description: `Execute a shell command in the working directory.
+
 WHEN TO USE: running build commands, installing packages, running tests,
   git operations, directory listings.
+
 WHEN NOT TO USE: reading file contents (use read instead).
   Searching for patterns (use grep instead).
-DO NOT USE FOR: reading files (use read), searching code (use grep).`,
+
+DO NOT USE FOR: reading files (use read), searching code (use grep).
+
+USAGE: command is a single shell string; pipes, redirects, ; and && are blocked.
+  Read-only commands (ls, git status...) run immediately. Commands that change
+  files or install packages (mkdir, rm, git commit, bun add...) wait for the
+  user's approval. Anything else is blocked with an error. 30s timeout.
+
+EXAMPLES:
+  - List files: command "ls -la"
+  - Check git status: command "git status"
+  - Run the test suite (needs approval): command "bun test"`,
   inputSchema: z.object({
     command: z.string().describe("Shell command to execute"),
   }),
