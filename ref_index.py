@@ -1,8 +1,12 @@
-"""Python equivalent of index.ts (reference only, never executed).
+"""TeensyCode: a small coding agent built on the Claude Agent SDK.
 
-Claude Agent SDK version (pip install claude-agent-sdk). The Agent SDK runs
-the tool loop for you, like ToolLoopAgent. Custom tools are registered as an
-in-process MCP server.
+You give it a folder and a question. It can read files, search across files,
+and run a limited set of shell commands to answer. Anything that changes your
+files waits for you to type "y" first.
+
+Run:  python ref_index.py <folder> "your question"
+Needs: pip install claude-agent-sdk pydantic, and ANTHROPIC_API_KEY set.
+(Reference file: it compiles but has not been run.)
 """
 
 import asyncio
@@ -10,7 +14,9 @@ import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Protocol
 
 from pydantic import BaseModel, Field
 from claude_agent_sdk import (
@@ -26,53 +32,87 @@ from claude_agent_sdk import (
     tool,
 )
 
+# The project folder the agent works in: the first command-line argument, or
+# the folder you ran the script from. Every file path the agent uses is
+# resolved relative to this.
 cwd = Path(sys.argv[1] if len(sys.argv) > 1 else os.getcwd()).resolve()
 
+# Output caps. Tool output goes straight into the model's context, and huge
+# outputs waste tokens and bury the useful part, so long results are cut off
+# with a note saying so.
 MAX_LINES = 500
 MAX_MATCHES = 50
 
-# List 1: run automatically (read-only).
+# Commands the agent may run on its own. All of them only look at things;
+# none of them change anything.
 SAFE_PREFIXES = [
     "ls", "cat", "echo", "pwd", "which", "find",
     "head", "tail", "wc", "git log", "git status", "git diff",
 ]
 
-# List 2: allowed, but only after a human says yes (changes files or installs).
+# Commands that change files or install packages. Allowed, but only after
+# you approve each one.
 APPROVAL_PREFIXES = [
     "mkdir", "touch", "cp", "mv", "rm",
     "git add", "git commit", "git checkout", "git restore",
     "npm install", "bun add", "bun install", "bun test", "npx tsc",
 ]
 
-# List 3: everything else is blocked. These shell tricks are always blocked,
-# even for list 1/2 commands, so "ls; rm -rf ~" can't smuggle anything through.
+# Shell tricks that are always refused, even inside an allowed command:
+# chaining (; & |), backticks and $(...) substitution, redirects (< >), and
+# find's -exec/-delete. Without this, "ls; rm -rf ~" would pass because it
+# starts with "ls". Any command on neither list above is refused too.
 FORBIDDEN = re.compile(r"[;&|`$<>]|\s-(exec|execdir|delete|ok)\b")
 
 
-def classify(command: str) -> str:
-    """Return "safe", "approval", or "blocked" for a shell command.
+def create_classifier(
+    safe_prefixes: list[str], approval_prefixes: list[str] | None = None
+) -> Callable[[str], str]:
+    """Build a function that sorts a command into "safe", "approval", or "blocked".
 
-    Matches "ls" or "ls -la" but not "lsof" (prefix plus a space, or exact).
+    You pass in the two lists, and it returns a classify(command) function
+    that checks, in order:
+      1. Contains a forbidden shell trick?  -> "blocked"
+      2. Starts with a safe command?        -> "safe"
+      3. Starts with an approval command?   -> "approval"
+      4. Anything else                      -> "blocked"
+    "Starts with" means the whole word: "ls" and "ls -la" match "ls",
+    but "lsof" does not.
+
+    It's a factory (a function that returns a function) so the bash tool and
+    the permission check below share the exact same rules.
     """
-    cmd = command.strip()
-    if FORBIDDEN.search(cmd):
+    approval_prefixes = approval_prefixes or []
+
+    def classify(command: str) -> str:
+        cmd = command.strip()
+        if FORBIDDEN.search(cmd):
+            return "blocked"
+
+        def matches(p: str) -> bool:
+            return cmd == p or cmd.startswith(p + " ")
+
+        if any(matches(p) for p in safe_prefixes):
+            return "safe"
+        if any(matches(p) for p in approval_prefixes):
+            return "approval"
         return "blocked"
 
-    def matches(p: str) -> bool:
-        return cmd == p or cmd.startswith(p + " ")
+    return classify
 
-    if any(matches(p) for p in SAFE_PREFIXES):
-        return "safe"
-    if any(matches(p) for p in APPROVAL_PREFIXES):
-        return "approval"
-    return "blocked"
+
+# The one shared rule set, used by can_use_tool further down.
+classify = create_classifier(SAFE_PREFIXES, APPROVAL_PREFIXES)
 
 
 class ReadInput(BaseModel):
-    """Input schema for the read tool. Same role as the Zod inputSchema.
+    """The arguments the model must send when it calls the read tool.
 
-    `int | None = None` is Pydantic's version of `.optional()`.
-    Each Field(description=...) is the model-facing hint, like `.describe()`.
+    Pydantic does two jobs here. model_json_schema() turns this class into
+    the schema the model is shown, so it knows which arguments exist. And
+    model_validate() checks what the model actually sent before we use it.
+    Each Field description is a hint the model reads.
+    `int | None = None` means the argument is optional.
     """
 
     path: str = Field(description="File path relative to working directory")
@@ -80,9 +120,10 @@ class ReadInput(BaseModel):
     limit: int | None = Field(default=None, description="Max lines to return")
 
 
-# @tool(name, description, schema) is the Agent SDK's tool({...}).
-# The description is a prompt to the model, same text as the TS.
-# @tool takes JSON Schema, so we pass the one Pydantic generates.
+# Register `read` as a tool: its name, the description the model reads to
+# decide when to use it, and its argument schema. The description is
+# effectively a prompt, and its five sections steer the model toward the
+# right tool for each job.
 @tool(
     "read",
     """Read a file from the project. Returns numbered lines.
@@ -105,12 +146,16 @@ EXAMPLES:
     ReadInput.model_json_schema(),
 )
 async def read(args: dict) -> dict:
-    """Read a file and return numbered lines, capped at MAX_LINES.
+    """Open one file and return its lines, numbered.
 
-    1. Validate the model's input with ReadInput (like the AI SDK does with Zod).
-    2. Resolve the path against the project directory.
-    3. Apply offset/limit, then the 500-line cap with a truncation note.
-    4. Return MCP-style content blocks (Agent SDK tools can't return a bare string).
+    1. Check the model's arguments against ReadInput.
+    2. Turn the relative path into a full path inside the project.
+    3. If offset/limit were given, keep only that slice of lines.
+    4. Cut off anything past MAX_LINES and say so.
+    5. Number each line ("12: const x = 1") so the model can refer to
+       exact lines later.
+    Tools return a dict of "content blocks" rather than a plain string;
+    that's the format the SDK expects.
     """
     inp = ReadInput.model_validate(args)
 
@@ -137,15 +182,19 @@ async def read(args: dict) -> dict:
 
 
 class GrepInput(BaseModel):
-    """Input schema for the grep tool. Same role as the Zod inputSchema."""
+    """The arguments for the grep tool: what to search for, and where.
+
+    Only `pattern` is required. `path` narrows the search to a subfolder,
+    and `glob` narrows it to certain file types, such as "*.ts".
+    """
 
     pattern: str = Field(description="Regex pattern to search for")
     path: str | None = Field(default=None, description="Directory to search (default: working dir)")
     glob: str | None = Field(default=None, description="File glob filter, e.g. '*.ts'")
 
 
-# Same five-section contract as the TS description: WHEN TO USE,
-# WHEN NOT TO USE, DO NOT USE FOR, USAGE, EXAMPLES. The model routes on this text.
+# Register `grep`. Its description steers searches here instead of opening
+# file after file with read, or running grep through bash.
 @tool(
     "grep",
     """Search file contents using regex. Returns matching lines with file paths.
@@ -169,14 +218,21 @@ EXAMPLES:
     GrepInput.model_json_schema(),
 )
 async def grep(args: dict) -> dict:
-    """Search files with `grep -rn`, capped at MAX_MATCHES.
+    """Search every file under a folder and return the lines that match.
 
-    Differences from the TS, both deliberate:
-      - subprocess.run gets a list of arguments, so no shell is involved and no
-        quote-escaping is needed (the TS builds a shell string, so it escapes ').
-      - grep exits 1 when nothing matches. With check=False that's just a normal
-        result, which replaces the TS try/catch.
-    Output past MAX_MATCHES is cut, with the total count reported.
+    Runs the system `grep` with:
+      -r  search subfolders too
+      -n  include line numbers
+      --exclude-dir  skip node_modules and .git (huge, and never useful)
+      --include      only look in files matching the glob
+      -E             use extended regex syntax
+    Each result looks like "path/file.ts:42:matching line".
+
+    The command is passed as a list of separate arguments, not one string,
+    so no shell is involved and odd characters in the pattern can't break
+    anything. grep exits with 1 when it finds nothing; check=False makes
+    that count as a normal result instead of an error. More than
+    MAX_MATCHES results are cut off, with the total count reported.
     """
     inp = GrepInput.model_validate(args)
     search_dir = (cwd / (inp.path or ".")).resolve()
@@ -207,15 +263,84 @@ async def grep(args: dict) -> dict:
 
 
 class BashInput(BaseModel):
-    """Input schema for the bash tool. Same role as the Zod inputSchema."""
+    """The single argument for the bash tool: the command to run, as one string."""
 
     command: str = Field(description="Shell command to execute")
 
 
-# Same five-section contract as the TS description.
-@tool(
-    "bash",
-    """Execute a shell command in the working directory.
+@dataclass
+class ExecResult:
+    """What you get back after running a command.
+
+    stdout:     the text the command printed (or its error message)
+    exit_code:  0 means it worked; any other number means it failed
+
+    @dataclass writes the __init__ for you, so ExecResult("hi", 0) just works.
+    """
+
+    stdout: str
+    exit_code: int
+
+
+class BashOperations(Protocol):
+    """The job description for anything that can run a shell command.
+
+    To qualify, an object just needs an async exec(command) method that
+    returns an ExecResult. It doesn't have to inherit from this class;
+    having the right method is enough.
+
+    This is what lets the bash tool stay the same while the place commands
+    run changes: today it's LocalOps (your own machine), later it will be
+    a sandbox (a throwaway remote machine).
+    """
+
+    async def exec(self, command: str) -> ExecResult: ...
+
+
+def create_bash_tool( operations: BashOperations, safe_prefixes: list[str], approval_prefixes: list[str] | None = None,):
+    """Build the bash tool, wired to whichever command runner you pass in.
+
+    The tool itself only handles the decision side:
+      1. Check the model's argument.
+      2. Refuse blocked commands with a message listing what IS allowed,
+         so the model can pick a different command.
+      3. Hand the command to operations.exec() to actually run it.
+      4. Report the output, prefixed with "Exit N:" if it failed, so the
+         model can tell failure apart from empty output.
+
+    The blocked check is a backup. can_use_tool (below) already stops blocked
+    commands and asks you about approval ones before this code runs; the
+    backup keeps the tool safe if it's ever used without that check.
+
+    The inner bash() function remembers `operations` and the prefix lists
+    from this outer function. That's what makes this a factory: call it
+    with a different runner and you get the same tool, running commands
+    somewhere else. `tool(...)(bash)` is the @tool decorator written as a
+    plain call, because bash() is defined inside this function.
+    """
+    approval_prefixes = approval_prefixes or []
+    classify_command = create_classifier(safe_prefixes, approval_prefixes)
+
+    async def bash(args: dict) -> dict:
+        inp = BashInput.model_validate(args)
+
+        if classify_command(inp.command) == "blocked":
+            text = (
+                f'Blocked: "{inp.command}" is not allowed. '
+                f"Safe: {', '.join(safe_prefixes)}. Needs approval: {', '.join(approval_prefixes)}."
+            )
+            return {"content": [{"type": "text", "text": text}]}
+
+        result = await operations.exec(inp.command)
+        if result.exit_code != 0:
+            text = f"Exit {result.exit_code}: {result.stdout}"
+        else:
+            text = result.stdout or "(no output)"
+        return {"content": [{"type": "text", "text": text}]}
+
+    return tool(
+        "bash",
+        """Execute a shell command in the working directory.
 
 WHEN TO USE: running build commands, installing packages, running tests,
   git operations, directory listings.
@@ -234,63 +359,71 @@ EXAMPLES:
   - List files: command "ls -la"
   - Check git status: command "git status"
   - Run the test suite (needs approval): command "bun test\"""",
-    BashInput.model_json_schema(),
-)
-async def bash(args: dict) -> dict:
-    """Run a shell command that already passed the permission check.
+        BashInput.model_json_schema(),
+    )(bash)
 
-    can_use_tool (below) runs first and decides safe / ask the human / deny,
-    so this function only sees safe or human-approved commands. The blocked
-    check here is a second line of defense, same as in the TS execute.
-    shell=True is required because commands arrive as one string; classify()
-    is what keeps that from being dangerous.
+
+class LocalOps:
+    """Runs commands on your own machine, inside the project folder.
+
+    This is the only place a shell command actually executes. Success,
+    failure and timeout all come back as an ExecResult, so the bash tool
+    never has to know how running a command works.
+
+    Details:
+      - shell=True: the command arrives as one string ("ls -la src"), so a
+        shell has to split it up. The classifier is what makes this safe.
+      - cwd=cwd: commands run inside the project folder.
+      - timeout=30: a stuck command is killed after 30 seconds and reported
+        as exit code 124 (the usual "timed out" code).
+      - asyncio.to_thread: subprocess.run blocks until the command finishes,
+        so it runs on a side thread while the rest of the agent keeps going.
     """
-    inp = BashInput.model_validate(args)
 
-    if classify(inp.command) == "blocked":
-        text = (
-            f'Blocked: "{inp.command}" is not allowed. '
-            f"Safe: {', '.join(SAFE_PREFIXES)}. Needs approval: {', '.join(APPROVAL_PREFIXES)}."
-        )
-        return {"content": [{"type": "text", "text": text}]}
-
-    try:
-        proc = subprocess.run(
-            inp.command,
-            shell=True,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except subprocess.TimeoutExpired:
-        return {"content": [{"type": "text", "text": "Exit 124: timed out after 30s"}]}
-
-    if proc.returncode != 0:
-        text = f"Exit {proc.returncode}: {proc.stdout or proc.stderr}"
-    else:
-        text = proc.stdout or "(no output)"
-    return {"content": [{"type": "text", "text": text}]}
+    async def exec(self, command: str) -> ExecResult:
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                command,
+                shell=True,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            return ExecResult(stdout="timed out after 30s", exit_code=124)
+        if proc.returncode != 0:
+            return ExecResult(stdout=proc.stdout or proc.stderr, exit_code=proc.returncode)
+        return ExecResult(stdout=proc.stdout, exit_code=0)
 
 
-# Register the hand-written tools with the Agent SDK. "MCP server" is just
-# the SDK's packaging format for custom tools: in-process, not networked.
-# Same job as `tools: { read, grep, bash }` in the TS.
+# The bash tool the agent uses: built with LocalOps, so commands run on
+# this machine. Swapping LocalOps() for a sandbox runner is a one-line change.
+bash = create_bash_tool(LocalOps(), SAFE_PREFIXES, APPROVAL_PREFIXES)
+
+
+# Bundle the three tools so the agent can use them. The SDK calls a bundle
+# of custom tools an "MCP server", but this one runs inside this script, with
+# no network involved. The agent sees each tool as mcp__teensy__<name>.
 teensy = create_sdk_mcp_server(name="teensy", version="0.1.0", tools=[read, grep, bash])
 
 
 async def can_use_tool(
     tool_name: str, input_data: dict, context: ToolPermissionContext
 ) -> PermissionResultAllow | PermissionResultDeny:
-    """Permission callback: the Agent SDK's version of toolApproval.
+    """The gatekeeper: runs before every tool call that isn't pre-approved.
 
-    The SDK calls this before running any tool that isn't in allowed_tools.
-    Unlike the AI SDK, the loop does NOT stop: this function simply awaits the
-    human's answer, then returns allow or deny, and the loop carries on.
-      safe     -> allow without asking            ("not-applicable")
-      approval -> ask on the terminal, then allow or deny  ("user-approval")
-      blocked  -> deny with a message the model sees       ("denied")
-    input() blocks, so it runs in a thread to keep the event loop free.
+    read and grep are pre-approved (see allowed_tools below), so in practice
+    this only sees bash. For each command:
+      safe      -> allow it right away
+      blocked   -> refuse it, with a reason the model sees so it can adjust
+      approval  -> print the command, wait for you to type y, then allow
+                   or refuse
+    The agent simply waits while you decide, then carries on.
+
+    input() blocks while it waits for you to type, so it runs on a side
+    thread. `context` carries extra details from the SDK; it isn't needed here.
     """
     if tool_name != "mcp__teensy__bash":
         return PermissionResultAllow()
@@ -311,14 +444,19 @@ async def can_use_tool(
     return PermissionResultDeny(message="The user declined this command.")
 
 
-# ClaudeAgentOptions plays the role of `new ToolLoopAgent({...})`.
-#   max_turns=10   -> stopWhen: isStepCount(10)
-#   allowed_tools  -> auto-approved, so can_use_tool is never asked about them.
-#                     bash is deliberately left OUT so every bash call goes
-#                     through can_use_tool. (Full names are mcp__<server>__<tool>.)
-#   can_use_tool   -> the approval callback above (toolApproval in the TS).
-#                     Unverified detail: the SDK may require streaming input
-#                     (an async-iterable prompt or ClaudeSDKClient) for this.
+# The agent's settings:
+#   model          which Claude model does the thinking
+#   system_prompt  standing instructions sent with every request
+#   cwd            the folder the agent works in
+#   mcp_servers    the tool bundle from above
+#   allowed_tools  tools that run without asking (read and grep only look,
+#                  never change). bash is left off on purpose so every bash
+#                  call goes through can_use_tool. Pre-approving a tool does
+#                  not hide the SDK's other built-in tools.
+#   can_use_tool   the gatekeeper above
+#   max_turns      stop after 10 rounds, in case the agent gets stuck in a loop
+# Unverified: the SDK may need streaming input (ClaudeSDKClient) for
+# can_use_tool to be called.
 options = ClaudeAgentOptions(
     model="claude-haiku-4-5",
     system_prompt=f"You are a coding agent.\nWorking directory: {cwd}",
@@ -331,13 +469,15 @@ options = ClaudeAgentOptions(
 
 
 async def main():
-    """CLI entry point, same as the `if (import.meta.main)` block in the TS.
+    """Take a question from the command line, run the agent, print the answer.
 
-    query() runs the whole tool loop internally (ask model -> run tools ->
-    feed results back -> repeat). The `async for` is not the loop itself;
-    it reads the live stream of messages the loop produces:
-      - AssistantMessage: the model's turn; keep the latest TextBlock as the answer.
-      - ResultMessage: the loop finished; num_turns is the step count.
+    query() runs the whole agent loop for you: ask Claude, run whatever
+    tools it picks, send back the results, and repeat until it answers.
+    The `async for` doesn't drive that loop; it just watches the messages
+    the loop produces as they happen:
+      - AssistantMessage: something Claude said. Keep the latest text,
+        because the last thing it says is the final answer.
+      - ResultMessage: the loop is done; num_turns says how many rounds it took.
     """
     prompt = " ".join(sys.argv[2:]) or "Hello!"
     text, turns = "", 0
@@ -352,6 +492,8 @@ async def main():
     print(f"\n({turns} steps)")
 
 
-# Same as `if (import.meta.main)`: only run when executed directly.
+# Run main() only when this file is executed directly, not when another
+# file (like ref_server.py) imports it to reuse the tools.
+# asyncio.run() starts the async machinery and runs main() to completion.
 if __name__ == "__main__":
     asyncio.run(main())

@@ -28,15 +28,21 @@ const FORBIDDEN = /[;&|`$<>]|\s-(exec|execdir|delete|ok)\b/;
 
 type Verdict = "safe" | "approval" | "blocked";
 
-function classify(command: string): Verdict {
-  const cmd = command.trim();
-  if (FORBIDDEN.test(cmd)) return "blocked";
-  // Match "ls" or "ls -la", but not "lsof"
-  const matches = (p: string) => cmd === p || cmd.startsWith(p + " ");
-  if (SAFE_PREFIXES.some(matches)) return "safe";
-  if (APPROVAL_PREFIXES.some(matches)) return "approval";
-  return "blocked";
+// Builds a classifier from whatever prefix lists you hand it, so the bash
+// factory below and the agent's toolApproval share one rule set.
+// Matches "ls" or "ls -la", but not "lsof".
+function createClassifier(safePrefixes: string[], approvalPrefixes: string[] = []) {
+  return (command: string): Verdict => {
+    const cmd = command.trim();
+    if (FORBIDDEN.test(cmd)) return "blocked";
+    const matches = (p: string) => cmd === p || cmd.startsWith(p + " ");
+    if (safePrefixes.some(matches)) return "safe";
+    if (approvalPrefixes.some(matches)) return "approval";
+    return "blocked";
+  };
 }
+
+const classify = createClassifier(SAFE_PREFIXES, APPROVAL_PREFIXES);
 
 const read = tool({
   description: `Read a file from the project. Returns numbered lines.
@@ -138,8 +144,25 @@ EXAMPLES:
   },
 });
 
-const bash = tool({
-  description: `Execute a shell command in the working directory.
+// The seam. Everything the model sees (description, schema, safety check)
+// lives in createBashTool above it. Everything that actually runs commands
+// lives in an operations object below it. Module 4 swaps localOps for a
+// sandbox without touching the tool.
+export interface BashOperations {
+  exec(command: string): Promise<{ stdout: string; exitCode: number }>;
+}
+
+// Course signature is (operations, safePrefixes). approvalPrefixes is our
+// addition so the third tier ("ask the human") survives the refactor.
+export function createBashTool(
+  operations: BashOperations,
+  safePrefixes: string[],
+  approvalPrefixes: string[] = [],
+) {
+  const classifyCommand = createClassifier(safePrefixes, approvalPrefixes);
+
+  return tool({
+    description: `Execute a shell command in the working directory.
 
 WHEN TO USE: running build commands, installing packages, running tests,
   git operations, directory listings.
@@ -158,28 +181,41 @@ EXAMPLES:
   - List files: command "ls -la"
   - Check git status: command "git status"
   - Run the test suite (needs approval): command "bun test"`,
-  inputSchema: z.object({
-    command: z.string().describe("Shell command to execute"),
-  }),
-  execute: async ({ command }) => {
-    // Second line of defense. toolApproval (below) already denies blocked
-    // commands and pauses approval ones, so execute only ever sees safe or
-    // human-approved commands. This check stays in case that config changes.
-    if (classify(command) === "blocked") {
-      return `Blocked: "${command}" is not allowed. Safe: ${SAFE_PREFIXES.join(", ")}. Needs approval: ${APPROVAL_PREFIXES.join(", ")}.`;
-    }
-    try {
-      const stdout = execSync(command, {
-        cwd,
-        encoding: "utf-8",
-        timeout: 30_000,
-      });
+    inputSchema: z.object({
+      command: z.string().describe("Shell command to execute"),
+    }),
+    // Second line of defense. toolApproval (on the agent) already denies
+    // blocked commands and pauses approval ones, so execute only ever sees
+    // safe or human-approved commands. This check stays in case that changes.
+    // No execSync, no cwd, no child_process errors: just operations.exec.
+    execute: async ({ command }) => {
+      if (classifyCommand(command) === "blocked") {
+        return `Blocked: "${command}" is not allowed. Safe: ${safePrefixes.join(", ")}. Needs approval: ${approvalPrefixes.join(", ")}.`;
+      }
+      const { stdout, exitCode } = await operations.exec(command);
+      if (exitCode !== 0) return `Exit ${exitCode}: ${stdout}`;
       return stdout || "(no output)";
+    },
+  });
+}
+
+// The local backend: the only place execSync lives now. Success and failure
+// come back in the same { stdout, exitCode } shape.
+const localOps: BashOperations = {
+  exec: async (command) => {
+    try {
+      const stdout = execSync(command, { cwd, encoding: "utf-8", timeout: 30_000 });
+      return { stdout, exitCode: 0 };
     } catch (e: any) {
-      return `Exit ${e.status ?? 1}: ${e.stdout || e.stderr || e.message || ""}`;
+      return {
+        stdout: e.stdout || e.stderr || e.message || "",
+        exitCode: e.status ?? 1,
+      };
     }
   },
-});
+};
+
+const bash = createBashTool(localOps, SAFE_PREFIXES, APPROVAL_PREFIXES);
 
 // Course uses "anthropic/claude-haiku-4.5" via AI Gateway (blocked on free tier).
 // We call Anthropic directly; reads ANTHROPIC_API_KEY from .env.
@@ -224,7 +260,12 @@ if (import.meta.main) {
     totalSteps += result.steps.length;
     messages.push(...result.responseMessages);
 
-    const requests = result.content.filter((part) => part.type === "tool-approval-request");
+    // Skip isAutomatic requests: those are toolApproval's own "denied"
+    // verdicts, which the SDK already answered. Responding again sends a
+    // duplicate tool_result and Anthropic rejects the next call with a 400.
+    const requests = result.content
+      .filter((part) => part.type === "tool-approval-request")
+      .filter((req) => !req.isAutomatic);
     if (requests.length === 0) {
       console.log(result.text);
       break;
@@ -233,7 +274,10 @@ if (import.meta.main) {
     const responses = [];
     for (const req of requests) {
       const input = req.toolCall.input as { command?: string };
-      const answer = await rl.question(`\nThe agent wants to run: ${input.command}\nAllow? [y/N] `);
+      // If stdin has ended (piped input ran out), treat it as a "no".
+      const answer = await rl
+        .question(`\nThe agent wants to run: ${input.command}\nAllow? [y/N] `)
+        .catch(() => "");
       const approved = answer.trim().toLowerCase() === "y";
       responses.push({
         type: "tool-approval-response" as const,

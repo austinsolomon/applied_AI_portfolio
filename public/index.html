@@ -136,7 +136,9 @@ function handleChunk(ctx, c) {
       (tools[c.toolCallId] || body).append(el("pre", "", fmtOutput(c.output)));
       break;
     case "tool-approval-request":
-      addApprovalButtons(ctx, c);
+      // isAutomatic = toolApproval already denied it (blocked command).
+      // No buttons: the SDK answered it, and answering again breaks the run.
+      if (!c.isAutomatic) addApprovalButtons(ctx, c);
       break;
     case "tool-output-denied":
       (tools[c.toolCallId] || body).append(el("div", "err", "denied"));
