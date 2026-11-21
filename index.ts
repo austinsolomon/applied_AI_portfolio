@@ -1,50 +1,69 @@
-import { ToolLoopAgent, isStepCount, tool, type ModelMessage } from "ai";
+import { ToolLoopAgent, isStepCount, tool } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execSync } from "node:child_process";
-import { createInterface } from "node:readline/promises";
 
-const cwd = resolve(process.argv[2] || process.cwd());
+export const cwd = resolve(process.argv[2] || process.cwd());
 
-// List 1: run automatically (read-only).
+// Read-only commands. In interactive mode these run without asking.
 const SAFE_PREFIXES = [
   "ls", "cat", "echo", "pwd", "which", "find",
   "head", "tail", "wc", "git log", "git status", "git diff",
 ];
 
-// List 2: allowed, but only after a human says yes (changes files or installs).
-const APPROVAL_PREFIXES = [
-  "mkdir", "touch", "cp", "mv", "rm",
-  "git add", "git commit", "git checkout", "git restore",
-  "npm install", "bun add", "bun install", "bun test", "npx tsc",
-];
-
-// List 3: everything else is blocked outright. On top of that, these shell
-// tricks are always blocked, even for list 1/2 commands, so "ls; rm -rf ~" or
-// "find . -exec rm {} +" can't smuggle anything through.
+// Shell tricks that never pass a prefix match: chaining (; & |), command
+// substitution (` $), redirects (< >), and find's -exec/-delete. Without
+// this, "ls; rm -rf ~" would pass because it starts with "ls".
 const FORBIDDEN = /[;&|`$<>]|\s-(exec|execdir|delete|ok)\b/;
 
-type Verdict = "safe" | "approval" | "blocked";
+// True if the command is one of the prefixes as a whole word ("ls" and
+// "ls -la" match "ls"; "lsof" doesn't) and contains no shell tricks.
+// The course uses a bare startsWith, which lets both of those through.
+function matchesAny(command: string, prefixes: string[]): boolean {
+  const cmd = command.trim();
+  if (FORBIDDEN.test(cmd)) return false;
+  return prefixes.some((p) => cmd === p || cmd.startsWith(p + " "));
+}
 
-// Builds a classifier from whatever prefix lists you hand it, so the bash
-// factory below and the agent's toolApproval share one rule set.
-// Matches "ls" or "ls -la", but not "lsof".
-function createClassifier(safePrefixes: string[], approvalPrefixes: string[] = []) {
-  return (command: string): Verdict => {
-    const cmd = command.trim();
-    if (FORBIDDEN.test(cmd)) return "blocked";
-    const matches = (p: string) => cmd === p || cmd.startsWith(p + " ");
-    if (safePrefixes.some(matches)) return "safe";
-    if (approvalPrefixes.some(matches)) return "approval";
-    return "blocked";
+// The approval policy as data. "mode" is the discriminant: TypeScript only
+// lets you touch `trust` after checking mode === "delegated". Defined as a
+// Zod schema so a config loaded from a file or env var gets validated.
+//   interactive  local use: safe-list commands run, everything else blocked
+//   background   CI / automation: no human to ask, everything runs
+//   delegated    subagents: only the commands the parent hands down run
+export const ApprovalConfigSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("interactive") }),
+  z.object({ mode: z.literal("background") }),
+  z.object({ mode: z.literal("delegated"), trust: z.array(z.string()) }),
+]);
+export type ApprovalConfig = z.infer<typeof ApprovalConfigSchema>;
+
+// true = needs approval (so it's blocked), false = may run.
+export type RequiresApproval = (input: { command: string }) => boolean;
+
+// Turn a config into the yes/no function createBashTool uses.
+export function createApproval(config: ApprovalConfig): RequiresApproval {
+  return ({ command }) => {
+    if (config.mode === "background") return false;
+    if (config.mode === "delegated") return !matchesAny(command, config.trust);
+    return !matchesAny(command, SAFE_PREFIXES);
   };
 }
 
-const classify = createClassifier(SAFE_PREFIXES, APPROVAL_PREFIXES);
+// Pick the mode for a CLI run, e.g.
+//   APPROVAL_MODE=background bun run index.ts . "..."
+//   APPROVAL_MODE=delegated APPROVAL_TRUST="git status,pwd" bun run index.ts . "..."
+// Defaults to interactive. Bad values fail loudly via the schema.
+function approvalFromEnv(): ApprovalConfig {
+  return ApprovalConfigSchema.parse({
+    mode: process.env.APPROVAL_MODE ?? "interactive",
+    trust: (process.env.APPROVAL_TRUST ?? "").split(",").map((t) => t.trim()).filter(Boolean),
+  });
+}
 
-const read = tool({
+export const read = tool({
   description: `Read a file from the project. Returns numbered lines.
 
 WHEN TO USE: viewing file contents, checking configurations, reading source code,
@@ -86,7 +105,7 @@ EXAMPLES:
   },
 });
 
-const grep = tool({
+export const grep = tool({
   description: `Search file contents using regex. Returns matching lines with file paths.
 
 WHEN TO USE: finding patterns across multiple files, locating function definitions,
@@ -152,15 +171,12 @@ export interface BashOperations {
   exec(command: string): Promise<{ stdout: string; exitCode: number }>;
 }
 
-// Course signature is (operations, safePrefixes). approvalPrefixes is our
-// addition so the third tier ("ask the human") survives the refactor.
-export function createBashTool(
-  operations: BashOperations,
-  safePrefixes: string[],
-  approvalPrefixes: string[] = [],
-) {
-  const classifyCommand = createClassifier(safePrefixes, approvalPrefixes);
-
+// The bash tool, built from two injected pieces:
+//   operations        WHERE commands run (localOps today, a sandbox later)
+//   requiresApproval  WHETHER a command may run (from createApproval)
+// The gate lives inside execute, so a blocked command comes back to the
+// model as a plain string it can read and adapt to.
+export function createBashTool(operations: BashOperations, requiresApproval: RequiresApproval) {
   return tool({
     description: `Execute a shell command in the working directory.
 
@@ -172,25 +188,19 @@ WHEN NOT TO USE: reading file contents (use read instead).
 
 DO NOT USE FOR: reading files (use read), searching code (use grep).
 
-USAGE: command is a single shell string; pipes, redirects, ; and && are blocked.
-  Read-only commands (ls, git status...) run immediately. Commands that change
-  files or install packages (mkdir, rm, git commit, bun add...) wait for the
-  user's approval. Anything else is blocked with an error. 30s timeout.
+USAGE: command is a single shell string. Commands not approved by the
+  approval policy are blocked and return a clear error message. 30s timeout.
 
 EXAMPLES:
   - List files: command "ls -la"
   - Check git status: command "git status"
-  - Run the test suite (needs approval): command "bun test"`,
+  - Run the test suite: command "bun test"`,
     inputSchema: z.object({
       command: z.string().describe("Shell command to execute"),
     }),
-    // Second line of defense. toolApproval (on the agent) already denies
-    // blocked commands and pauses approval ones, so execute only ever sees
-    // safe or human-approved commands. This check stays in case that changes.
-    // No execSync, no cwd, no child_process errors: just operations.exec.
     execute: async ({ command }) => {
-      if (classifyCommand(command) === "blocked") {
-        return `Blocked: "${command}" is not allowed. Safe: ${safePrefixes.join(", ")}. Needs approval: ${approvalPrefixes.join(", ")}.`;
+      if (requiresApproval({ command })) {
+        return `Blocked: "${command}" requires approval.`;
       }
       const { stdout, exitCode } = await operations.exec(command);
       if (exitCode !== 0) return `Exit ${exitCode}: ${stdout}`;
@@ -201,7 +211,7 @@ EXAMPLES:
 
 // The local backend: the only place execSync lives now. Success and failure
 // come back in the same { stdout, exitCode } shape.
-const localOps: BashOperations = {
+export const localOps: BashOperations = {
   exec: async (command) => {
     try {
       const stdout = execSync(command, { cwd, encoding: "utf-8", timeout: 30_000 });
@@ -215,80 +225,33 @@ const localOps: BashOperations = {
   },
 };
 
-const bash = createBashTool(localOps, SAFE_PREFIXES, APPROVAL_PREFIXES);
-
 // Course uses "anthropic/claude-haiku-4.5" via AI Gateway (blocked on free tier).
 // We call Anthropic directly; reads ANTHROPIC_API_KEY from .env.
-// `export` so server.ts (the local web UI) can reuse this exact agent.
+export const model = anthropic("claude-haiku-4-5");
+export const instructions = `You are a coding agent.\nWorking directory: ${cwd}`;
+
+const approval = approvalFromEnv();
+const bash = createBashTool(localOps, createApproval(approval));
+
 export const agent = new ToolLoopAgent({
-  model: anthropic("claude-haiku-4-5"),
-  instructions: `You are a coding agent.\nWorking directory: ${cwd}`,
+  model,
+  instructions,
   tools: { read, grep, bash },
   stopWhen: isStepCount(10),
-  // Decides, per bash call, BEFORE execute runs:
-  //   safe     -> "not-applicable": run it now
-  //   approval -> "user-approval":  stop the loop and hand the request back
-  //   blocked  -> "denied":         skip execute; the model is told it was denied
-  toolApproval: {
-    bash: ({ command }) => {
-      const verdict = classify(command);
-      if (verdict === "safe") return "not-applicable";
-      if (verdict === "approval") {
-        return { type: "user-approval", reason: `"${command}" changes files or installs packages` };
-      }
-      return { type: "denied", reason: `"${command}" is not on any allowlist` };
-    },
-  },
 });
 
-// Only run the CLI when this file is executed directly (bun run index.ts),
-// not when server.ts imports it.
-//
-// The approval flow: generate() ends early when a tool needs approval and puts
-// a "tool-approval-request" in result.content. The harness asks the human,
-// appends a "tool-approval-response" message, and calls generate() again with
-// the full history. Approved -> the SDK runs execute. Denied -> the model gets
-// an execution-denied result and can adapt.
+// CLI: only runs when this file is executed directly, not when imported.
+// Prints each tool call and the first line of its result, so you can see
+// which mode let a command through.
 if (import.meta.main) {
   const prompt = process.argv.slice(3).join(" ") || "Hello!";
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const messages: ModelMessage[] = [{ role: "user", content: prompt }];
-  let totalSteps = 0;
-
-  while (true) {
-    const result = await agent.generate({ messages });
-    totalSteps += result.steps.length;
-    messages.push(...result.responseMessages);
-
-    // Skip isAutomatic requests: those are toolApproval's own "denied"
-    // verdicts, which the SDK already answered. Responding again sends a
-    // duplicate tool_result and Anthropic rejects the next call with a 400.
-    const requests = result.content
-      .filter((part) => part.type === "tool-approval-request")
-      .filter((req) => !req.isAutomatic);
-    if (requests.length === 0) {
-      console.log(result.text);
-      break;
+  console.log(`(approval: ${JSON.stringify(approval)})`);
+  const result = await agent.generate({ prompt });
+  for (const step of result.steps) {
+    for (const r of step.toolResults) {
+      const firstLine = String(r.output).split("\n")[0];
+      console.log(`[${r.toolName}] ${JSON.stringify(r.input)} -> ${firstLine}`);
     }
-
-    const responses = [];
-    for (const req of requests) {
-      const input = req.toolCall.input as { command?: string };
-      // If stdin has ended (piped input ran out), treat it as a "no".
-      const answer = await rl
-        .question(`\nThe agent wants to run: ${input.command}\nAllow? [y/N] `)
-        .catch(() => "");
-      const approved = answer.trim().toLowerCase() === "y";
-      responses.push({
-        type: "tool-approval-response" as const,
-        approvalId: req.approvalId,
-        approved,
-        reason: approved ? undefined : "The user declined this command.",
-      });
-    }
-    messages.push({ role: "tool", content: responses });
   }
-
-  rl.close();
-  console.log(`\n(${totalSteps} steps)`);
+  console.log(`\n${result.text}\n\n(${result.steps.length} steps)`);
 }

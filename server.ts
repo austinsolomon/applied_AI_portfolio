@@ -1,14 +1,38 @@
 // Local web UI for the agent in index.ts. Not part of the course.
 // Run: bun run dev  ->  http://localhost:3000
 import {
+  ToolLoopAgent,
   createUIMessageStream,
   createUIMessageStreamResponse,
+  isStepCount,
   toUIMessageStream,
   type ModelMessage,
 } from "ai";
-import { agent } from "./index";
+import { createApproval, createBashTool, grep, instructions, localOps, model, read } from "./index";
 
 const PORT = 3000;
+
+// The web UI's own agent, for ad-hoc testing with Approve/Deny buttons.
+// The course harness (index.ts) blocks unsafe commands outright; here a
+// human gets asked instead:
+//   1. toolApproval uses the interactive rule to decide whether to pause.
+//      Safe-list commands run; anything else waits for your click.
+//   2. The bash tool itself runs in background mode (no gate), because by
+//      the time execute runs, either the command was safe or you approved it.
+const needsHuman = createApproval({ mode: "interactive" });
+
+const agent = new ToolLoopAgent({
+  model,
+  instructions,
+  tools: { read, grep, bash: createBashTool(localOps, createApproval({ mode: "background" })) },
+  stopWhen: isStepCount(10),
+  toolApproval: {
+    bash: ({ command }) =>
+      needsHuman({ command })
+        ? { type: "user-approval", reason: `"${command}" is not on the safe list` }
+        : "not-applicable",
+  },
+});
 
 // Approval needs memory: when the agent pauses for a yes/no, the server must
 // keep the conversation so it can resume with the human's answer. Kept in

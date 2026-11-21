@@ -22,6 +22,7 @@ import uuid
 from pathlib import Path
 
 from claude_agent_sdk import (
+    create_sdk_mcp_server,
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
@@ -35,7 +36,17 @@ from claude_agent_sdk import (
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
-from ref_index import classify, cwd, teensy
+from ref_index import (
+    SYSTEM_PROMPT,
+    Background,
+    Interactive,
+    LocalOps,
+    create_approval,
+    create_bash_tool,
+    cwd,
+    grep,
+    read,
+)
 
 PORT = 3000
 app = FastAPI()
@@ -43,6 +54,20 @@ app = FastAPI()
 # approvalId -> Future the waiting can_use_tool callback is blocked on.
 # In memory only, like the TS `conversations` map.
 pending: dict[str, asyncio.Future] = {}
+
+# The web UI asks a human instead of blocking outright (the CLI harness in
+# ref_index.py blocks). Two pieces make that work:
+#   needs_human  the interactive rule: is this command off the safe list?
+#                can_use_tool uses it to decide whether to ask you.
+#   web_tools    the same read/grep, plus a bash tool in background mode
+#                (no gate of its own), because by the time it runs, the
+#                command was either safe or you approved it.
+needs_human = create_approval(Interactive())
+web_tools = create_sdk_mcp_server(
+    name="teensy",
+    version="0.1.0",
+    tools=[read, grep, create_bash_tool(LocalOps(), create_approval(Background()))],
+)
 
 
 def sse(event: dict) -> str:
@@ -52,8 +77,9 @@ def sse(event: dict) -> str:
 def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
     """Build per-request options whose can_use_tool talks to the browser.
 
-    For an "approval" command it sends a tool-approval-request event to the
-    browser, then awaits a Future until /api/approve resolves it.
+    Safe-list commands are allowed straight away. Anything else sends a
+    tool-approval-request event to the browser, then waits on a Future until
+    /api/approve resolves it with your click.
     """
 
     async def can_use_tool(
@@ -63,11 +89,8 @@ def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
             return PermissionResultAllow()
 
         command = input_data.get("command", "")
-        verdict = classify(command)
-        if verdict == "safe":
+        if not needs_human(command):
             return PermissionResultAllow()
-        if verdict == "blocked":
-            return PermissionResultDeny(message=f'"{command}" is not on any allowlist')
 
         approval_id = str(uuid.uuid4())
         future = asyncio.get_running_loop().create_future()
@@ -75,7 +98,7 @@ def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
         await events.put({
             "type": "tool-approval-request",
             "approvalId": approval_id,
-            "reason": f'"{command}" changes files or installs packages',
+            "reason": f'"{command}" is not on the safe list',
         })
         approved = await future
         if approved:
@@ -84,9 +107,9 @@ def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
 
     return ClaudeAgentOptions(
         model="claude-haiku-4-5",
-        system_prompt=f"You are a coding agent.\nWorking directory: {cwd}",
+        system_prompt=SYSTEM_PROMPT,
         cwd=str(cwd),
-        mcp_servers={"teensy": teensy},
+        mcp_servers={"teensy": web_tools},
         allowed_tools=["mcp__teensy__read", "mcp__teensy__grep"],
         can_use_tool=can_use_tool,
         max_turns=10,

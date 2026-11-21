@@ -1,10 +1,12 @@
 """TeensyCode: a small coding agent built on the Claude Agent SDK.
 
 You give it a folder and a question. It can read files, search across files,
-and run a limited set of shell commands to answer. Anything that changes your
-files waits for you to type "y" first.
+and run shell commands to answer. Which commands it may run depends on the
+approval mode (see ApprovalConfig).
 
 Run:  python ref_index.py <folder> "your question"
+      APPROVAL_MODE=background python ref_index.py . "..."
+      APPROVAL_MODE=delegated APPROVAL_TRUST="git status,pwd" python ref_index.py . "..."
 Needs: pip install claude-agent-sdk pydantic, and ANTHROPIC_API_KEY set.
 (Reference file: it compiles but has not been run.)
 """
@@ -16,17 +18,14 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Annotated, Callable, Literal, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
-    PermissionResultAllow,
-    PermissionResultDeny,
     ResultMessage,
     TextBlock,
-    ToolPermissionContext,
     create_sdk_mcp_server,
     query,
     tool,
@@ -43,66 +42,100 @@ cwd = Path(sys.argv[1] if len(sys.argv) > 1 else os.getcwd()).resolve()
 MAX_LINES = 500
 MAX_MATCHES = 50
 
-# Commands the agent may run on its own. All of them only look at things;
-# none of them change anything.
+# Read-only commands. In interactive mode these run without asking.
 SAFE_PREFIXES = [
     "ls", "cat", "echo", "pwd", "which", "find",
     "head", "tail", "wc", "git log", "git status", "git diff",
 ]
 
-# Commands that change files or install packages. Allowed, but only after
-# you approve each one.
-APPROVAL_PREFIXES = [
-    "mkdir", "touch", "cp", "mv", "rm",
-    "git add", "git commit", "git checkout", "git restore",
-    "npm install", "bun add", "bun install", "bun test", "npx tsc",
-]
-
-# Shell tricks that are always refused, even inside an allowed command:
-# chaining (; & |), backticks and $(...) substitution, redirects (< >), and
-# find's -exec/-delete. Without this, "ls; rm -rf ~" would pass because it
-# starts with "ls". Any command on neither list above is refused too.
+# Shell tricks that never pass a prefix match: chaining (; & |), command
+# substitution (` $), redirects (< >), and find's -exec/-delete. Without
+# this, "ls; rm -rf ~" would pass because it starts with "ls".
 FORBIDDEN = re.compile(r"[;&|`$<>]|\s-(exec|execdir|delete|ok)\b")
 
 
-def create_classifier(
-    safe_prefixes: list[str], approval_prefixes: list[str] | None = None
-) -> Callable[[str], str]:
-    """Build a function that sorts a command into "safe", "approval", or "blocked".
+def matches_any(command: str, prefixes: list[str]) -> bool:
+    """Is this command one of the allowed prefixes?
 
-    You pass in the two lists, and it returns a classify(command) function
-    that checks, in order:
-      1. Contains a forbidden shell trick?  -> "blocked"
-      2. Starts with a safe command?        -> "safe"
-      3. Starts with an approval command?   -> "approval"
-      4. Anything else                      -> "blocked"
-    "Starts with" means the whole word: "ls" and "ls -la" match "ls",
-    but "lsof" does not.
-
-    It's a factory (a function that returns a function) so the bash tool and
-    the permission check below share the exact same rules.
+    "Prefix" means the whole word: "ls" and "ls -la" match "ls", but "lsof"
+    does not. A command containing a forbidden shell trick never matches,
+    even if it starts with an allowed word.
     """
-    approval_prefixes = approval_prefixes or []
-
-    def classify(command: str) -> str:
-        cmd = command.strip()
-        if FORBIDDEN.search(cmd):
-            return "blocked"
-
-        def matches(p: str) -> bool:
-            return cmd == p or cmd.startswith(p + " ")
-
-        if any(matches(p) for p in safe_prefixes):
-            return "safe"
-        if any(matches(p) for p in approval_prefixes):
-            return "approval"
-        return "blocked"
-
-    return classify
+    cmd = command.strip()
+    if FORBIDDEN.search(cmd):
+        return False
+    return any(cmd == p or cmd.startswith(p + " ") for p in prefixes)
 
 
-# The one shared rule set, used by can_use_tool further down.
-classify = create_classifier(SAFE_PREFIXES, APPROVAL_PREFIXES)
+class Interactive(BaseModel):
+    """Local use: safe-list commands run, everything else is blocked."""
+
+    mode: Literal["interactive"] = "interactive"
+
+
+class Background(BaseModel):
+    """CI and automation: there's no human to ask, so every command runs."""
+
+    mode: Literal["background"] = "background"
+
+
+class Delegated(BaseModel):
+    """Subagents: only the commands the parent agent hands down may run.
+
+    `trust` exists only on this mode. A read-only explorer might get
+    ["pwd", "find .", "git status"]; a test runner might get ["bun test"].
+    """
+
+    mode: Literal["delegated"] = "delegated"
+    trust: list[str]
+
+
+# The approval policy: exactly one of the three modes above. This is a
+# "discriminated union": the `mode` field says which one it is, and
+# Pydantic uses it to pick the right class when parsing raw data, e.g.
+#   {"mode": "delegated", "trust": ["pwd"]}  ->  Delegated(trust=["pwd"])
+#   {"mode": "delegated"}                    ->  error: trust is required
+# Because the policy is data rather than code, it can come from a config
+# file or an env var, or be passed down to a subagent.
+ApprovalConfig = Annotated[Interactive | Background | Delegated, Field(discriminator="mode")]
+
+# A function that answers "does this command need approval?"
+# True means it's blocked; False means it may run.
+RequiresApproval = Callable[[str], bool]
+
+
+def create_approval(config: ApprovalConfig) -> RequiresApproval:
+    """Turn an approval policy into the yes/no function the bash tool uses.
+
+    `match` checks which class config is, and `case Delegated(trust=trust)`
+    also pulls the trust list out in the same step.
+    """
+
+    def requires_approval(command: str) -> bool:
+        match config:
+            case Background():
+                return False
+            case Delegated(trust=trust):
+                return not matches_any(command, trust)
+            case _:
+                return not matches_any(command, SAFE_PREFIXES)
+
+    return requires_approval
+
+
+def approval_from_env() -> ApprovalConfig:
+    """Read the approval mode for a command-line run from env vars.
+
+    APPROVAL_MODE picks the mode (default "interactive"); APPROVAL_TRUST is a
+    comma-separated list used by delegated mode. TypeAdapter lets Pydantic
+    validate against the union, so a typo like APPROVAL_MODE=bckground fails
+    with a clear error instead of silently picking a mode. The extra `trust`
+    key is ignored by the modes that don't have one.
+    """
+    trust = [t.strip() for t in os.environ.get("APPROVAL_TRUST", "").split(",") if t.strip()]
+    return TypeAdapter(ApprovalConfig).validate_python(
+        {"mode": os.environ.get("APPROVAL_MODE", "interactive"), "trust": trust}
+    )
 
 
 class ReadInput(BaseModel):
@@ -297,38 +330,33 @@ class BashOperations(Protocol):
     async def exec(self, command: str) -> ExecResult: ...
 
 
-def create_bash_tool( operations: BashOperations, safe_prefixes: list[str], approval_prefixes: list[str] | None = None,):
-    """Build the bash tool, wired to whichever command runner you pass in.
+def create_bash_tool(operations: BashOperations, requires_approval: RequiresApproval):
+    """Build the bash tool from two pieces you pass in.
 
-    The tool itself only handles the decision side:
+      operations         WHERE commands run (LocalOps today, a sandbox later)
+      requires_approval  WHETHER a command may run (from create_approval)
+
+    When the model calls bash:
       1. Check the model's argument.
-      2. Refuse blocked commands with a message listing what IS allowed,
-         so the model can pick a different command.
-      3. Hand the command to operations.exec() to actually run it.
+      2. Ask requires_approval. If it says True, return a "Blocked" message
+         instead of running anything. The model reads that message like any
+         other result, so it can try a different approach.
+      3. Otherwise hand the command to operations.exec() to run it.
       4. Report the output, prefixed with "Exit N:" if it failed, so the
          model can tell failure apart from empty output.
 
-    The blocked check is a backup. can_use_tool (below) already stops blocked
-    commands and asks you about approval ones before this code runs; the
-    backup keeps the tool safe if it's ever used without that check.
-
-    The inner bash() function remembers `operations` and the prefix lists
-    from this outer function. That's what makes this a factory: call it
-    with a different runner and you get the same tool, running commands
-    somewhere else. `tool(...)(bash)` is the @tool decorator written as a
-    plain call, because bash() is defined inside this function.
+    The inner bash() remembers `operations` and `requires_approval` from this
+    outer function, so the same factory can build a fully trusted tool for
+    CI, a locked-down one for a subagent, or the everyday local one.
+    `tool(...)(bash)` is the @tool decorator written as a plain call, because
+    bash() is defined inside this function.
     """
-    approval_prefixes = approval_prefixes or []
-    classify_command = create_classifier(safe_prefixes, approval_prefixes)
 
     async def bash(args: dict) -> dict:
         inp = BashInput.model_validate(args)
 
-        if classify_command(inp.command) == "blocked":
-            text = (
-                f'Blocked: "{inp.command}" is not allowed. '
-                f"Safe: {', '.join(safe_prefixes)}. Needs approval: {', '.join(approval_prefixes)}."
-            )
+        if requires_approval(inp.command):
+            text = f'Blocked: "{inp.command}" requires approval.'
             return {"content": [{"type": "text", "text": text}]}
 
         result = await operations.exec(inp.command)
@@ -350,15 +378,13 @@ WHEN NOT TO USE: reading file contents (use read instead).
 
 DO NOT USE FOR: reading files (use read), searching code (use grep).
 
-USAGE: command is a single shell string; pipes, redirects, ; and && are blocked.
-  Read-only commands (ls, git status...) run immediately. Commands that change
-  files or install packages (mkdir, rm, git commit, bun add...) wait for the
-  user's approval. Anything else is blocked with an error. 30s timeout.
+USAGE: command is a single shell string. Commands not approved by the
+  approval policy are blocked and return a clear error message. 30s timeout.
 
 EXAMPLES:
   - List files: command "ls -la"
   - Check git status: command "git status"
-  - Run the test suite (needs approval): command "bun test\"""",
+  - Run the test suite: command "bun test\"""",
         BashInput.model_json_schema(),
     )(bash)
 
@@ -372,7 +398,7 @@ class LocalOps:
 
     Details:
       - shell=True: the command arrives as one string ("ls -la src"), so a
-        shell has to split it up. The classifier is what makes this safe.
+        shell has to split it up. The approval policy decides what gets this far.
       - cwd=cwd: commands run inside the project folder.
       - timeout=30: a stuck command is killed after 30 seconds and reported
         as exit code 124 (the usual "timed out" code).
@@ -398,10 +424,13 @@ class LocalOps:
         return ExecResult(stdout=proc.stdout, exit_code=0)
 
 
-# The bash tool the agent uses: built with LocalOps, so commands run on
-# this machine. Swapping LocalOps() for a sandbox runner is a one-line change.
-bash = create_bash_tool(LocalOps(), SAFE_PREFIXES, APPROVAL_PREFIXES)
+# The approval mode for this run, and the bash tool built with it. Commands
+# run on this machine via LocalOps; swapping in a sandbox runner later is a
+# one-line change.
+approval = approval_from_env()
+bash = create_bash_tool(LocalOps(), create_approval(approval))
 
+SYSTEM_PROMPT = f"You are a coding agent.\nWorking directory: {cwd}"
 
 # Bundle the three tools so the agent can use them. The SDK calls a bundle
 # of custom tools an "MCP server", but this one runs inside this script, with
@@ -409,61 +438,22 @@ bash = create_bash_tool(LocalOps(), SAFE_PREFIXES, APPROVAL_PREFIXES)
 teensy = create_sdk_mcp_server(name="teensy", version="0.1.0", tools=[read, grep, bash])
 
 
-async def can_use_tool(
-    tool_name: str, input_data: dict, context: ToolPermissionContext
-) -> PermissionResultAllow | PermissionResultDeny:
-    """The gatekeeper: runs before every tool call that isn't pre-approved.
-
-    read and grep are pre-approved (see allowed_tools below), so in practice
-    this only sees bash. For each command:
-      safe      -> allow it right away
-      blocked   -> refuse it, with a reason the model sees so it can adjust
-      approval  -> print the command, wait for you to type y, then allow
-                   or refuse
-    The agent simply waits while you decide, then carries on.
-
-    input() blocks while it waits for you to type, so it runs on a side
-    thread. `context` carries extra details from the SDK; it isn't needed here.
-    """
-    if tool_name != "mcp__teensy__bash":
-        return PermissionResultAllow()
-
-    command = input_data.get("command", "")
-    verdict = classify(command)
-
-    if verdict == "safe":
-        return PermissionResultAllow()
-    if verdict == "blocked":
-        return PermissionResultDeny(message=f'"{command}" is not on any allowlist')
-
-    answer = await asyncio.to_thread(
-        input, f"\nThe agent wants to run: {command}\nAllow? [y/N] "
-    )
-    if answer.strip().lower() == "y":
-        return PermissionResultAllow()
-    return PermissionResultDeny(message="The user declined this command.")
-
-
 # The agent's settings:
 #   model          which Claude model does the thinking
 #   system_prompt  standing instructions sent with every request
 #   cwd            the folder the agent works in
 #   mcp_servers    the tool bundle from above
-#   allowed_tools  tools that run without asking (read and grep only look,
-#                  never change). bash is left off on purpose so every bash
-#                  call goes through can_use_tool. Pre-approving a tool does
-#                  not hide the SDK's other built-in tools.
-#   can_use_tool   the gatekeeper above
+#   allowed_tools  our three tools run without the SDK asking permission.
+#                  That's safe because the bash tool now enforces the
+#                  approval policy itself. (Pre-approving tools does not
+#                  hide the SDK's other built-in tools.)
 #   max_turns      stop after 10 rounds, in case the agent gets stuck in a loop
-# Unverified: the SDK may need streaming input (ClaudeSDKClient) for
-# can_use_tool to be called.
 options = ClaudeAgentOptions(
     model="claude-haiku-4-5",
-    system_prompt=f"You are a coding agent.\nWorking directory: {cwd}",
+    system_prompt=SYSTEM_PROMPT,
     cwd=str(cwd),
     mcp_servers={"teensy": teensy},
-    allowed_tools=["mcp__teensy__read", "mcp__teensy__grep"],
-    can_use_tool=can_use_tool,
+    allowed_tools=["mcp__teensy__read", "mcp__teensy__grep", "mcp__teensy__bash"],
     max_turns=10,
 )
 
@@ -480,6 +470,7 @@ async def main():
       - ResultMessage: the loop is done; num_turns says how many rounds it took.
     """
     prompt = " ".join(sys.argv[2:]) or "Hello!"
+    print(f"(approval: {approval.model_dump()})")
     text, turns = "", 0
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
