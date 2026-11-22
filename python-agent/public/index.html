@@ -18,20 +18,26 @@
   html, body { height: 100%; }
   body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
 
-  /* Two panes: chat (left) and observability (right). Each scrolls on its own. */
-  .app { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, 1fr); height: 100%; }
-  .chat { display: flex; flex-direction: column; min-width: 0; height: 100%; }
-  .obs { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 24px 20px 40px; min-width: 0; }
+  /* Two panes fixed to the window height: chat (left) and observability
+     (right). The page itself never scrolls. Inside the chat, only the
+     message log scrolls (older messages leave through the top) and the
+     prompt box stays pinned at the bottom. The observability pane scrolls
+     on its own. min-height: 0 lets the flex/grid children shrink to the
+     window instead of growing with their content. */
+  body { overflow: hidden; }
+  .app { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, 1fr); grid-template-rows: 100%; height: 100dvh; }
+  .chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .obs { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 24px 20px 40px; min-width: 0; min-height: 0; }
   @media (max-width: 900px) {
-    html, body { height: auto; }
-    .app { grid-template-columns: 1fr; height: auto; }
-    .chat { height: auto; }
+    /* Narrow screens: stack the panes, chat on top at most 70% of the
+       screen, dashboard below; prompt stays pinned within the chat. */
+    .app { grid-template-columns: 1fr; grid-template-rows: 70% 30%; }
     .obs { border-left: 0; border-top: 1px solid var(--line); }
   }
 
   h1, h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; margin: 0; }
   .chat header { padding: 20px 20px 0; }
-  #log { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  #log { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px; }
   .turn { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
   .role { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-top: 12px; }
   .text { white-space: pre-wrap; }
@@ -40,7 +46,7 @@
   pre { margin: 4px 0 0; padding: 8px; color: var(--out); font-size: 12px; overflow-x: auto; max-height: 260px; border-left: 2px solid var(--line); }
   .err { color: var(--err); white-space: pre-wrap; margin-top: 6px; }
   .meta { color: var(--muted); font-size: 12px; margin-top: 8px; }
-  form { border-top: 1px solid var(--line); padding: 12px 20px; display: flex; gap: 8px; }
+  form { flex: none; border-top: 1px solid var(--line); padding: 12px 20px; display: flex; gap: 8px; background: var(--bg); }
   input { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
   button { font: inherit; padding: 10px 16px; border: 0; background: var(--fg); color: var(--bg); cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
@@ -197,6 +203,15 @@ $("reset").addEventListener("click", () => { usage.length = 0; renderUsage(); })
 // ---- Chat
 let turnCount = 0;
 
+// Keep the newest message in view by scrolling the log itself, never the
+// page (scrollIntoView would also scroll the page and push the panes away).
+// Only follows along if you were already near the bottom, so scrolling up
+// to read older messages isn't interrupted.
+function scrollLog(force = false) {
+  const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
+  if (force || nearBottom) log.scrollTop = log.scrollHeight;
+}
+
 // One "turn" = your question plus everything the agent does for it, including
 // pauses for approval and the resumed runs after you click Approve/Deny.
 function newTurn(prompt) {
@@ -207,7 +222,7 @@ function newTurn(prompt) {
   const meta = el("div", "meta", "thinking…");
   turn.append(body, meta);
   log.append(turn);
-  turn.scrollIntoView({ block: "end" });
+  scrollLog(true);
   return { turnNo: turnCount, turn, body, meta, texts: {}, tools: {}, steps: 0, t0: performance.now(), conversationId: null, pending: [] };
 }
 
@@ -231,7 +246,7 @@ async function streamInto(ctx, res) {
       const data = line.slice(6);
       if (data === "[DONE]") continue;
       handleChunk(ctx, JSON.parse(data));
-      ctx.turn.scrollIntoView({ block: "end" });
+      scrollLog();
     }
   }
 }
