@@ -25,6 +25,13 @@ def test_core_sections():
     assert "# Handling Ambiguity" in prompt
     assert "# Verification" in prompt
     assert 'Do NOT claim "tests pass" without running them.' in prompt
+    assert "Search before reading." in prompt
+    assert "(no verification commands discovered for this project)" in prompt
+
+
+def test_verification_lists_gates_in_order():
+    prompt = build_system_prompt(replace(BASE, verification_commands=["npx tsc --noEmit", "npm test"]))
+    assert "1. `npx tsc --noEmit`\n2. `npm test`" in prompt
 
 
 def test_git_branch_only_when_set():

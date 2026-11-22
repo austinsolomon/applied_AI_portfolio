@@ -285,6 +285,58 @@ def create_ask_user_tool():
     return tool("askUser", ASK_USER_DESCRIPTION, AskUserInput.model_json_schema())(ask_user)
 
 
+class TodoInput(BaseModel):
+    """The arguments for todo: an action, plus a description (add) or an id (start/complete)."""
+
+    action: Literal["add", "start", "complete", "list"]
+    description: str | None = None
+    id: str | None = None
+
+
+TODO_DESCRIPTION = """Manage a task list for multi-step work.
+WHEN TO USE: tasks with 3+ steps, multiple files, or dependencies between
+  changes. Plan once, then track progress as you go.
+WHEN NOT TO USE: single-file fixes, simple questions, exploratory reads.
+DO NOT USE FOR: status updates to the user (just answer them directly)."""
+
+
+def create_todo_tool():
+    """Build todo: a task list for multi-step work.
+
+    Items move pending -> in_progress -> completed, and only ONE item may be
+    in progress at a time: `start` is refused while another item is active,
+    which keeps the agent finishing one thing before starting the next. The
+    list lives inside this tool, so each agent run (each call to this
+    function) starts with an empty list.
+    """
+    todos: list[dict] = []
+
+    async def todo(args: dict) -> dict:
+        inp = TodoInput.model_validate(args)
+        if inp.action == "add":
+            item = {"id": uuid.uuid4().hex[:8], "description": inp.description or "(unnamed)", "state": "pending"}
+            todos.append(item)
+            return text_result(f"Added: [{item['id']}] {item['description']}")
+        if inp.action == "start":
+            active = next((t for t in todos if t["state"] == "in_progress"), None)
+            if active:
+                return text_result(f"Already working on: [{active['id']}] {active['description']}. Complete it first.")
+            item = next((t for t in todos if t["id"] == inp.id), None)
+            if not item:
+                return text_result(f"No todo with id {inp.id}.")
+            item["state"] = "in_progress"
+            return text_result(f"Started: [{item['id']}] {item['description']}")
+        if inp.action == "complete":
+            item = next((t for t in todos if t["id"] == inp.id), None)
+            if not item:
+                return text_result(f"No todo with id {inp.id}.")
+            item["state"] = "completed"
+            return text_result(f"Completed: [{item['id']}] {item['description']}")
+        return text_result("\n".join(f"[{t['state']}] {t['id']}: {t['description']}" for t in todos) or "No todos.")
+
+    return tool("todo", TODO_DESCRIPTION, TodoInput.model_json_schema())(todo)
+
+
 # ---- Subagents (Module 6) ----
 #
 # The parent agent delegates through one `task` tool. Each call starts a

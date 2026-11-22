@@ -18,6 +18,7 @@ class PromptContext:
     tool_names         the tools actually wired into this agent
     git_branch         the current branch, or None if it's not a git repo
     project_context    project instructions (e.g. AGENTS.md), or None
+    verification_commands  the project's check commands, in run order
 
     The last two default to None, so they can be left out entirely.
     `field(default_factory=list)` is how a dataclass gives each instance its
@@ -29,6 +30,7 @@ class PromptContext:
     tool_names: list[str] = field(default_factory=list)
     git_branch: str | None = None
     project_context: str | None = None
+    verification_commands: list[str] = field(default_factory=list)
 
 
 def build_system_prompt(ctx: PromptContext) -> str:
@@ -46,11 +48,10 @@ def build_system_prompt(ctx: PromptContext) -> str:
       Ambiguity    models prefer guessing to asking, so the order is scripted:
                    search first (so the question is informed), then ask with
                    askUser, then act. Specific tasks skip straight to acting.
-      Verification run the checks that exist, never claim a check you didn't
-                   run, and report what ran / was blocked / wasn't available.
-                   It doesn't make checks pass; it makes the report honest.
-                   The bad behaviors are named outright, because models avoid
-                   what you name and fill in what you only imply.
+      Verification the project's own check commands in run order, and the
+                   rule that keeps reports honest: say exactly what ran and
+                   separate failures the agent caused from ones that were
+                   already there.
       Project      extra instructions for this specific project, if any
     """
     sections: list[str] = []
@@ -64,7 +65,9 @@ def build_system_prompt(ctx: PromptContext) -> str:
 - Do NOT explain what you WOULD do. Actually do it.
 - Prefer grep for searching, read for viewing files.
 - Use bash only for commands that aren't covered by other tools.
-- Available tools: {", ".join(ctx.tool_names)}""")
+- Available tools: {", ".join(ctx.tool_names)}
+- Search before reading. Use grep first, then read only what you'll change.
+- Don't read files "just in case." Read what you need when you need it.""")
 
     if ctx.git_branch:
         sections.append(f"- Current branch: {ctx.git_branch}")
@@ -85,17 +88,24 @@ When the task is ambiguous or has multiple valid approaches:
 Specific tasks (with file paths, line numbers, or precise instructions) do not
 need askUser. Act directly.""")
 
-    sections.append("""
+    gates = (
+        "\n".join(f"{i + 1}. `{c}`" for i, c in enumerate(ctx.verification_commands))
+        if ctx.verification_commands
+        else "(no verification commands discovered for this project)"
+    )
+    sections.append(f"""
 # Verification
-After making changes, verify your work:
-1. Run `npx tsc --noEmit` when TypeScript is present
-2. Run lint, test, or build commands only if they exist in this project and are allowed by the current approval mode
-3. Report exactly what you ran, what was blocked, and what was unavailable
-4. Do NOT inflate partial verification into a blanket success claim
+After making changes, verify your work by running these gates in order:
+{gates}
 
-Do NOT claim "tests pass" without running them.
-Scope your claims honestly. "Verification was limited because writes were blocked" is honest.
-"All tests pass" when you didn't run them is not.""")
+Run each gate, capture the output, and report what passed and what didn't.
+
+Distinguish failures you caused from failures that were already there:
+- "Ran tsc: passed."
+- "Ran npm test: 47 passed, 3 failed. The 3 failures are pre-existing in user.test.ts and unrelated to my changes."
+
+Do NOT claim "tests pass" without running them. Do NOT inflate partial
+verification into a blanket success claim.""")
 
     if ctx.project_context:
         sections.append(f"""

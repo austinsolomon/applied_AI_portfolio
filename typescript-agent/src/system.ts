@@ -9,6 +9,7 @@ export interface PromptContext {
   toolNames: string[]; // the tools actually wired into this agent
   gitBranch?: string; // only when the folder is a git repo
   projectContext?: string; // e.g. the contents of AGENTS.md
+  verificationCommands?: string[]; // the project's check commands, in run order
 }
 
 export function buildSystemPrompt(ctx: PromptContext): string {
@@ -28,7 +29,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 - Do NOT explain what you WOULD do. Actually do it.
 - Prefer grep for searching, read for viewing files.
 - Use bash only for commands that aren't covered by other tools.
-- Available tools: ${ctx.toolNames.join(", ")}`);
+- Available tools: ${ctx.toolNames.join(", ")}
+- Search before reading. Use grep first, then read only what you'll change.
+- Don't read files "just in case." Read what you need when you need it.`);
 
   if (ctx.gitBranch) {
     sections.push(`- Current branch: ${ctx.gitBranch}`);
@@ -54,21 +57,25 @@ When the task is ambiguous or has multiple valid approaches:
 Specific tasks (with file paths, line numbers, or precise instructions) do not
 need askUser. Act directly.`);
 
-  // Verification: turn "check your work" into a contract. It doesn't make
-  // checks pass; it makes the report honest (what ran, what was blocked,
-  // what didn't exist). The bad behaviors are named explicitly, because
-  // models avoid what you name and fill in what you only imply.
+  // Verification: the project's own check commands, in order, plus the
+  // rule that keeps reports honest: say exactly what ran and separate
+  // failures the agent caused from failures that were already there.
+  const gates = ctx.verificationCommands?.length
+    ? ctx.verificationCommands.map((c, i) => `${i + 1}. \`${c}\``).join("\n")
+    : "(no verification commands discovered for this project)";
   sections.push(`
 # Verification
-After making changes, verify your work:
-1. Run \`npx tsc --noEmit\` when TypeScript is present
-2. Run lint, test, or build commands only if they exist in this project and are allowed by the current approval mode
-3. Report exactly what you ran, what was blocked, and what was unavailable
-4. Do NOT inflate partial verification into a blanket success claim
+After making changes, verify your work by running these gates in order:
+${gates}
 
-Do NOT claim "tests pass" without running them.
-Scope your claims honestly. "Verification was limited because writes were blocked" is honest.
-"All tests pass" when you didn't run them is not.`);
+Run each gate, capture the output, and report what passed and what didn't.
+
+Distinguish failures you caused from failures that were already there:
+- "Ran tsc: passed."
+- "Ran npm test: 47 passed, 3 failed. The 3 failures are pre-existing in user.test.ts and unrelated to my changes."
+
+Do NOT claim "tests pass" without running them. Do NOT inflate partial
+verification into a blanket success claim.`);
 
   if (ctx.projectContext) {
     sections.push(`

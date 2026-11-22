@@ -19,6 +19,13 @@ test("includes role, sandbox, tools, and both core sections", () => {
   expect(prompt).toContain("# Handling Ambiguity");
   expect(prompt).toContain("# Verification");
   expect(prompt).toContain('Do NOT claim "tests pass" without running them.');
+  expect(prompt).toContain("Search before reading.");
+  expect(prompt).toContain("(no verification commands discovered for this project)");
+});
+
+test("verification lists the discovered gates in order", () => {
+  const prompt = buildSystemPrompt({ ...base, verificationCommands: ["npx tsc --noEmit", "npm test"] });
+  expect(prompt).toContain("1. `npx tsc --noEmit`\n2. `npm test`");
 });
 
 test("gitBranch line only when set", () => {

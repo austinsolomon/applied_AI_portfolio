@@ -7,7 +7,8 @@ import { buildSystemPrompt } from "./src/system";
 import { createLocalSandbox } from "./src/sandbox-local";
 import { createJustBashSandbox } from "./src/sandbox-just-bash";
 import type { SandboxLifecycle } from "./src/sandbox";
-import { createReadTool, createGrepTool, createBashTool, createTaskTool, createAskUserTool } from "./src/tools";
+import { createReadTool, createGrepTool, createBashTool, createTaskTool, createAskUserTool, createTodoTool } from "./src/tools";
+import { discoverGates } from "./src/verification";
 import { approvalFromEnv, createApproval } from "./src/approval";
 import { createContextPolicy, createTokenBudget, formatStep, formatSummary, splitUsage } from "./src/telemetry";
 
@@ -47,6 +48,7 @@ const tools = {
   bash: createBashTool(sandbox, createApproval(approval)),
   task: createTaskTool(sandbox, { read, grep }),
   askUser: createAskUserTool(),
+  todo: createTodoTool(),
 };
 
 // The current git branch, or undefined if the sandbox folder isn't a git repo.
@@ -59,6 +61,10 @@ const gitBranch = branch.exitCode === 0 ? branch.stdout.trim() : undefined;
 // no section. Read through the sandbox for the same reason as above.
 const projectContext = await sandbox.readFile("AGENTS.md").catch(() => undefined);
 
+// The project's check commands (typecheck, lint, test, build), listed in the
+// prompt's Verification section. See src/verification.ts.
+const verificationCommands = await discoverGates(sandbox);
+
 // The system prompt, built from runtime facts (see src/system.ts).
 // sandboxType and toolNames come from the real objects, so they can't drift.
 export const instructions = buildSystemPrompt({
@@ -67,6 +73,7 @@ export const instructions = buildSystemPrompt({
   toolNames: Object.keys(tools),
   gitBranch,
   projectContext,
+  verificationCommands,
 });
 
 // Module 5 context policy (prune, then cache) and the token budget that

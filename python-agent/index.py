@@ -45,7 +45,8 @@ from sandbox_local import create_local_sandbox
 from sandbox_memory import create_temp_copy_sandbox
 from system import PromptContext, build_system_prompt
 from telemetry import TokenBudget, format_step
-from tools import create_ask_user_tool, create_bash_tool, create_grep_tool, create_read_tool, create_task_tool
+from tools import create_ask_user_tool, create_bash_tool, create_grep_tool, create_read_tool, create_task_tool, create_todo_tool
+from verification import discover_gates
 
 # The project folder the agent works in: the first command-line argument, or
 # the folder you ran the script from.
@@ -105,17 +106,19 @@ TOOLS = [
     create_bash_tool(sandbox, create_approval(approval)),
     create_task_tool(sandbox, read_tool, grep_tool),
     create_ask_user_tool(),
+    create_todo_tool(),
 ]
 
 
-async def gather_project_facts(sb: Sandbox) -> tuple[str | None, str | None]:
-    """Ask the sandbox for the git branch and the AGENTS.md contents.
+async def gather_project_facts(sb: Sandbox) -> tuple[str | None, str | None, list[str]]:
+    """Ask the sandbox for the git branch, the AGENTS.md contents and the check commands.
 
     Both go through the sandbox rather than the local disk, because with a
     cloud backend the project wouldn't be on this machine at all.
       branch   `git rev-parse --abbrev-ref HEAD`; None if it's not a git repo
       context  the text of AGENTS.md (the project's instructions for agents:
                test commands, layout, style, past mistakes); None if absent
+      gates    the project's verification commands (see verification.py)
     """
     branch = await sb.exec("git rev-parse --abbrev-ref HEAD")
     git_branch = branch.stdout.strip() if branch.exit_code == 0 else None
@@ -123,10 +126,10 @@ async def gather_project_facts(sb: Sandbox) -> tuple[str | None, str | None]:
         project_context = await sb.read_file("AGENTS.md")
     except FileNotFoundError:
         project_context = None
-    return git_branch, project_context
+    return git_branch, project_context, await discover_gates(sb)
 
 
-GIT_BRANCH, PROJECT_CONTEXT = asyncio.run(gather_project_facts(sandbox))
+GIT_BRANCH, PROJECT_CONTEXT, VERIFICATION_COMMANDS = asyncio.run(gather_project_facts(sandbox))
 
 # The system prompt, built from runtime facts (see system.py). sandbox_type
 # and tool_names are read off the real objects, so they can't drift.
@@ -136,6 +139,7 @@ SYSTEM_PROMPT = build_system_prompt(PromptContext(
     tool_names=[t.name for t in TOOLS],
     git_branch=GIT_BRANCH,
     project_context=PROJECT_CONTEXT,
+    verification_commands=VERIFICATION_COMMANDS,
 ))
 
 # Bundle the three tools so the agent can use them. The SDK calls a bundle

@@ -178,6 +178,56 @@ DO NOT USE FOR: rhetorical questions or progress updates.`,
   });
 }
 
+// todo: a task list for multi-step work. Items move pending -> in_progress
+// -> completed, and only ONE item may be in progress at a time: `start` is
+// refused while another item is active, which keeps the agent finishing one
+// thing before starting the next. The list lives inside this tool, so each
+// agent run (each call to createTodoTool) starts with an empty list.
+interface TodoItem {
+  id: string;
+  description: string;
+  state: "pending" | "in_progress" | "completed";
+}
+
+export function createTodoTool() {
+  const todos: TodoItem[] = [];
+
+  return tool({
+    description: `Manage a task list for multi-step work.
+WHEN TO USE: tasks with 3+ steps, multiple files, or dependencies between
+  changes. Plan once, then track progress as you go.
+WHEN NOT TO USE: single-file fixes, simple questions, exploratory reads.
+DO NOT USE FOR: status updates to the user (just answer them directly).`,
+    inputSchema: z.object({
+      action: z.enum(["add", "start", "complete", "list"]),
+      description: z.string().optional(),
+      id: z.string().optional(),
+    }),
+    execute: async ({ action, description, id }) => {
+      if (action === "add") {
+        const item: TodoItem = { id: crypto.randomUUID().slice(0, 8), description: description ?? "(unnamed)", state: "pending" };
+        todos.push(item);
+        return `Added: [${item.id}] ${item.description}`;
+      }
+      if (action === "start") {
+        const active = todos.find((t) => t.state === "in_progress");
+        if (active) return `Already working on: [${active.id}] ${active.description}. Complete it first.`;
+        const next = todos.find((t) => t.id === id);
+        if (!next) return `No todo with id ${id}.`;
+        next.state = "in_progress";
+        return `Started: [${next.id}] ${next.description}`;
+      }
+      if (action === "complete") {
+        const item = todos.find((t) => t.id === id);
+        if (!item) return `No todo with id ${id}.`;
+        item.state = "completed";
+        return `Completed: [${item.id}] ${item.description}`;
+      }
+      return todos.map((t) => `[${t.state}] ${t.id}: ${t.description}`).join("\n") || "No todos.";
+    },
+  });
+}
+
 // ---- Subagents (Module 6) ----
 //
 // The parent agent delegates through one `task` tool. Each call builds a

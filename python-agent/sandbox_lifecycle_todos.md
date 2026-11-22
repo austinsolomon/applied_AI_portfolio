@@ -205,3 +205,13 @@ runtime.
   and the agent ends its turn. The Agent SDK has a built-in `AskUserQuestion`
   tool that pauses and is answered through `can_use_tool`; evaluate switching
   to it (and clickable options in the web UI).
+- Module 9 findings:
+  - Interactive mode blocks the discovered gates (`npx tsc --noEmit` is not on
+    the safe list), so 9.3's "run the gates in order" cannot succeed in the
+    default CLI mode. Consider adding discovered gates to the safe list.
+  - TS pruning (last 3 messages) makes the agent forget todo ids and re-add
+    items. Python (no per-step pruning) did not.
+  - `todo complete` works without `start` (course code), so the single-active
+    rule only holds if the agent calls `start`.
+  - Claude Code has a built-in `TodoWrite` tool (disabled by `tools=[]`);
+    evaluate it as the Python production choice.
