@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TeensyCode</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#888; --tool:#2563eb; --out:#16a34a; --err:#dc2626; --warn:#b45309; --line:#e5e5e5; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0b0b0c; --fg:#eee; --muted:#777; --tool:#60a5fa; --out:#4ade80; --err:#f87171; --warn:#fbbf24; --line:#222; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 120px; }
+  h1 { font-size: 14px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 24px; }
+  .turn { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+  .role { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-top: 12px; }
+  .text { white-space: pre-wrap; }
+  .tool { color: var(--tool); margin-top: 6px; }
+  .tool code { white-space: pre-wrap; }
+  pre { margin: 4px 0 0; padding: 8px; color: var(--out); font-size: 12px; overflow-x: auto; max-height: 260px; border-left: 2px solid var(--line); }
+  .err { color: var(--err); white-space: pre-wrap; margin-top: 6px; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  form { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 12px 16px; }
+  form div { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; }
+  input { flex: 1; font: inherit; padding: 10px 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+  button { font: inherit; padding: 10px 16px; border: 0; background: var(--fg); color: var(--bg); cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .approval { margin-top: 6px; color: var(--warn); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .approval button { padding: 4px 12px; font-size: 12px; }
+  .approval .approve { background: var(--out); color: var(--bg); }
+  .approval .deny { background: var(--err); color: var(--bg); }
+</style>
+</head>
+<body>
+<main>
+  <h1>TeensyCode</h1>
+  <div id="log"></div>
+</main>
+<form id="form">
+  <div>
+    <input id="input" placeholder="Ask the agent…" autocomplete="off" autofocus>
+    <button id="send">Send</button>
+  </div>
+</form>
+<script>
+const log = document.getElementById("log");
+const form = document.getElementById("form");
+const input = document.getElementById("input");
+const send = document.getElementById("send");
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function fmtInput(name, inp) {
+  if (!inp) return "";
+  if (inp.command) return "$ " + [inp.command, ...(inp.args || [])].join(" ");
+  return JSON.stringify(inp);
+}
+
+function fmtOutput(out) {
+  if (out == null) return "(no output)";
+  if (typeof out === "string") return out || "(no output)";
+  return out.stdout || out.stderr || JSON.stringify(out, null, 2);
+}
+
+// One "turn" = your question plus everything the agent does for it, including
+// pauses for approval and the resumed runs after you click Approve/Deny.
+function newTurn(prompt) {
+  const turn = el("div", "turn");
+  turn.append(el("div", "role", "User"), el("div", "text", prompt), el("div", "role", "Assistant"));
+  const body = el("div");
+  const meta = el("div", "meta", "thinking…");
+  turn.append(body, meta);
+  log.append(turn);
+  turn.scrollIntoView({ block: "end" });
+  return { turn, body, meta, texts: {}, tools: {}, steps: 0, t0: performance.now(), conversationId: null, pending: [] };
+}
+
+// Read one streamed agent run (SSE) and render it into the turn.
+async function streamInto(ctx, res) {
+  if (!res.ok) { ctx.body.append(el("div", "err", await res.text())); return; }
+  ctx.conversationId = res.headers.get("x-conversation-id") || ctx.conversationId;
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const events = buf.split("\n\n");
+    buf = events.pop();
+    for (const evt of events) {
+      const line = evt.split("\n").find((l) => l.startsWith("data: "));
+      if (!line) continue;
+      const data = line.slice(6);
+      if (data === "[DONE]") continue;
+      handleChunk(ctx, JSON.parse(data));
+      ctx.turn.scrollIntoView({ block: "end" });
+    }
+  }
+}
+
+function handleChunk(ctx, c) {
+  const { body, texts, tools, meta } = ctx;
+  switch (c.type) {
+    case "start-step":
+      ctx.steps++;
+      meta.textContent = `step ${ctx.steps}…`;
+      break;
+    case "text-start":
+      texts[c.id] = el("div", "text", "");
+      body.append(texts[c.id]);
+      break;
+    case "text-delta":
+      if (!texts[c.id]) { texts[c.id] = el("div", "text", ""); body.append(texts[c.id]); }
+      texts[c.id].textContent += c.delta;
+      break;
+    case "tool-input-start": {
+      const box = el("div", "tool");
+      box.append(el("span", "", `[${c.toolName}] `), el("code", "", "…"));
+      tools[c.toolCallId] = box;
+      body.append(box);
+      break;
+    }
+    case "tool-input-available": {
+      let box = tools[c.toolCallId];
+      if (!box) { box = el("div", "tool"); box.append(el("span", "", `[${c.toolName}] `), el("code")); tools[c.toolCallId] = box; body.append(box); }
+      box.querySelector("code").textContent = fmtInput(c.toolName, c.input);
+      break;
+    }
+    case "tool-output-available":
+      (tools[c.toolCallId] || body).append(el("pre", "", fmtOutput(c.output)));
+      break;
+    case "tool-approval-request":
+      // isAutomatic = toolApproval already denied it (blocked command).
+      // No buttons: the SDK answered it, and answering again breaks the run.
+      if (!c.isAutomatic) addApprovalButtons(ctx, c);
+      break;
+    case "tool-output-denied":
+      (tools[c.toolCallId] || body).append(el("div", "err", "denied"));
+      break;
+    case "tool-output-error":
+      (tools[c.toolCallId] || body).append(el("div", "err", "tool error: " + c.errorText));
+      break;
+    case "error":
+      body.append(el("div", "err", "error: " + c.errorText));
+      break;
+  }
+}
+
+// Show Approve/Deny under the tool call. The agent may ask for several
+// approvals in one step, so we wait until every one has a decision, then
+// send them together and stream the resumed run into the same turn.
+function addApprovalButtons(ctx, c) {
+  const entry = { approvalId: c.approvalId, approved: null };
+  ctx.pending.push(entry);
+
+  const box = el("div", "approval");
+  box.append(el("span", "", "⏸ needs approval" + (c.reason ? ` (${c.reason})` : "") + " "));
+  const yes = el("button", "approve", "Approve");
+  const no = el("button", "deny", "Deny");
+  box.append(yes, no);
+  (ctx.tools[c.toolCallId] || ctx.body).append(box);
+
+  const decide = async (approved) => {
+    entry.approved = approved;
+    yes.disabled = no.disabled = true;
+    box.firstChild.textContent = approved ? "✓ approved " : "✗ denied ";
+    if (ctx.pending.some((p) => p.approved === null)) return;
+
+    const decisions = ctx.pending.map(({ approvalId, approved }) => ({ approvalId, approved }));
+    ctx.pending = [];
+    ctx.meta.textContent = "resuming…";
+    try {
+      const res = await fetch("/api/approve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ conversationId: ctx.conversationId, decisions }),
+      });
+      // 204 = the Python server: the run resumes on the original stream,
+      // which is still being read by the submit handler. Nothing to read here.
+      if (res.status === 204) return;
+      await streamInto(ctx, res);
+    } catch (err) {
+      ctx.body.append(el("div", "err", "request failed: " + err.message));
+    }
+    finishTurn(ctx);
+  };
+  yes.addEventListener("click", () => decide(true));
+  no.addEventListener("click", () => decide(false));
+}
+
+function finishTurn(ctx) {
+  const secs = ((performance.now() - ctx.t0) / 1000).toFixed(1);
+  ctx.meta.textContent = ctx.pending.length
+    ? `waiting for your approval… (${ctx.steps} steps so far)`
+    : `(${ctx.steps} step${ctx.steps === 1 ? "" : "s"} · ${secs}s)`;
+  send.disabled = false;
+  input.focus();
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const prompt = input.value.trim();
+  if (!prompt) return;
+  input.value = "";
+  send.disabled = true;
+
+  const ctx = newTurn(prompt);
+  try {
+    const res = await fetch("/api", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    await streamInto(ctx, res);
+  } catch (err) {
+    ctx.body.append(el("div", "err", "request failed: " + err.message));
+  }
+  finishTurn(ctx);
+});
+</script>
+</body>
+</html>

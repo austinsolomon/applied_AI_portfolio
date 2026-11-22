@@ -4,6 +4,7 @@ import { z } from "zod";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execSync } from "node:child_process";
+import { buildSystemPrompt } from "./src/system";
 
 export const cwd = resolve(process.argv[2] || process.cwd());
 
@@ -117,7 +118,7 @@ WHEN NOT TO USE: reading a known file (use read instead).
 DO NOT USE FOR: reading files (use read), listing directories (use bash).
 
 USAGE: pattern is an extended regex string. glob filters by file name
-  (default: all files). node_modules and .git are skipped.
+  (default: all files). node_modules, .venv and .git are skipped.
   Results are capped at 50 matches.
 
 EXAMPLES:
@@ -133,7 +134,7 @@ EXAMPLES:
     const dir = resolve(cwd, searchPath || ".");
     const escapedPattern = pattern.replace(/'/g, `'\\''`);
     const escapedGlob = (globFilter || "*").replace(/'/g, `'\\''`);
-    const cmd = `grep -rn --exclude-dir=node_modules --exclude-dir=.git --include='${escapedGlob}' -E '${escapedPattern}' '${dir}' 2>/dev/null`;
+    const cmd = `grep -rn --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git --include='${escapedGlob}' -E '${escapedPattern}' '${dir}' 2>/dev/null`;
 
     try {
       const stdout = execSync(cmd, { encoding: "utf-8", timeout: 10_000 });
@@ -228,32 +229,33 @@ export const localOps: BashOperations = {
 // Course uses "anthropic/claude-haiku-4.5" via AI Gateway (blocked on free tier).
 // We call Anthropic directly; reads ANTHROPIC_API_KEY from .env.
 export const model = anthropic("claude-haiku-4-5");
-// The system prompt: the agent's operating policy (the tools say what it
-// CAN do; this says what it SHOULD do). Sections keep it scannable and let
-// you lift one out later, e.g. Guardrails for a subagent.
-//   role line   who the agent is and where it's working
-//   Agency      act on the task with tools instead of describing a plan
-//   Guardrails  how to act: minimal, reuse-first, no surprise dependencies
-export const instructions = `You are a coding agent working in: ${cwd}
-
-# Agency
-- USE your tools. Read files, search code, run commands, then answer.
-- Do NOT explain what you WOULD do. Actually do it.
-- Prefer grep for searching, read for viewing files.
-- Use bash only for commands that aren't covered by other tools.
-
-# Guardrails
-- Prefer simple, minimal changes
-- Search before creating, and reuse existing patterns
-- No new dependencies without asking`;
-
 const approval = approvalFromEnv();
 const bash = createBashTool(localOps, createApproval(approval));
+const tools = { read, grep, bash };
+
+// The current git branch, or undefined if cwd isn't a git repo. Feeds the
+// prompt's optional "Current branch" line.
+function detectGitBranch(dir: string): string | undefined {
+  try {
+    return execSync("git rev-parse --abbrev-ref HEAD", { cwd: dir, encoding: "utf-8", stdio: "pipe" }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+// The system prompt, built from runtime facts (see src/system.ts).
+// toolNames comes from the tools actually wired in, so it can't drift.
+export const instructions = buildSystemPrompt({
+  workingDirectory: cwd,
+  sandboxType: "local",
+  toolNames: Object.keys(tools),
+  gitBranch: detectGitBranch(cwd),
+});
 
 export const agent = new ToolLoopAgent({
   model,
   instructions,
-  tools: { read, grep, bash },
+  tools,
   stopWhen: isStepCount(10),
 });
 

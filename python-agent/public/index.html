@@ -181,6 +181,9 @@ function addApprovalButtons(ctx, c) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ conversationId: ctx.conversationId, decisions }),
       });
+      // 204 = the Python server: the run resumes on the original stream,
+      // which is still being read by the submit handler. Nothing to read here.
+      if (res.status === 204) return;
       await streamInto(ctx, res);
     } catch (err) {
       ctx.body.append(el("div", "err", "request failed: " + err.message));

@@ -4,11 +4,11 @@ You give it a folder and a question. It can read files, search across files,
 and run shell commands to answer. Which commands it may run depends on the
 approval mode (see ApprovalConfig).
 
-Run:  python ref_index.py <folder> "your question"
-      APPROVAL_MODE=background python ref_index.py . "..."
-      APPROVAL_MODE=delegated APPROVAL_TRUST="git status,pwd" python ref_index.py . "..."
-Needs: pip install claude-agent-sdk pydantic, and ANTHROPIC_API_KEY set.
-(Reference file: it compiles but has not been run.)
+Setup: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+Run:   set -a && . ./.env && set +a      (loads ANTHROPIC_API_KEY)
+       .venv/bin/python index.py <folder> "your question"
+       APPROVAL_MODE=background .venv/bin/python index.py . "..."
+       APPROVAL_MODE=delegated APPROVAL_TRUST="git status,pwd" .venv/bin/python index.py . "..."
 """
 
 import asyncio
@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Annotated, Callable, Literal, Protocol
 
 from pydantic import BaseModel, Field, TypeAdapter
+from system import PromptContext, build_system_prompt
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -241,7 +242,7 @@ WHEN NOT TO USE: reading a known file (use read instead).
 DO NOT USE FOR: reading files (use read), listing directories (use bash).
 
 USAGE: pattern is an extended regex string. glob filters by file name
-  (default: all files). node_modules and .git are skipped.
+  (default: all files). node_modules, .venv and .git are skipped.
   Results are capped at 50 matches.
 
 EXAMPLES:
@@ -256,7 +257,7 @@ async def grep(args: dict) -> dict:
     Runs the system `grep` with:
       -r  search subfolders too
       -n  include line numbers
-      --exclude-dir  skip node_modules and .git (huge, and never useful)
+      --exclude-dir  skip node_modules, .venv and .git (huge, and never useful)
       --include      only look in files matching the glob
       -E             use extended regex syntax
     Each result looks like "path/file.ts:42:matching line".
@@ -273,7 +274,7 @@ async def grep(args: dict) -> dict:
     proc = subprocess.run(
         [
             "grep", "-rn",
-            "--exclude-dir=node_modules", "--exclude-dir=.git",
+            "--exclude-dir=node_modules", "--exclude-dir=.venv", "--exclude-dir=.git",
             f"--include={inp.glob or '*'}",
             "-E", inp.pattern,
             str(search_dir),
@@ -430,49 +431,62 @@ class LocalOps:
 approval = approval_from_env()
 bash = create_bash_tool(LocalOps(), create_approval(approval))
 
-# The system prompt: the agent's operating policy. The tools define what it
-# CAN do; this says what it SHOULD do. It's split into sections so it's easy
-# to scan, and so one section (say, Guardrails) can be reused for a subagent.
-#   role line   who the agent is and which folder it works in
-#   Agency      act on the task with the tools instead of describing a plan
-#               (models default to explaining, so this is said explicitly),
-#               and pick read/grep over bash where they fit
-#   Guardrails  how to act: small changes, reuse what exists, ask before
-#               adding dependencies
-# It's an f-string, so {cwd} is filled in with the real folder path.
-SYSTEM_PROMPT = f"""You are a coding agent working in: {cwd}
+def detect_git_branch(directory: Path) -> str | None:
+    """Return the current git branch, or None if the folder isn't a git repo.
 
-# Agency
-- USE your tools. Read files, search code, run commands, then answer.
-- Do NOT explain what you WOULD do. Actually do it.
-- Prefer grep for searching, read for viewing files.
-- Use bash only for commands that aren't covered by other tools.
+    Asks git directly. check=True turns a failure (not a repo, git missing)
+    into an exception, which is caught and treated as "no branch".
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=directory, capture_output=True, text=True, check=True,
+        )
+        return proc.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
 
-# Guardrails
-- Prefer simple, minimal changes
-- Search before creating, and reuse existing patterns
-- No new dependencies without asking"""
+
+TOOLS = [read, grep, bash]
+
+# The system prompt, built from runtime facts (see system.py). tool_names is
+# read off the tools actually wired in, so the prompt's tool list can't drift
+# from reality.
+SYSTEM_PROMPT = build_system_prompt(PromptContext(
+    working_directory=str(cwd),
+    sandbox_type="local",
+    tool_names=[t.name for t in TOOLS],
+    git_branch=detect_git_branch(cwd),
+))
 
 # Bundle the three tools so the agent can use them. The SDK calls a bundle
 # of custom tools an "MCP server", but this one runs inside this script, with
 # no network involved. The agent sees each tool as mcp__teensy__<name>.
-teensy = create_sdk_mcp_server(name="teensy", version="0.1.0", tools=[read, grep, bash])
+teensy = create_sdk_mcp_server(name="teensy", version="0.1.0", tools=TOOLS)
 
 
 # The agent's settings:
 #   model          which Claude model does the thinking
 #   system_prompt  standing instructions sent with every request
 #   cwd            the folder the agent works in
+#   tools=[]       turn off the SDK's built-in tools (its own Bash, Read,
+#                  Write, ...) so the agent can only use our three
+#   setting_sources=[], strict_mcp_config=True
+#                  isolation: the SDK runs the Claude Code CLI underneath,
+#                  which would otherwise load your local settings, plugins,
+#                  skills and MCP servers (enough to exceed the context limit)
 #   mcp_servers    the tool bundle from above
 #   allowed_tools  our three tools run without the SDK asking permission.
-#                  That's safe because the bash tool now enforces the
-#                  approval policy itself. (Pre-approving tools does not
-#                  hide the SDK's other built-in tools.)
+#                  That's safe because the bash tool enforces the approval
+#                  policy itself.
 #   max_turns      stop after 10 rounds, in case the agent gets stuck in a loop
 options = ClaudeAgentOptions(
     model="claude-haiku-4-5",
     system_prompt=SYSTEM_PROMPT,
     cwd=str(cwd),
+    tools=[],
+    setting_sources=[],
+    strict_mcp_config=True,
     mcp_servers={"teensy": teensy},
     allowed_tools=["mcp__teensy__read", "mcp__teensy__grep", "mcp__teensy__bash"],
     max_turns=10,
@@ -505,7 +519,7 @@ async def main():
 
 
 # Run main() only when this file is executed directly, not when another
-# file (like ref_server.py) imports it to reuse the tools.
+# file (like server.py) imports it to reuse the tools.
 # asyncio.run() starts the async machinery and runs main() to completion.
 if __name__ == "__main__":
     asyncio.run(main())
