@@ -9,6 +9,9 @@ import type { RequiresApproval } from "./approval";
 
 const MAX_LINES = 500;
 const MAX_MATCHES = 50;
+// bash keeps the LAST 5,000 characters: build errors, test failures and
+// stack traces print at the end of the output.
+const MAX_BASH_CHARS = 5000;
 
 // Wrap a value in single quotes for the shell, escaping any ' inside, so
 // grep's pattern/glob/path can't break out of the command string.
@@ -122,6 +125,7 @@ DO NOT USE FOR: reading files (use read), searching code (use grep).
 
 USAGE: command is a single shell string. Commands not approved by the
   approval policy are blocked and return a clear error message. 30s timeout.
+  Output is capped at the last 5000 characters.
 
 EXAMPLES:
   - List files: command "ls -la"
@@ -135,8 +139,14 @@ EXAMPLES:
         return `Blocked: "${command}" requires approval.`;
       }
       const { stdout, exitCode } = await sandbox.exec(command);
-      if (exitCode !== 0) return `Exit ${exitCode}: ${stdout}`;
-      return stdout || "(no output)";
+      const output = stdout || "(no output)";
+      // Every cap says it was applied, so the model knows output is missing
+      // and can narrow the command instead of acting on a partial result.
+      const capped =
+        output.length > MAX_BASH_CHARS
+          ? output.slice(-MAX_BASH_CHARS) + `\n... (truncated, showing last ${MAX_BASH_CHARS} chars)`
+          : output;
+      return exitCode !== 0 ? `Exit ${exitCode}: ${capped}` : capped;
     },
   });
 }

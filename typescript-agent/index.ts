@@ -1,6 +1,6 @@
 // TeensyCode CLI: wires a sandbox, tools, approval policy and system prompt
 // into a ToolLoopAgent. Run: bun run index.ts <folder> "your question"
-import { ToolLoopAgent, isStepCount } from "ai";
+import { ToolLoopAgent, isStepCount, pruneMessages } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { resolve } from "node:path";
 import { buildSystemPrompt } from "./src/system";
@@ -9,6 +9,7 @@ import { createJustBashSandbox } from "./src/sandbox-just-bash";
 import type { SandboxLifecycle } from "./src/sandbox";
 import { createReadTool, createGrepTool, createBashTool } from "./src/tools";
 import { approvalFromEnv, createApproval } from "./src/approval";
+import { addCacheControl } from "./src/cache";
 
 export const cwd = resolve(process.argv[2] || process.cwd());
 
@@ -64,12 +65,37 @@ export const agent = new ToolLoopAgent({
   model,
   instructions,
   tools,
-  stopWhen: isStepCount(10),
+  stopWhen: isStepCount(15),
+  // After each step: print its tool calls (first line of each result), then
+  // the token telemetry: what was sent (input) and what came back (output).
+  // Every step resends the whole conversation, so input grows with each tool
+  // result while output stays small. Printed live, so a run that crashes
+  // midway still shows what it did. Telemetry goes to stderr to stay separate
+  // from the agent's answer on stdout.
+  onStepEnd: ({ usage, stepNumber, toolResults }) => {
+    for (const r of toolResults) {
+      console.log(`[${r.toolName}] ${JSON.stringify(r.input)} -> ${String(r.output).split("\n")[0]}`);
+    }
+    console.error(
+      `Step ${stepNumber}: ${usage.inputTokens} input, ${usage.outputTokens} output, ` +
+        `${usage.inputTokenDetails.cacheReadTokens ?? 0} cached`,
+    );
+  },
+  // Runs before every step and rewrites the messages about to be sent:
+  //   1. pruneMessages drops tool calls and results older than the last 3
+  //      messages (the original prompt and the model's own text are kept),
+  //      so input levels off instead of growing every step.
+  //   2. addCacheControl marks the first and last surviving messages as
+  //      cache breakpoints. Pruning runs first because it changes which
+  //      messages exist.
+  prepareStep: ({ messages }) => ({
+    messages: addCacheControl(pruneMessages({ messages, toolCalls: "before-last-3-messages" })),
+  }),
 });
 
 // CLI: only runs when this file is executed directly, not when imported.
-// Prints each tool call and the first line of its result, so you can see
-// which mode let a command through.
+// Tool calls and token counts print live from onStepEnd; the answer prints
+// at the end.
 if (import.meta.main) {
   const prompt = process.argv.slice(3).join(" ") || "Hello!";
   console.log(
@@ -78,12 +104,6 @@ if (import.meta.main) {
   // try/finally: beforeStop and stop run even if the agent throws mid-run.
   try {
     const result = await agent.generate({ prompt });
-    for (const step of result.steps) {
-      for (const r of step.toolResults) {
-        const firstLine = String(r.output).split("\n")[0];
-        console.log(`[${r.toolName}] ${JSON.stringify(r.input)} -> ${firstLine}`);
-      }
-    }
     console.log(`\n${result.text}\n\n(${result.steps.length} steps)`);
   } finally {
     await lifecycle.beforeStop?.(sandbox);

@@ -1,8 +1,10 @@
-"""The local backend: files and commands on this machine.
+"""The local backend: the agent works directly in your real project folder.
 
-Deliberately boring. It wraps the same file reading and subprocess calls the
-tools used before, now behind the Sandbox interface. It proves the interface
-works and is the baseline every other backend gets compared to.
+Reads use the real files, commands run in the real folder, and any change the
+agent makes stays. It wraps the same file reads and subprocess calls the tools
+made before Module 4, now behind the Sandbox interface. Because it adds no
+new behavior, it serves as the reference: if a tool acts differently on
+another backend, the difference comes from that backend.
 """
 
 import asyncio

@@ -5,8 +5,8 @@
 import { Sandbox as JustBashSandbox } from "just-bash";
 import type { Sandbox } from "./sandbox";
 
-// The trap: just-bash mounts the project at this virtual path, not at its
-// real path and not at "/". Every path in and out goes through it.
+// just-bash mounts the project at this virtual path, not at its real path
+// and not at "/". Every path passed in must be prefixed with it.
 const MOUNT = "/home/user/project";
 
 // Async because just-bash needs a moment to set up its virtual filesystem.

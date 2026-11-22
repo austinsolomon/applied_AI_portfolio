@@ -23,6 +23,9 @@ from sandbox import Sandbox
 # with a note saying so.
 MAX_LINES = 500
 MAX_MATCHES = 50
+# bash keeps the LAST 5,000 characters: build errors, test failures and stack
+# traces print at the end of the output.
+MAX_BASH_CHARS = 5000
 
 
 def text_result(text: str) -> dict:
@@ -186,6 +189,7 @@ DO NOT USE FOR: reading files (use read), searching code (use grep).
 
 USAGE: command is a single shell string. Commands not approved by the
   approval policy are blocked and return a clear error message. 30s timeout.
+  Output is capped at the last 5000 characters.
 
 EXAMPLES:
   - List files: command "ls -la"
@@ -204,8 +208,11 @@ def create_bash_tool(sandbox: Sandbox, requires_approval: RequiresApproval):
       2. Ask requires_approval. If it says True, return a "Blocked" message
          instead of running anything; the model reads it and adapts.
       3. Otherwise run the command with sandbox.exec().
-      4. Report the output, prefixed with "Exit N:" if it failed, so the
-         model can tell failure apart from empty output.
+      4. Cap the output at its last MAX_BASH_CHARS characters, with a note
+         saying so, so the model knows output is missing and can narrow the
+         command instead of acting on a partial result.
+      5. Report it, prefixed with "Exit N:" if it failed, so the model can
+         tell failure apart from empty output.
     """
 
     async def bash(args: dict) -> dict:
@@ -215,8 +222,11 @@ def create_bash_tool(sandbox: Sandbox, requires_approval: RequiresApproval):
             return text_result(f'Blocked: "{inp.command}" requires approval.')
 
         result = await sandbox.exec(inp.command)
+        output = result.stdout or "(no output)"
+        if len(output) > MAX_BASH_CHARS:
+            output = output[-MAX_BASH_CHARS:] + f"\n... (truncated, showing last {MAX_BASH_CHARS} chars)"
         if result.exit_code != 0:
-            return text_result(f"Exit {result.exit_code}: {result.stdout}")
-        return text_result(result.stdout or "(no output)")
+            return text_result(f"Exit {result.exit_code}: {output}")
+        return text_result(output)
 
     return tool("bash", BASH_DESCRIPTION, BashInput.model_json_schema())(bash)

@@ -1,6 +1,9 @@
-// The local backend: the same readFileSync / execSync calls as before, now
-// hidden behind the Sandbox interface. Deliberately boring. It proves the
-// interface works and is the baseline every other backend is compared to.
+// The local backend: the agent works directly in your real project folder.
+// Reads use the real files, commands run in the real folder, and changes
+// stay. It wraps the same readFileSync / execSync calls the tools made before
+// Module 4, now behind the Sandbox interface. Because it adds no new behavior,
+// it serves as the reference: if a tool acts differently on another backend,
+// the difference comes from that backend.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execSync } from "node:child_process";

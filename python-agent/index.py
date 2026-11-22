@@ -21,6 +21,7 @@ Run:   set -a && . ./.env && set +a      (loads ANTHROPIC_API_KEY)
 """
 
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
@@ -29,7 +30,11 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ResultMessage,
+    StreamEvent,
     TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    UserMessage,
     create_sdk_mcp_server,
     query,
 )
@@ -144,7 +149,20 @@ teensy = create_sdk_mcp_server(name="teensy", version="0.1.0", tools=TOOLS)
 #   allowed_tools  our three tools run without the SDK asking permission.
 #                  That's safe because the bash tool enforces the approval
 #                  policy itself.
-#   max_turns      stop after 10 rounds, in case the agent gets stuck in a loop
+#   max_turns      stop after 15 rounds, in case the agent gets stuck in a loop
+#
+# Context management (Module 5) in this stack: the Claude Code CLI under the
+# SDK owns the conversation history, so the harness cannot rewrite messages
+# between steps. Instead the CLI:
+#   - caches the repeated prefix automatically (5.4); log_step_usage shows
+#     the cached share once the prefix passes the model's minimum size
+#   - compacts (summarizes) the history when it nears the context limit, in
+#     place of per-step pruning (5.2)
+#   - replaces any single tool result over ~25k tokens with an error and
+#     saves the full text to a file, on top of our own caps in tools.py (5.3)
+#   include_partial_messages
+#                  also stream raw API events; log_step_usage reads the
+#                  per-step token counts from them
 options = ClaudeAgentOptions(
     model=MODEL,
     system_prompt=SYSTEM_PROMPT,
@@ -154,8 +172,39 @@ options = ClaudeAgentOptions(
     strict_mcp_config=True,
     mcp_servers={"teensy": teensy},
     allowed_tools=["mcp__teensy__read", "mcp__teensy__grep", "mcp__teensy__bash"],
-    max_turns=10,
+    max_turns=15,
+    include_partial_messages=True,
 )
+
+
+def first_line(block: ToolResultBlock) -> str:
+    """Return the first line of a tool result's text, for one-line logging."""
+    content = block.content
+    if isinstance(content, list):
+        content = "\n".join(part.get("text", "") for part in content if isinstance(part, dict))
+    return str(content or "").split("\n")[0]
+
+
+def log_step_usage(event: dict, step: int) -> bool:
+    """Log one step's token usage; return True if this event ended a step.
+
+    Every step resends the whole conversation, so input grows with each tool
+    result while output stays small. Each model call streams a
+    "message_delta" event when it finishes, carrying that call's final usage.
+    Input counts include any cached tokens (cache reads and writes are
+    reported separately), so the number stays the full amount sent.
+    Printed to stderr to stay separate from the agent's answer on stdout.
+    """
+    if event.get("type") != "message_delta":
+        return False
+    usage = event.get("usage", {})
+    cached = usage.get("cache_read_input_tokens", 0)
+    sent = usage.get("input_tokens", 0) + cached + usage.get("cache_creation_input_tokens", 0)
+    print(
+        f"Step {step}: {sent} input, {usage.get('output_tokens', 0)} output, {cached} cached",
+        file=sys.stderr,
+    )
+    return True
 
 
 async def main():
@@ -165,8 +214,13 @@ async def main():
     tools it picks, send back the results, and repeat until it answers.
     The `async for` doesn't drive that loop; it just watches the messages
     the loop produces as they happen:
+      - StreamEvent: raw API events; used only for per-step token logging.
       - AssistantMessage: something Claude said. Keep the latest text,
-        because the last thing it says is the final answer.
+        because the last thing it says is the final answer. Tool calls in it
+        are remembered by id until their result arrives.
+      - UserMessage: carries tool results back (the SDK labels them as
+        coming from the user). Each is printed live as "[tool] {args} -> first
+        line of output", so a run that crashes midway still shows its steps.
       - ResultMessage: the loop is done; num_turns says how many rounds it took.
     try/finally: before_stop and stop run even if the agent fails mid-run
     (stop is a no-op locally; temp-copy deletes its copy; a cloud sandbox
@@ -175,15 +229,26 @@ async def main():
     prompt = " ".join(sys.argv[2:]) or "Hello!"
     print(
         f"(sandbox: {sandbox.type} · model: {MODEL} · approval: {approval.model_dump()} · "
-        f"AGENTS.md: {'loaded' if PROJECT_CONTEXT else 'none'})"
+        f"AGENTS.md: {'loaded' if PROJECT_CONTEXT else 'none'})",
+        flush=True,
     )
-    text, turns = "", 0
+    text, turns, step = "", 0, 0
+    calls: dict[str, str] = {}
     try:
         async for message in query(prompt=prompt, options=options):
-            if isinstance(message, AssistantMessage):
+            if isinstance(message, StreamEvent):
+                if log_step_usage(message.event, step):
+                    step += 1
+            elif isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         text = block.text
+                    elif isinstance(block, ToolUseBlock):
+                        calls[block.id] = f"[{block.name.removeprefix('mcp__teensy__')}] {json.dumps(block.input)}"
+            elif isinstance(message, UserMessage) and isinstance(message.content, list):
+                for block in message.content:
+                    if isinstance(block, ToolResultBlock):
+                        print(f"{calls.pop(block.tool_use_id, '[tool]')} -> {first_line(block)}", flush=True)
             elif isinstance(message, ResultMessage):
                 turns = message.num_turns
     finally:
