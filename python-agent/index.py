@@ -20,9 +20,11 @@ Run:   set -a && . ./.env && set +a      (loads ANTHROPIC_API_KEY)
        APPROVAL_MODE=delegated APPROVAL_TRUST="git status,pwd" .venv/bin/python index.py . "..."
 """
 
+import argparse
 import asyncio
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -31,7 +33,6 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ResultMessage,
     StreamEvent,
-    TextBlock,
     ToolResultBlock,
     ToolUseBlock,
     UserMessage,
@@ -48,9 +49,30 @@ from telemetry import TokenBudget, format_step
 from tools import create_ask_user_tool, create_bash_tool, create_grep_tool, create_read_tool, create_task_tool, create_todo_tool
 from verification import discover_gates
 
-# The project folder the agent works in: the first command-line argument, or
-# the folder you ran the script from.
-cwd = Path(sys.argv[1] if len(sys.argv) > 1 else os.getcwd()).resolve()
+def parse_cli_args() -> argparse.Namespace:
+    """Read the command line: flags, the working folder, then the prompt.
+
+      --sandbox  local (default) or temp-copy; falls back to the SANDBOX env var
+      --model    the parent agent's model (default Sonnet); falls back to MODEL
+      folder     where the agent works (default: the current folder)
+      prompt     every remaining word, joined into the question
+
+    parse_known_args ignores arguments it doesn't recognize, so the web
+    server, which imports this file with its own arguments, doesn't fail.
+    """
+    parser = argparse.ArgumentParser(description="TeensyCode: a small coding agent.")
+    parser.add_argument("--sandbox", choices=["local", "temp-copy"], default=os.environ.get("SANDBOX", "local"))
+    parser.add_argument("--model", default=os.environ.get("MODEL", "claude-sonnet-5-5"))
+    parser.add_argument("folder", nargs="?", default=os.getcwd())
+    parser.add_argument("prompt", nargs="*")
+    args, _unknown = parser.parse_known_args()
+    return args
+
+
+ARGS = parse_cli_args()
+
+# The project folder the agent works in.
+cwd = Path(ARGS.folder).resolve()
 
 # Setup and teardown around the sandbox. Empty for now, so nothing extra
 # runs; the hook points are in place for the cloud work in Module 7.
@@ -60,13 +82,13 @@ lifecycle = SandboxLifecycle()
 async def start_sandbox(directory: Path) -> Sandbox:
     """Create the sandbox picked by SANDBOX, then run the after_start hook.
 
-    SANDBOX chooses the backend:
+    --sandbox (or the SANDBOX env var) chooses the backend:
       local      (default) your real folder and real commands
       temp-copy  a throwaway copy of the project; your folder is never changed
     Every tool goes through the sandbox, so this is the only place that
     knows which backend is in use.
     """
-    if os.environ.get("SANDBOX", "local") == "temp-copy":
+    if ARGS.sandbox == "temp-copy":
         sb: Sandbox = await create_temp_copy_sandbox(directory)
     else:
         sb = create_local_sandbox(directory)
@@ -90,9 +112,9 @@ sandbox: Sandbox = asyncio.run(start_sandbox(cwd))
 # The parent agent's model: Sonnet, because the parent plans, routes work to
 # subagents, follows the prompt's contracts (Verification) and writes the
 # final answer. The subagents run on Haiku (tools.py): their work is narrow
-# and instruction-driven, so the cheaper model fits. MODEL overrides the
-# parent's model, e.g. MODEL=claude-haiku-4-5.
-MODEL = os.environ.get("MODEL", "claude-sonnet-5-5")
+# and instruction-driven, so the cheaper model fits. --model (or the MODEL
+# env var) overrides the parent's model, e.g. --model=claude-haiku-4-5.
+MODEL = ARGS.model
 
 # The approval mode for this run, and the tools built on the sandbox.
 approval = approval_from_env()
@@ -212,54 +234,71 @@ def log_step_usage(event: dict, budget: TokenBudget) -> bool:
     return True
 
 async def main():
-    """Take a question from the command line, run the agent, print the answer.
+    """Take a question from the command line, run the agent, stream the answer.
 
     query() runs the whole agent loop for you: ask Claude, run whatever
     tools it picks, send back the results, and repeat until it answers.
-    The `async for` doesn't drive that loop; it just watches the messages
-    the loop produces as they happen:
-      - StreamEvent: raw API events; used only for per-step token logging.
-      - AssistantMessage: something Claude said. Keep the latest text,
-        because the last thing it says is the final answer. Tool calls in it
-        are remembered by id until their result arrives.
-      - UserMessage: carries tool results back (the SDK labels them as
-        coming from the user). Each is printed live as "[tool] {args} -> first
-        line of output", so a run that crashes midway still shows its steps.
+    The `async for` doesn't drive that loop; it watches the messages the
+    loop produces as they happen:
+      - StreamEvent: raw API events. A "text_delta" is a piece of the answer
+        and is written to stdout immediately; a "message_delta" ends a step
+        and is priced by log_step_usage.
+      - AssistantMessage: tool calls are remembered by id until their result
+        arrives.
+      - UserMessage: carries tool results back. Each call and a preview of
+        its result go to stderr.
       - ResultMessage: the loop is done; num_turns says how many rounds it took.
-    try/finally: before_stop and stop run even if the agent fails mid-run
-    (stop is a no-op locally; temp-copy deletes its copy; a cloud sandbox
-    would otherwise keep running and costing money).
+
+    stdout gets only the answer, stderr gets everything else, so
+    `2>/dev/null` leaves just the answer. Shutdown always stops the sandbox:
+    the finally covers normal exit and errors, and Ctrl-C (SIGINT) cancels
+    this task, which also lands in the finally.
     """
-    prompt = " ".join(sys.argv[2:]) or "Hello!"
+    prompt = " ".join(ARGS.prompt) or "Hello!"
     print(
         f"(sandbox: {sandbox.type} · model: {MODEL} · approval: {approval.model_dump()} · "
         f"AGENTS.md: {'loaded' if PROJECT_CONTEXT else 'none'})",
-        flush=True,
+        file=sys.stderr, flush=True,
     )
-    text, turns = "", 0
+
+    this_task = asyncio.current_task()
+
+    def on_sigint() -> None:
+        print("\nShutting down...", file=sys.stderr, flush=True)
+        this_task.cancel()
+
+    asyncio.get_running_loop().add_signal_handler(signal.SIGINT, on_sigint)
+
+    turns = 0
     budget = TokenBudget(MODEL)
     calls: dict[str, str] = {}
     try:
         async for message in query(prompt=prompt, options=options):
             if isinstance(message, StreamEvent):
-                log_step_usage(message.event, budget)
+                event = message.event
+                delta = event.get("delta", {})
+                if event.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
+                    sys.stdout.write(delta.get("text", ""))
+                    sys.stdout.flush()
+                else:
+                    log_step_usage(event, budget)
             elif isinstance(message, AssistantMessage):
                 for block in message.content:
-                    if isinstance(block, TextBlock):
-                        text = block.text
-                    elif isinstance(block, ToolUseBlock):
-                        calls[block.id] = f"[{block.name.removeprefix('mcp__teensy__')}] {json.dumps(block.input)}"
+                    if isinstance(block, ToolUseBlock):
+                        calls[block.id] = f"{block.name.removeprefix('mcp__teensy__')}({json.dumps(block.input)})"
             elif isinstance(message, UserMessage) and isinstance(message.content, list):
                 for block in message.content:
                     if isinstance(block, ToolResultBlock):
-                        print(f"{calls.pop(block.tool_use_id, '[tool]')} -> {first_line(block)}", flush=True)
+                        print(f"\n[tool] {calls.pop(block.tool_use_id, 'tool')}", file=sys.stderr)
+                        print(f"  -> {first_line(block)[:100]}", file=sys.stderr, flush=True)
             elif isinstance(message, ResultMessage):
                 turns = message.num_turns
+        print(f"\n\n({turns} steps)")
+    except asyncio.CancelledError:
+        pass
     finally:
         print(budget.summary(), file=sys.stderr)
         await stop_sandbox(sandbox)
-    print(text)
-    print(f"\n({turns} steps)")
 
 
 # Run main() only when this file is executed directly, not when another

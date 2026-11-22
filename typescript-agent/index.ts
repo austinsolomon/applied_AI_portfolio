@@ -1,26 +1,46 @@
 // TeensyCode CLI: wires a sandbox, tools, approval policy and system prompt
-// into a ToolLoopAgent. Run: bun run index.ts <folder> "your question"
+// into a ToolLoopAgent.
+// Run: bun run index.ts [--sandbox=local|just-bash] [--model=<id>] <folder> "your question"
+import { parseArgs } from "node:util";
 import { ToolLoopAgent, isStepCount } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { resolve } from "node:path";
 import { buildSystemPrompt } from "./src/system";
 import { createLocalSandbox } from "./src/sandbox-local";
 import { createJustBashSandbox } from "./src/sandbox-just-bash";
-import type { SandboxLifecycle } from "./src/sandbox";
+import type { Sandbox, SandboxLifecycle } from "./src/sandbox";
 import { createReadTool, createGrepTool, createBashTool, createTaskTool, createAskUserTool, createTodoTool } from "./src/tools";
 import { discoverGates } from "./src/verification";
 import { approvalFromEnv, createApproval } from "./src/approval";
 import { createContextPolicy, createTokenBudget, formatStep, formatSummary, splitUsage } from "./src/telemetry";
 
-export const cwd = resolve(process.argv[2] || process.cwd());
+// Command-line arguments:
+//   --sandbox  local (default) or just-bash; falls back to the SANDBOX env var
+//   --model    the parent agent's model (default Sonnet); falls back to MODEL
+//   positionals: the working folder, then the prompt (all remaining words)
+// strict: false so the web server, which imports this file with its own
+// arguments, doesn't fail on flags meant for it.
+const { values, positionals } = parseArgs({
+  args: process.argv.slice(2),
+  options: {
+    sandbox: { type: "string", default: process.env.SANDBOX ?? "local" },
+    model: { type: "string", default: process.env.MODEL ?? "claude-sonnet-5-5" },
+  },
+  allowPositionals: true,
+  strict: false,
+});
+
+export const cwd = resolve(positionals[0] || process.cwd());
+const prompt = positionals.slice(1).join(" ") || "Hello!";
 
 // Where code lives and commands run. Every tool goes through this object.
-// SANDBOX picks the backend at startup:
-//   local      (default) your real folder and real commands
+//   local      your real folder and real commands
 //   just-bash  reads your real files, keeps all writes in memory
-const sandboxType = process.env.SANDBOX || "local";
-export const sandbox =
-  sandboxType === "just-bash" ? await createJustBashSandbox(cwd) : createLocalSandbox(cwd);
+async function sandboxFromFlag(name: string, dir: string): Promise<Sandbox> {
+  if (name === "just-bash") return createJustBashSandbox(dir);
+  return createLocalSandbox(dir);
+}
+export const sandbox = await sandboxFromFlag(String(values.sandbox), cwd);
 
 // Setup and teardown around the sandbox. Empty for now, so nothing extra
 // runs; the hook points are in place for the cloud work in Module 7.
@@ -30,11 +50,11 @@ await lifecycle.afterStart?.(sandbox);
 // The parent agent's model: Sonnet, because the parent plans, routes work to
 // subagents, follows the prompt's contracts (Verification) and writes the
 // final answer. The subagents run on Haiku (src/tools.ts): their work is
-// narrow and instruction-driven, so the cheaper model fits. MODEL overrides
-// the parent's model, e.g. MODEL=claude-haiku-4-5.
+// narrow and instruction-driven, so the cheaper model fits. --model (or the
+// MODEL env var) overrides the parent's model, e.g. --model=claude-haiku-4-5.
 // Course uses "anthropic/claude-haiku-4.5" via AI Gateway (blocked on free
 // tier), so we call Anthropic directly; reads ANTHROPIC_API_KEY from .env.
-export const MODEL_ID = process.env.MODEL ?? "claude-sonnet-5-5";
+export const MODEL_ID = String(values.model);
 export const model = anthropic(MODEL_ID);
 
 const approval = approvalFromEnv();
@@ -90,10 +110,7 @@ export const agent = new ToolLoopAgent({
   // the step's token counts and cost. Printed live, so a run that crashes
   // midway still shows what it did. Token lines go to stderr to stay
   // separate from the agent's answer on stdout.
-  onStepEnd: ({ usage, stepNumber, toolResults }) => {
-    for (const r of toolResults) {
-      console.log(`[${r.toolName}] ${JSON.stringify(r.input)} -> ${String(r.output).split("\n")[0]}`);
-    }
+  onStepEnd: ({ usage, stepNumber }) => {
     const step = budget.record(stepNumber, splitUsage(usage), contextPolicy.prunedTokens());
     console.error(formatStep(step, budget.totals().cost));
   },
@@ -103,17 +120,40 @@ export const agent = new ToolLoopAgent({
 });
 
 // CLI: only runs when this file is executed directly, not when imported.
-// Tool calls and token counts print live from onStepEnd; the answer prints
-// at the end.
+// The answer streams to stdout as it is written; tool calls, tool results
+// and token lines go to stderr, so `2>/dev/null` leaves only the answer.
+// Shutdown always stops the sandbox: the finally covers normal exit and
+// errors, the SIGINT handler covers Ctrl-C.
 if (import.meta.main) {
-  const prompt = process.argv.slice(3).join(" ") || "Hello!";
-  console.log(
+  console.error(
     `(sandbox: ${sandbox.type} · model: ${MODEL_ID} · approval: ${JSON.stringify(approval)} · AGENTS.md: ${projectContext ? "loaded" : "none"})`,
   );
-  // try/finally: beforeStop and stop run even if the agent throws mid-run.
+
+  process.on("SIGINT", async () => {
+    console.error("\nShutting down...");
+    await lifecycle.beforeStop?.(sandbox);
+    await sandbox.stop();
+    process.exit(0);
+  });
+
   try {
-    const result = await agent.generate({ prompt });
-    console.log(`\n${result.text}\n\n(${result.steps.length} steps)`);
+    const result = await agent.stream({ prompt });
+    for await (const chunk of result.stream) {
+      switch (chunk.type) {
+        case "text-delta":
+          process.stdout.write(chunk.text);
+          break;
+        case "tool-call":
+          console.error(`\n[tool] ${chunk.toolName}(${JSON.stringify(chunk.input)})`);
+          break;
+        case "tool-result": {
+          const out = typeof chunk.output === "string" ? chunk.output : JSON.stringify(chunk.output);
+          console.error(`  -> ${out.slice(0, 100).replace(/\n/g, " ⏎ ")}`);
+          break;
+        }
+      }
+    }
+    console.log(`\n\n(${(await result.steps).length} steps)`);
   } finally {
     console.error(formatSummary(budget.totals()));
     await lifecycle.beforeStop?.(sandbox);

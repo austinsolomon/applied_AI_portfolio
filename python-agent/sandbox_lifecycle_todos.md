@@ -215,3 +215,12 @@ runtime.
     rule only holds if the agent calls `start`.
   - Claude Code has a built-in `TodoWrite` tool (disabled by `tools=[]`);
     evaluate it as the Python production choice.
+- Module 10 findings:
+  - Python Ctrl-C takes several seconds to finish: cancelling query() waits for
+    the SDK to close the Claude Code CLI subprocess and the in-flight request.
+    It does stop the sandbox and delete the temp copy. Consider a timeout.
+  - 10.1's optional `--session=<id>` (save/load messages to resume a
+    conversation): the Agent SDK's `resume` / `session_id` covers this natively.
+  - 10.3 web surface gaps in our servers: conversations are kept in memory
+    only (lost on restart), each new prompt starts a fresh conversation (no
+    follow-up turns), and streams cannot be resumed after closing the tab.

@@ -19,7 +19,8 @@ git-ignored `.env` symlink to it). `demo/` holds a small fixture for search test
 
 ```bash
 cd typescript-agent && bun install
-bun run index.ts .. "Find all TODO comments"        # CLI
+bun run index.ts .. "Find all TODO comments"        # CLI (answer streams to stdout)
+bun run index.ts --sandbox=just-bash --model=claude-haiku-4-5 .. "..."
 bun run dev                                          # web UI on :3000
 ```
 
@@ -28,7 +29,8 @@ bun run dev                                          # web UI on :3000
 ```bash
 cd python-agent && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 set -a && . ./.env && set +a
-.venv/bin/python index.py .. "Find all TODO comments" # CLI
+.venv/bin/python index.py .. "Find all TODO comments" # CLI (answer streams to stdout)
+.venv/bin/python index.py --sandbox=temp-copy --model=claude-haiku-4-5 .. "..."
 .venv/bin/python server.py .                         # web UI on :3000
 ```
 
@@ -37,8 +39,8 @@ set -a && . ./.env && set +a
 The parent agent runs on Sonnet (`claude-sonnet-5-5`); both subagents (explorer
 and executor) run on Haiku (`claude-haiku-4-5`). The parent plans, delegates and
 follows the Verification contract (Haiku often skips it); the subagents do
-narrow, instruction-driven work. Override the parent per run with `MODEL`, e.g.
-`MODEL=claude-haiku-4-5 bun run index.ts .. "..."`.
+narrow, instruction-driven work. Override the parent per run with `--model=...` (or the `MODEL` env var).
+Tool calls and token lines go to stderr, so `2>/dev/null` leaves only the answer.
 
 ## Sandbox
 
