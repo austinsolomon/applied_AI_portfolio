@@ -10,7 +10,7 @@ import {
 } from "ai";
 import { MODEL_ID, instructions, model, sandbox } from "./index";
 import { createApproval } from "./src/approval";
-import { createBashTool, createGrepTool, createReadTool, createTaskTool, type SubagentListener } from "./src/tools";
+import { createAskUserTool, createBashTool, createGrepTool, createReadTool, createTaskTool, type SubagentListener } from "./src/tools";
 import { createContextPolicy, createTokenBudget, formatSummary, splitUsage, type StepUsage } from "./src/telemetry";
 
 const PORT = 3000;
@@ -35,7 +35,7 @@ const bash = createBashTool(sandbox, createApproval({ mode: "background" }));
 // subagent runs (Subagents panel). The task tool is built per run so its
 // events reach this run's browser stream.
 function createWebAgent(onStep: (step: StepUsage) => void, onSubagent: SubagentListener) {
-  const tools = { read, grep, bash, task: createTaskTool(sandbox, { read, grep }, onSubagent) };
+  const tools = { read, grep, bash, task: createTaskTool(sandbox, { read, grep }, onSubagent), askUser: createAskUserTool() };
   const contextPolicy = createContextPolicy();
   const budget = createTokenBudget(MODEL_ID);
   const agent = new ToolLoopAgent({

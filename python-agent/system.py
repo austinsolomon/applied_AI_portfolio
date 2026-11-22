@@ -43,6 +43,9 @@ def build_system_prompt(ctx: PromptContext) -> str:
       Agency       act with the tools instead of describing a plan, and
                    which tools exist
       Guardrails   small changes, reuse what exists, ask before new deps
+      Ambiguity    models prefer guessing to asking, so the order is scripted:
+                   search first (so the question is informed), then ask with
+                   askUser, then act. Specific tasks skip straight to acting.
       Verification run the checks that exist, never claim a check you didn't
                    run, and report what ran / was blocked / wasn't available.
                    It doesn't make checks pass; it makes the report honest.
@@ -71,6 +74,16 @@ def build_system_prompt(ctx: PromptContext) -> str:
 - Prefer simple, minimal changes
 - Search before creating, and reuse existing patterns
 - No new dependencies without asking""")
+
+    sections.append("""
+# Handling Ambiguity
+When the task is ambiguous or has multiple valid approaches:
+1. Search the code or docs to gather context first
+2. Use askUser to let the user choose. Do NOT guess.
+3. Examples: "add auth" -> ask OAuth or JWT; "set up a db" -> ask Postgres or SQLite
+
+Specific tasks (with file paths, line numbers, or precise instructions) do not
+need askUser. Act directly.""")
 
     sections.append("""
 # Verification

@@ -22,6 +22,7 @@ def test_core_sections():
     assert "Available tools: read, grep, bash" in prompt
     assert "# Agency" in prompt
     assert "# Guardrails" in prompt
+    assert "# Handling Ambiguity" in prompt
     assert "# Verification" in prompt
     assert 'Do NOT claim "tests pass" without running them.' in prompt
 

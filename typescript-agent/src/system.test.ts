@@ -16,6 +16,7 @@ test("includes role, sandbox, tools, and both core sections", () => {
   expect(prompt).toContain("Available tools: read, grep, bash");
   expect(prompt).toContain("# Agency");
   expect(prompt).toContain("# Guardrails");
+  expect(prompt).toContain("# Handling Ambiguity");
   expect(prompt).toContain("# Verification");
   expect(prompt).toContain('Do NOT claim "tests pass" without running them.');
 });

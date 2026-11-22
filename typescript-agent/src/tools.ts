@@ -153,6 +153,31 @@ EXAMPLES:
   });
 }
 
+// askUser: a multiple-choice question for the user. It does not wait for an
+// answer: it prints the question (so the user sees it) and returns the same
+// text (so the model sees it in its history). "(Awaiting user response.)"
+// tells the model the question is still open, so it ends its turn and the
+// user answers in the next message. The system prompt's "Handling
+// Ambiguity" section decides when the model uses it.
+export function createAskUserTool() {
+  return tool({
+    description: `Ask the user a multiple-choice question.
+WHEN TO USE: scoping ambiguous tasks, choosing between approaches,
+  resolving a missing detail before acting.
+WHEN NOT TO USE: you already have enough context to proceed.
+DO NOT USE FOR: rhetorical questions or progress updates.`,
+    inputSchema: z.object({
+      question: z.string().describe("The question to ask the user"),
+      options: z.array(z.string()).min(2).max(4).describe("Two to four options for the user to pick from"),
+    }),
+    execute: async ({ question, options }) => {
+      const formatted = options.map((o, i) => `${i + 1}. ${o}`).join("\n");
+      console.log(`\nQuestion: ${question}\n${formatted}\n`);
+      return `Asked: "${question}"\nOptions:\n${formatted}\n\n(Awaiting user response.)`;
+    },
+  });
+}
+
 // ---- Subagents (Module 6) ----
 //
 // The parent agent delegates through one `task` tool. Each call builds a

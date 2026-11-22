@@ -45,7 +45,7 @@ from sandbox_local import create_local_sandbox
 from sandbox_memory import create_temp_copy_sandbox
 from system import PromptContext, build_system_prompt
 from telemetry import TokenBudget, format_step
-from tools import create_bash_tool, create_grep_tool, create_read_tool, create_task_tool
+from tools import create_ask_user_tool, create_bash_tool, create_grep_tool, create_read_tool, create_task_tool
 
 # The project folder the agent works in: the first command-line argument, or
 # the folder you ran the script from.
@@ -104,6 +104,7 @@ TOOLS = [
     grep_tool,
     create_bash_tool(sandbox, create_approval(approval)),
     create_task_tool(sandbox, read_tool, grep_tool),
+    create_ask_user_tool(),
 ]
 
 

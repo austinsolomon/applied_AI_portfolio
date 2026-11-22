@@ -41,6 +41,19 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 - Search before creating, and reuse existing patterns
 - No new dependencies without asking`);
 
+  // Handling Ambiguity: models prefer guessing to asking, so the prompt
+  // scripts the order: search first (so the question is informed), then ask
+  // with askUser, then act. Specific tasks skip straight to acting.
+  sections.push(`
+# Handling Ambiguity
+When the task is ambiguous or has multiple valid approaches:
+1. Search the code or docs to gather context first
+2. Use askUser to let the user choose. Do NOT guess.
+3. Examples: "add auth" -> ask OAuth or JWT; "set up a db" -> ask Postgres or SQLite
+
+Specific tasks (with file paths, line numbers, or precise instructions) do not
+need askUser. Act directly.`);
+
   // Verification: turn "check your work" into a contract. It doesn't make
   // checks pass; it makes the report honest (what ran, what was blocked,
   // what didn't exist). The bad behaviors are named explicitly, because

@@ -7,7 +7,7 @@ import { buildSystemPrompt } from "./src/system";
 import { createLocalSandbox } from "./src/sandbox-local";
 import { createJustBashSandbox } from "./src/sandbox-just-bash";
 import type { SandboxLifecycle } from "./src/sandbox";
-import { createReadTool, createGrepTool, createBashTool, createTaskTool } from "./src/tools";
+import { createReadTool, createGrepTool, createBashTool, createTaskTool, createAskUserTool } from "./src/tools";
 import { approvalFromEnv, createApproval } from "./src/approval";
 import { createContextPolicy, createTokenBudget, formatStep, formatSummary, splitUsage } from "./src/telemetry";
 
@@ -46,6 +46,7 @@ const tools = {
   grep,
   bash: createBashTool(sandbox, createApproval(approval)),
   task: createTaskTool(sandbox, { read, grep }),
+  askUser: createAskUserTool(),
 };
 
 // The current git branch, or undefined if the sandbox folder isn't a git repo.
