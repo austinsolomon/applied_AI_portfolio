@@ -38,6 +38,13 @@ Haiku (`claude-haiku-4-5`) by default. Override per run with `MODEL`, e.g.
 `MODEL=claude-sonnet-5-5 bun run index.ts .. "..."`. Sonnet follows the prompt's
 Verification contract reliably; Haiku often claims success without running `tsc`.
 
+## Sandbox
+
+Where files are read and commands run. `SANDBOX=local` (default) uses your real
+folder. The throwaway backend reads your project but never changes it:
+`SANDBOX=just-bash` in TypeScript (in-memory filesystem), `SANDBOX=temp-copy`
+in Python (a temp copy deleted on exit).
+
 ## Approval modes (CLI)
 
 `APPROVAL_MODE=interactive` (default: safe list only), `background` (everything

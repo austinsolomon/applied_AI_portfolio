@@ -8,7 +8,9 @@ import {
   toUIMessageStream,
   type ModelMessage,
 } from "ai";
-import { MODEL_ID, createApproval, createBashTool, grep, instructions, localOps, model, read } from "./index";
+import { MODEL_ID, instructions, model, sandbox } from "./index";
+import { createApproval } from "./src/approval";
+import { createBashTool, createGrepTool, createReadTool } from "./src/tools";
 
 const PORT = 3000;
 
@@ -24,7 +26,11 @@ const needsHuman = createApproval({ mode: "interactive" });
 const agent = new ToolLoopAgent({
   model,
   instructions,
-  tools: { read, grep, bash: createBashTool(localOps, createApproval({ mode: "background" })) },
+  tools: {
+    read: createReadTool(sandbox),
+    grep: createGrepTool(sandbox),
+    bash: createBashTool(sandbox, createApproval({ mode: "background" })),
+  },
   stopWhen: isStepCount(10),
   toolApproval: {
     bash: ({ command }) =>

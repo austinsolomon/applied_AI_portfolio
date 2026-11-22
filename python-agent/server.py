@@ -35,18 +35,9 @@ from claude_agent_sdk import (
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
-from index import (
-    MODEL,
-    SYSTEM_PROMPT,
-    Background,
-    Interactive,
-    LocalOps,
-    create_approval,
-    create_bash_tool,
-    cwd,
-    grep,
-    read,
-)
+from approval import Background, Interactive, create_approval
+from index import MODEL, SYSTEM_PROMPT, sandbox
+from tools import create_bash_tool, create_grep_tool, create_read_tool
 
 PORT = 3000
 app = FastAPI()
@@ -67,7 +58,11 @@ needs_human = create_approval(Interactive())
 web_tools = create_sdk_mcp_server(
     name="teensy",
     version="0.1.0",
-    tools=[read, grep, create_bash_tool(LocalOps(), create_approval(Background()))],
+    tools=[
+        create_read_tool(sandbox),
+        create_grep_tool(sandbox),
+        create_bash_tool(sandbox, create_approval(Background())),
+    ],
 )
 
 
@@ -145,7 +140,7 @@ def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
     return ClaudeAgentOptions(
         model=MODEL,
         system_prompt=SYSTEM_PROMPT,
-        cwd=str(cwd),
+        cwd=sandbox.working_directory,
         tools=[],
         setting_sources=[],
         strict_mcp_config=True,
@@ -244,5 +239,5 @@ async def approve(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    print(f"TeensyCode UI (Python) on http://localhost:{PORT}  ·  model {MODEL}  ·  working in {cwd}")
+    print(f"TeensyCode UI (Python) on http://localhost:{PORT}  ·  model {MODEL}  ·  working in {sandbox.working_directory}")
     uvicorn.run(app, port=PORT)
