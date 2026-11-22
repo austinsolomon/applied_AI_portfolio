@@ -228,7 +228,24 @@ export const localOps: BashOperations = {
 // Course uses "anthropic/claude-haiku-4.5" via AI Gateway (blocked on free tier).
 // We call Anthropic directly; reads ANTHROPIC_API_KEY from .env.
 export const model = anthropic("claude-haiku-4-5");
-export const instructions = `You are a coding agent.\nWorking directory: ${cwd}`;
+// The system prompt: the agent's operating policy (the tools say what it
+// CAN do; this says what it SHOULD do). Sections keep it scannable and let
+// you lift one out later, e.g. Guardrails for a subagent.
+//   role line   who the agent is and where it's working
+//   Agency      act on the task with tools instead of describing a plan
+//   Guardrails  how to act: minimal, reuse-first, no surprise dependencies
+export const instructions = `You are a coding agent working in: ${cwd}
+
+# Agency
+- USE your tools. Read files, search code, run commands, then answer.
+- Do NOT explain what you WOULD do. Actually do it.
+- Prefer grep for searching, read for viewing files.
+- Use bash only for commands that aren't covered by other tools.
+
+# Guardrails
+- Prefer simple, minimal changes
+- Search before creating, and reuse existing patterns
+- No new dependencies without asking`;
 
 const approval = approvalFromEnv();
 const bash = createBashTool(localOps, createApproval(approval));

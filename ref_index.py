@@ -430,7 +430,28 @@ class LocalOps:
 approval = approval_from_env()
 bash = create_bash_tool(LocalOps(), create_approval(approval))
 
-SYSTEM_PROMPT = f"You are a coding agent.\nWorking directory: {cwd}"
+# The system prompt: the agent's operating policy. The tools define what it
+# CAN do; this says what it SHOULD do. It's split into sections so it's easy
+# to scan, and so one section (say, Guardrails) can be reused for a subagent.
+#   role line   who the agent is and which folder it works in
+#   Agency      act on the task with the tools instead of describing a plan
+#               (models default to explaining, so this is said explicitly),
+#               and pick read/grep over bash where they fit
+#   Guardrails  how to act: small changes, reuse what exists, ask before
+#               adding dependencies
+# It's an f-string, so {cwd} is filled in with the real folder path.
+SYSTEM_PROMPT = f"""You are a coding agent working in: {cwd}
+
+# Agency
+- USE your tools. Read files, search code, run commands, then answer.
+- Do NOT explain what you WOULD do. Actually do it.
+- Prefer grep for searching, read for viewing files.
+- Use bash only for commands that aren't covered by other tools.
+
+# Guardrails
+- Prefer simple, minimal changes
+- Search before creating, and reuse existing patterns
+- No new dependencies without asking"""
 
 # Bundle the three tools so the agent can use them. The SDK calls a bundle
 # of custom tools an "MCP server", but this one runs inside this script, with
