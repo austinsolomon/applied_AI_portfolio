@@ -5,12 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TeensyCode</title>
 <style>
-  :root { --bg:#fff; --fg:#111; --muted:#888; --tool:#2563eb; --out:#16a34a; --err:#dc2626; --warn:#b45309; --line:#e5e5e5; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0b0b0c; --fg:#eee; --muted:#777; --tool:#60a5fa; --out:#4ade80; --err:#f87171; --warn:#fbbf24; --line:#222; } }
+  :root {
+    --bg:#ffffff; --panel:#f6f7f9; --fg:#111; --muted:#777; --line:#e3e5e8;
+    --tool:#2563eb; --out:#16a34a; --err:#dc2626; --warn:#b45309; --cache:#2563eb; --bar:#c9ced6;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0b0b0c; --panel:#111316; --fg:#eee; --muted:#888; --line:#24272c;
+            --tool:#60a5fa; --out:#4ade80; --err:#f87171; --warn:#fbbf24; --cache:#60a5fa; --bar:#3a3f47; }
+  }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
-  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 120px; }
-  h1 { font-size: 14px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 24px; }
+  html, body { height: 100%; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--mono); }
+
+  /* Two panes: chat (left) and observability (right). Each scrolls on its own. */
+  .app { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, 1fr); height: 100%; }
+  .chat { display: flex; flex-direction: column; min-width: 0; height: 100%; }
+  .obs { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 24px 20px 40px; min-width: 0; }
+  @media (max-width: 900px) {
+    html, body { height: auto; }
+    .app { grid-template-columns: 1fr; height: auto; }
+    .chat { height: auto; }
+    .obs { border-left: 0; border-top: 1px solid var(--line); }
+  }
+
+  h1, h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; margin: 0; }
+  .chat header { padding: 20px 20px 0; }
+  #log { flex: 1; overflow-y: auto; padding: 16px 20px; }
   .turn { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
   .role { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-top: 12px; }
   .text { white-space: pre-wrap; }
@@ -19,28 +40,84 @@
   pre { margin: 4px 0 0; padding: 8px; color: var(--out); font-size: 12px; overflow-x: auto; max-height: 260px; border-left: 2px solid var(--line); }
   .err { color: var(--err); white-space: pre-wrap; margin-top: 6px; }
   .meta { color: var(--muted); font-size: 12px; margin-top: 8px; }
-  form { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 12px 16px; }
-  form div { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; }
-  input { flex: 1; font: inherit; padding: 10px 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+  form { border-top: 1px solid var(--line); padding: 12px 20px; display: flex; gap: 8px; }
+  input { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
   button { font: inherit; padding: 10px 16px; border: 0; background: var(--fg); color: var(--bg); cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--tool); outline-offset: 2px; }
   .approval { margin-top: 6px; color: var(--warn); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .approval button { padding: 4px 12px; font-size: 12px; }
   .approval .approve { background: var(--out); color: var(--bg); }
   .approval .deny { background: var(--err); color: var(--bg); }
+
+  /* Observability panel */
+  .obs-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .obs-head .model { color: var(--muted); font-size: 12px; }
+  .obs-head button { padding: 4px 10px; font-size: 12px; background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+  .tile { background: var(--bg); border: 1px solid var(--line); padding: 10px 12px; }
+  .tile .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .tile .v { font-size: 20px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .tile.saved .v { color: var(--out); }
+  .totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; font-size: 12px; margin-bottom: 18px; }
+  .totals div { display: grid; }
+  .totals span:first-child { color: var(--muted); font-size: 11px; }
+  .totals span:last-child { font-variant-numeric: tabular-nums; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 5px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; }
+  td.bar-cell { width: 90px; }
+  .bar { display: flex; height: 8px; background: transparent; }
+  .bar .u { background: var(--bar); } .bar .c { background: var(--cache); }
+  .legend { display: flex; gap: 14px; color: var(--muted); font-size: 11px; margin: 10px 0 0; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+  .note { color: var(--muted); font-size: 11px; margin-top: 14px; line-height: 1.5; }
 </style>
 </head>
 <body>
-<main>
-  <h1>TeensyCode</h1>
-  <div id="log"></div>
-</main>
-<form id="form">
-  <div>
-    <input id="input" placeholder="Ask the agent…" autocomplete="off" autofocus>
-    <button id="send">Send</button>
-  </div>
-</form>
+<div class="app">
+  <section class="chat" aria-label="Chat">
+    <header><h1>TeensyCode</h1></header>
+    <div id="log"></div>
+    <form id="form">
+      <input id="input" placeholder="Ask the agent…" autocomplete="off" autofocus>
+      <button id="send">Send</button>
+    </form>
+  </section>
+
+  <aside class="obs" aria-label="Token budget">
+    <div class="obs-head">
+      <h2>Token budget</h2>
+      <span class="model" id="model">model: —</span>
+      <button id="reset" type="button">Reset</button>
+    </div>
+    <div class="tiles">
+      <div class="tile"><div class="k">Session cost</div><div class="v" id="t-cost">$0.0000</div></div>
+      <div class="tile"><div class="k">Without pruning + cache</div><div class="v" id="t-without">$0.0000</div></div>
+      <div class="tile saved"><div class="k">Saved</div><div class="v" id="t-saved">—</div></div>
+      <div class="tile"><div class="k">Steps</div><div class="v" id="t-steps">0</div></div>
+    </div>
+    <div class="totals">
+      <div><span>uncached in</span><span id="s-uncached">0</span></div>
+      <div><span>cached in</span><span id="s-cached">0</span></div>
+      <div><span>cache written</span><span id="s-written">0</span></div>
+      <div><span>output</span><span id="s-output">0</span></div>
+    </div>
+    <h2>Per step</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>turn · step</th><th>input</th><th>uncached</th><th>cached</th><th>written</th><th>output</th><th>step $</th><th>running $</th></tr></thead>
+        <tbody id="steps"></tbody>
+      </table>
+    </div>
+    <p class="empty" id="empty">Send a prompt to see each step's tokens and cost.</p>
+    <div class="legend"><span><i style="background:var(--bar)"></i>uncached input</span><span><i style="background:var(--cache)"></i>cached input</span></div>
+    <p class="note">Costs use per-million-token prices for the model (input, output, cache read, 5-minute cache write). "Without pruning + cache" prices all input at the full rate, plus an estimate of the tokens pruning removed (characters ÷ 4). The Python app has no per-step pruning, so there it reflects caching only.</p>
+  </aside>
+</div>
 <script>
 const log = document.getElementById("log");
 const form = document.getElementById("form");
@@ -66,9 +143,64 @@ function fmtOutput(out) {
   return out.stdout || out.stderr || JSON.stringify(out, null, 2);
 }
 
+// ---- Token budget panel: one row per finished step, totals across the session.
+const usage = [];
+const $ = (id) => document.getElementById(id);
+const usd = (n) => (n == null ? "n/a" : "$" + n.toFixed(4));
+const num = (n) => n.toLocaleString();
+
+function addUsage(turnNo, step) {
+  usage.push({ turnNo, ...step });
+  renderUsage();
+}
+
+function renderUsage() {
+  const sum = (k) => usage.reduce((a, s) => a + (s[k] || 0), 0);
+  const priced = usage.length > 0 && usage.every((s) => s.cost != null);
+  const cost = priced ? sum("cost") : null;
+  const without = priced ? sum("costWithout") : null;
+  $("model").textContent = "model: " + (usage.at(-1)?.model || "—");
+  $("t-cost").textContent = usd(cost ?? (usage.length ? null : 0));
+  $("t-without").textContent = usd(without ?? (usage.length ? null : 0));
+  $("t-saved").textContent = priced && without ? Math.round((1 - cost / without) * 100) + "%" : "—";
+  $("t-steps").textContent = usage.length;
+  $("s-uncached").textContent = num(sum("uncached"));
+  $("s-cached").textContent = num(sum("cacheRead"));
+  $("s-written").textContent = num(sum("cacheWrite"));
+  $("s-output").textContent = num(sum("output"));
+  $("empty").hidden = usage.length > 0;
+
+  const maxIn = Math.max(1, ...usage.map((s) => s.uncached + s.cacheRead + s.cacheWrite));
+  const tbody = $("steps");
+  tbody.replaceChildren();
+  let running = 0;
+  for (const s of usage) {
+    running += s.cost || 0;
+    const inTotal = s.uncached + s.cacheRead + s.cacheWrite;
+    const tr = el("tr");
+    tr.append(el("td", "", `${s.turnNo} · ${s.step}`));
+    const barCell = el("td", "bar-cell");
+    const bar = el("div", "bar");
+    const u = el("span", "u"); u.style.width = ((s.uncached + s.cacheWrite) / maxIn) * 100 + "%";
+    const c = el("span", "c"); c.style.width = (s.cacheRead / maxIn) * 100 + "%";
+    bar.append(u, c); barCell.append(bar); barCell.title = `${num(inTotal)} input tokens`;
+    tr.append(barCell);
+    for (const v of [num(s.uncached), num(s.cacheRead), num(s.cacheWrite), num(s.output), usd(s.cost), usd(s.cost == null ? null : running)]) {
+      tr.append(el("td", "", v));
+    }
+    tbody.append(tr);
+  }
+}
+
+$("reset").addEventListener("click", () => { usage.length = 0; renderUsage(); });
+
+// ---- Chat
+let turnCount = 0;
+
 // One "turn" = your question plus everything the agent does for it, including
 // pauses for approval and the resumed runs after you click Approve/Deny.
 function newTurn(prompt) {
+  turnCount++;
   const turn = el("div", "turn");
   turn.append(el("div", "role", "User"), el("div", "text", prompt), el("div", "role", "Assistant"));
   const body = el("div");
@@ -76,7 +208,7 @@ function newTurn(prompt) {
   turn.append(body, meta);
   log.append(turn);
   turn.scrollIntoView({ block: "end" });
-  return { turn, body, meta, texts: {}, tools: {}, steps: 0, t0: performance.now(), conversationId: null, pending: [] };
+  return { turnNo: turnCount, turn, body, meta, texts: {}, tools: {}, steps: 0, t0: performance.now(), conversationId: null, pending: [] };
 }
 
 // Read one streamed agent run (SSE) and render it into the turn.
@@ -145,6 +277,9 @@ function handleChunk(ctx, c) {
       break;
     case "tool-output-error":
       (tools[c.toolCallId] || body).append(el("div", "err", "tool error: " + c.errorText));
+      break;
+    case "data-usage":
+      addUsage(ctx.turnNo, c.data);
       break;
     case "error":
       body.append(el("div", "err", "error: " + c.errorText));

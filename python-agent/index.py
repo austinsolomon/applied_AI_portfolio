@@ -44,6 +44,7 @@ from sandbox import Sandbox, SandboxLifecycle
 from sandbox_local import create_local_sandbox
 from sandbox_memory import create_temp_copy_sandbox
 from system import PromptContext, build_system_prompt
+from telemetry import TokenBudget, format_step
 from tools import create_bash_tool, create_grep_tool, create_read_tool
 
 # The project folder the agent works in: the first command-line argument, or
@@ -185,27 +186,18 @@ def first_line(block: ToolResultBlock) -> str:
     return str(content or "").split("\n")[0]
 
 
-def log_step_usage(event: dict, step: int) -> bool:
-    """Log one step's token usage; return True if this event ended a step.
+def log_step_usage(event: dict, budget: TokenBudget) -> bool:
+    """Price and log one step's token usage; return True if this event ended a step.
 
-    Every step resends the whole conversation, so input grows with each tool
-    result while output stays small. Each model call streams a
-    "message_delta" event when it finishes, carrying that call's final usage.
-    Input counts include any cached tokens (cache reads and writes are
-    reported separately), so the number stays the full amount sent.
-    Printed to stderr to stay separate from the agent's answer on stdout.
+    Each model call streams a "message_delta" event when it finishes, carrying
+    that call's final usage. The budget prices it (see telemetry.py) and the
+    line goes to stderr, separate from the agent's answer on stdout.
     """
     if event.get("type") != "message_delta":
         return False
-    usage = event.get("usage", {})
-    cached = usage.get("cache_read_input_tokens", 0)
-    sent = usage.get("input_tokens", 0) + cached + usage.get("cache_creation_input_tokens", 0)
-    print(
-        f"Step {step}: {sent} input, {usage.get('output_tokens', 0)} output, {cached} cached",
-        file=sys.stderr,
-    )
+    step = budget.record(event.get("usage", {}))
+    print(format_step(step, budget.total_cost()), file=sys.stderr)
     return True
-
 
 async def main():
     """Take a question from the command line, run the agent, print the answer.
@@ -232,13 +224,13 @@ async def main():
         f"AGENTS.md: {'loaded' if PROJECT_CONTEXT else 'none'})",
         flush=True,
     )
-    text, turns, step = "", 0, 0
+    text, turns = "", 0
+    budget = TokenBudget(MODEL)
     calls: dict[str, str] = {}
     try:
         async for message in query(prompt=prompt, options=options):
             if isinstance(message, StreamEvent):
-                if log_step_usage(message.event, step):
-                    step += 1
+                log_step_usage(message.event, budget)
             elif isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
@@ -252,6 +244,7 @@ async def main():
             elif isinstance(message, ResultMessage):
                 turns = message.num_turns
     finally:
+        print(budget.summary(), file=sys.stderr)
         await stop_sandbox(sandbox)
     print(text)
     print(f"\n({turns} steps)")

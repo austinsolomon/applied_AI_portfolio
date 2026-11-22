@@ -1,6 +1,6 @@
 // TeensyCode CLI: wires a sandbox, tools, approval policy and system prompt
 // into a ToolLoopAgent. Run: bun run index.ts <folder> "your question"
-import { ToolLoopAgent, isStepCount, pruneMessages } from "ai";
+import { ToolLoopAgent, isStepCount } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { resolve } from "node:path";
 import { buildSystemPrompt } from "./src/system";
@@ -9,7 +9,7 @@ import { createJustBashSandbox } from "./src/sandbox-just-bash";
 import type { SandboxLifecycle } from "./src/sandbox";
 import { createReadTool, createGrepTool, createBashTool } from "./src/tools";
 import { approvalFromEnv, createApproval } from "./src/approval";
-import { addCacheControl } from "./src/cache";
+import { createContextPolicy, createTokenBudget, formatStep, formatSummary, splitUsage } from "./src/telemetry";
 
 export const cwd = resolve(process.argv[2] || process.cwd());
 
@@ -61,36 +61,30 @@ export const instructions = buildSystemPrompt({
   projectContext,
 });
 
+// Module 5 context policy (prune, then cache) and the token budget that
+// prices each step and the session.
+const contextPolicy = createContextPolicy();
+const budget = createTokenBudget(MODEL_ID);
+
 export const agent = new ToolLoopAgent({
   model,
   instructions,
   tools,
   stopWhen: isStepCount(15),
   // After each step: print its tool calls (first line of each result), then
-  // the token telemetry: what was sent (input) and what came back (output).
-  // Every step resends the whole conversation, so input grows with each tool
-  // result while output stays small. Printed live, so a run that crashes
-  // midway still shows what it did. Telemetry goes to stderr to stay separate
-  // from the agent's answer on stdout.
+  // the step's token counts and cost. Printed live, so a run that crashes
+  // midway still shows what it did. Token lines go to stderr to stay
+  // separate from the agent's answer on stdout.
   onStepEnd: ({ usage, stepNumber, toolResults }) => {
     for (const r of toolResults) {
       console.log(`[${r.toolName}] ${JSON.stringify(r.input)} -> ${String(r.output).split("\n")[0]}`);
     }
-    console.error(
-      `Step ${stepNumber}: ${usage.inputTokens} input, ${usage.outputTokens} output, ` +
-        `${usage.inputTokenDetails.cacheReadTokens ?? 0} cached`,
-    );
+    const step = budget.record(stepNumber, splitUsage(usage), contextPolicy.prunedTokens());
+    console.error(formatStep(step, budget.totals().cost));
   },
-  // Runs before every step and rewrites the messages about to be sent:
-  //   1. pruneMessages drops tool calls and results older than the last 3
-  //      messages (the original prompt and the model's own text are kept),
-  //      so input levels off instead of growing every step.
-  //   2. addCacheControl marks the first and last surviving messages as
-  //      cache breakpoints. Pruning runs first because it changes which
-  //      messages exist.
-  prepareStep: ({ messages }) => ({
-    messages: addCacheControl(pruneMessages({ messages, toolCalls: "before-last-3-messages" })),
-  }),
+  // Before every step: prune old tool results, then mark cache breakpoints
+  // (see src/telemetry.ts createContextPolicy).
+  prepareStep: contextPolicy.prepareStep,
 });
 
 // CLI: only runs when this file is executed directly, not when imported.
@@ -106,6 +100,7 @@ if (import.meta.main) {
     const result = await agent.generate({ prompt });
     console.log(`\n${result.text}\n\n(${result.steps.length} steps)`);
   } finally {
+    console.error(formatSummary(budget.totals()));
     await lifecycle.beforeStop?.(sandbox);
     await sandbox.stop();
   }

@@ -25,6 +25,7 @@ from claude_agent_sdk import (
     PermissionResultAllow,
     PermissionResultDeny,
     ResultMessage,
+    StreamEvent,
     TextBlock,
     ToolPermissionContext,
     ToolResultBlock,
@@ -37,6 +38,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from approval import Background, Interactive, create_approval
 from index import MODEL, SYSTEM_PROMPT, sandbox
+from telemetry import TokenBudget
 from tools import create_bash_tool, create_grep_tool, create_read_tool
 
 PORT = 3000
@@ -146,7 +148,8 @@ def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
         strict_mcp_config=True,
         mcp_servers={"teensy": web_tools},
         can_use_tool=can_use_tool,
-        max_turns=10,
+        max_turns=15,
+        include_partial_messages=True,
     )
 
 
@@ -167,6 +170,9 @@ async def api(request: Request):
     What gets sent, by message type:
       AssistantMessage  a new step; its text and tool calls
       UserMessage       tool results coming back (that's how the SDK labels them)
+      StreamEvent       raw API events; each "message_delta" carries a step's
+                        final token usage, priced and sent as "data-usage"
+                        for the token-budget panel
       ResultMessage     the run is done
     """
     prompt = (await request.json())["prompt"]
@@ -177,11 +183,16 @@ async def api(request: Request):
         # content block) sharing a message_id, so a step starts only when
         # the id changes.
         last_message_id = None
+        budget = TokenBudget(MODEL)
         try:
             async with ClaudeSDKClient(options=make_options(events)) as client:
                 await client.query(prompt)
                 async for message in client.receive_response():
-                    if isinstance(message, AssistantMessage):
+                    if isinstance(message, StreamEvent):
+                        if message.event.get("type") == "message_delta":
+                            step = budget.record(message.event.get("usage", {}))
+                            await events.put({"type": "data-usage", "data": step.to_event()})
+                    elif isinstance(message, AssistantMessage):
                         if message.message_id != last_message_id:
                             last_message_id = message.message_id
                             await events.put({"type": "start-step"})
@@ -204,6 +215,7 @@ async def api(request: Request):
                                     await events.put({"type": "tool-output-available", "toolCallId": block.tool_use_id, "output": result_text(block)})
                     elif isinstance(message, ResultMessage):
                         break
+            print(budget.summary(), flush=True)
         except Exception as error:
             print("Agent error:", error)
             await events.put({"type": "error", "errorText": str(error)})

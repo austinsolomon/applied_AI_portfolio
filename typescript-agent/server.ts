@@ -11,6 +11,7 @@ import {
 import { MODEL_ID, instructions, model, sandbox } from "./index";
 import { createApproval } from "./src/approval";
 import { createBashTool, createGrepTool, createReadTool } from "./src/tools";
+import { createContextPolicy, createTokenBudget, formatSummary, splitUsage, type StepUsage } from "./src/telemetry";
 
 const PORT = 3000;
 
@@ -21,24 +22,38 @@ const PORT = 3000;
 //      Safe-list commands run; anything else waits for your click.
 //   2. The bash tool itself runs in background mode (no gate), because by
 //      the time execute runs, either the command was safe or you approved it.
+//   3. The same Module 5 context policy as the CLI (prune, then cache).
+//
+// One agent is built per run so its onStepEnd can report usage to that
+// run's browser stream (the token-budget panel).
 const needsHuman = createApproval({ mode: "interactive" });
+const tools = {
+  read: createReadTool(sandbox),
+  grep: createGrepTool(sandbox),
+  bash: createBashTool(sandbox, createApproval({ mode: "background" })),
+};
 
-const agent = new ToolLoopAgent({
-  model,
-  instructions,
-  tools: {
-    read: createReadTool(sandbox),
-    grep: createGrepTool(sandbox),
-    bash: createBashTool(sandbox, createApproval({ mode: "background" })),
-  },
-  stopWhen: isStepCount(10),
-  toolApproval: {
-    bash: ({ command }) =>
-      needsHuman({ command })
-        ? { type: "user-approval", reason: `"${command}" is not on the safe list` }
-        : "not-applicable",
-  },
-});
+function createWebAgent(onStep: (step: StepUsage) => void) {
+  const contextPolicy = createContextPolicy();
+  const budget = createTokenBudget(MODEL_ID);
+  const agent = new ToolLoopAgent({
+    model,
+    instructions,
+    tools,
+    stopWhen: isStepCount(15),
+    toolApproval: {
+      bash: ({ command }) =>
+        needsHuman({ command })
+          ? { type: "user-approval", reason: `"${command}" is not on the safe list` }
+          : "not-applicable",
+    },
+    prepareStep: contextPolicy.prepareStep,
+    onStepEnd: ({ usage, stepNumber }) => {
+      onStep(budget.record(stepNumber, splitUsage(usage), contextPolicy.prunedTokens()));
+    },
+  });
+  return { agent, budget };
+}
 
 // Approval needs memory: when the agent pauses for a yes/no, the server must
 // keep the conversation so it can resume with the human's answer. Kept in
@@ -56,9 +71,12 @@ function runAgent(conversationId: string) {
     headers: { "x-conversation-id": conversationId },
     stream: createUIMessageStream({
       async execute({ writer }) {
+        // Each finished step is sent to the browser as a "data-usage" event.
+        const { agent, budget } = createWebAgent((step) => writer.write({ type: "data-usage", data: step }));
         const result = await agent.stream({ messages });
         writer.merge(toUIMessageStream({ stream: result.stream }));
         messages.push(...(await result.responseMessages));
+        console.log(formatSummary(budget.totals()));
       },
       // Mid-stream failures (bad key, rate limit...) show up in the UI
       // instead of a silent blank reply.
