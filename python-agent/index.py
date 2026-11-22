@@ -15,7 +15,7 @@ Setup: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 Run:   set -a && . ./.env && set +a      (loads ANTHROPIC_API_KEY)
        .venv/bin/python index.py <folder> "your question"
        APPROVAL_MODE=background .venv/bin/python index.py . "..."
-       MODEL=claude-sonnet-5-5 .venv/bin/python index.py . "..."
+       MODEL=claude-haiku-4-5 .venv/bin/python index.py . "..."   (parent model; default Sonnet)
        SANDBOX=temp-copy .venv/bin/python index.py . "..."
        APPROVAL_MODE=delegated APPROVAL_TRUST="git status,pwd" .venv/bin/python index.py . "..."
 """
@@ -86,10 +86,12 @@ async def stop_sandbox(sb: Sandbox) -> None:
 # for both the CLI and `python server.py`.)
 sandbox: Sandbox = asyncio.run(start_sandbox(cwd))
 
-# Which Claude model does the thinking. Haiku is the cheap default; set
-# MODEL=claude-sonnet-5-5 when instruction-following matters (Haiku tends to
-# skip the Verification contract; Sonnet follows it).
-MODEL = os.environ.get("MODEL", "claude-haiku-4-5")
+# The parent agent's model: Sonnet, because the parent plans, routes work to
+# subagents, follows the prompt's contracts (Verification) and writes the
+# final answer. The subagents run on Haiku (tools.py): their work is narrow
+# and instruction-driven, so the cheaper model fits. MODEL overrides the
+# parent's model, e.g. MODEL=claude-haiku-4-5.
+MODEL = os.environ.get("MODEL", "claude-sonnet-5-5")
 
 # The approval mode for this run, and the tools built on the sandbox.
 approval = approval_from_env()

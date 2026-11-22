@@ -12,13 +12,20 @@ function is created inside the factory.
 
 import shlex
 import sys
+import time
+import uuid
+from collections.abc import Awaitable, Callable
 from typing import Literal
 
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ResultMessage,
+    StreamEvent,
     TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    UserMessage,
     create_sdk_mcp_server,
     query,
     tool,
@@ -27,6 +34,7 @@ from pydantic import BaseModel, Field
 
 from approval import Delegated, RequiresApproval, create_approval
 from sandbox import Sandbox
+from telemetry import TokenBudget
 
 # Output caps. Tool output goes straight into the model's context, and huge
 # outputs waste tokens and bury the useful part, so long results are cut off
@@ -255,11 +263,12 @@ def create_bash_tool(sandbox: Sandbox, requires_approval: RequiresApproval):
 EXPLORER_MODEL = "claude-haiku-4-5"
 EXPLORER_TURNS = 5
 
-# Executor: implementation. Sonnet because a wrong change costs more than a
-# wrong summary; 15 turns. Its bash runs in delegated mode: only the
+# Executor: implementation, on Haiku like the explorer. The parent (Sonnet)
+# does the planning and hands over precise instructions, so the executor
+# only has to carry them out; 15 turns. Its bash runs in delegated mode: only the
 # commands on the trust list run, everything else is blocked. It gets its
 # own bash rather than the parent's, because no human answers its prompts.
-EXECUTOR_MODEL = "claude-sonnet-4-6"
+EXECUTOR_MODEL = "claude-haiku-4-5"
 EXECUTOR_TURNS = 15
 EXECUTOR_TRUST = ["npm test", "npm run build", "npx tsc"]
 
@@ -284,6 +293,7 @@ def subagent_options(sandbox: Sandbox, name: str, model: str, prompt: str, tools
         mcp_servers={name: server},
         allowed_tools=[f"mcp__{name}__{t.name}" for t in tools],
         max_turns=turns,
+        include_partial_messages=True,
     )
 
 
@@ -309,30 +319,90 @@ def build_executor(sandbox: Sandbox, read_tool, grep_tool) -> ClaudeAgentOptions
     )
 
 
-async def run_subagent(role: str, options: ClaudeAgentOptions, description: str) -> str:
+# A listener for subagent events (the web UI's Subagents panel). Each event
+# is a dict with a "kind":
+#   start  the run began: role, model, the parent's instructions
+#   tool   one tool call finished: name, input, start of the output
+#   usage  one step finished: its cost (priced like the parent's steps)
+#   end    the run finished: status, steps, total cost, start of the answer
+SubagentListener = Callable[[dict], Awaitable[None]]
+
+
+def result_text(block: ToolResultBlock) -> str:
+    """The plain text of a tool result (a string, or a list of text blocks)."""
+    content = block.content
+    if isinstance(content, list):
+        content = "\n".join(part.get("text", "") for part in content if isinstance(part, dict))
+    return str(content or "")
+
+
+async def run_subagent(
+    role: str, model: str, options: ClaudeAgentOptions, description: str, on_event: SubagentListener | None = None
+) -> str:
     """Run one subagent and format its answer as "[role: N steps]".
 
     Keeps the subagent's latest text, since its last message is its answer.
     Errors come back as text, because the parent expects a string from every
     tool and an exception would break its loop. If the subagent hits its
     turn limit (the SDK raises an error), whatever it had written so far is
-    still returned. The stderr line shows what happened inside the subagent,
-    which the parent's own trace never shows.
+    still returned.
+
+    While it runs, each step is priced with the role's model (TokenBudget)
+    and every tool call and step is reported to on_event, if given. Tool
+    calls are remembered by id until their result arrives, so each "tool"
+    event carries both the input and the output. The stderr line shows what
+    happened inside the subagent, which the parent's own trace never shows.
     """
-    text, turns, cost = "", 0, None
+    run_id, started = str(uuid.uuid4()), time.monotonic()
+    budget = TokenBudget(model)
+    calls: dict[str, ToolUseBlock] = {}
+    text, turns, status = "", 0, "done"
+
+    async def emit(event: dict) -> None:
+        if on_event:
+            await on_event({"id": run_id, **event})
+
+    await emit({"kind": "start", "role": role, "model": model, "description": description})
     try:
         async for message in query(prompt=description, options=options):
-            if isinstance(message, AssistantMessage):
+            if isinstance(message, StreamEvent) and message.event.get("type") == "message_delta":
+                step = budget.record(message.event.get("usage", {}))
+                await emit({"kind": "usage", "step": step.step, "cost": step.cost, "costWithout": step.cost_without})
+            elif isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         text = block.text
+                    elif isinstance(block, ToolUseBlock):
+                        calls[block.id] = block
+            elif isinstance(message, UserMessage) and isinstance(message.content, list):
+                for block in message.content:
+                    if isinstance(block, ToolResultBlock) and block.tool_use_id in calls:
+                        use = calls.pop(block.tool_use_id)
+                        await emit({
+                            "kind": "tool", "toolName": use.name.split("__")[-1],
+                            "input": use.input, "output": result_text(block)[:300],
+                        })
             elif isinstance(message, ResultMessage):
-                turns, cost = message.num_turns, message.total_cost_usd
+                turns = message.num_turns
+                # The CLI reports some failures (e.g. an invalid API key) as
+                # ordinary text with is_error set, not as an exception.
+                if message.is_error:
+                    status, text = "error", f"{role} error: {text or message.subtype}"
     except Exception as error:
         if not text:
-            return f"{role} error: {error}"
-        text += f"\n(stopped early: {error})"
-    print(f"[{role}] {turns} steps · cost ${cost or 0:.4f} · answer {len(text)} chars", file=sys.stderr, flush=True)
+            status, text = "error", f"{role} error: {error}"
+        else:
+            text += f"\n(stopped early: {error})"
+    cost = budget.total_cost()
+    cost_without = sum(s.cost_without or 0 for s in budget.steps) if cost is not None else None
+    await emit({
+        "kind": "end", "status": status, "steps": turns or len(budget.steps), "cost": cost,
+        "costWithout": cost_without, "durationMs": int((time.monotonic() - started) * 1000), "answer": text[:400],
+    })
+    detail = text if status == "error" else f"answer {len(text)} chars"
+    print(f"[{role}] {status} · {turns or len(budget.steps)} steps · cost ${cost or 0:.4f} · {detail}", file=sys.stderr, flush=True)
+    if status == "error":
+        return text
     return f"[{role}: {turns} steps]\n{text}" if text else f"(no response from {role})"
 
 
@@ -346,7 +416,7 @@ class TaskInput(BaseModel):
 TASK_DESCRIPTION = """Delegate work to a subagent.
 Explorer (default): read-only research with Haiku. Use for searching across files,
   understanding patterns, and gathering context.
-Executor: implementation with Sonnet and delegated bash. Use for focused
+Executor: implementation with Haiku and delegated bash. Use for focused
   changes with explicit instructions and a known verification step.
 
 WHEN TO USE: research across many files (explorer), bulk implementation (executor).
@@ -355,12 +425,13 @@ WHEN NOT TO USE: ambiguous requirements (use askUser), architectural decisions
 DO NOT USE FOR: single-step tasks the parent can do directly."""
 
 
-def create_task_tool(sandbox: Sandbox, read_tool, grep_tool):
+def create_task_tool(sandbox: Sandbox, read_tool, grep_tool, on_event: SubagentListener | None = None):
     """Build the task tool: a router that picks the role, builds it, runs it.
 
     The subagents reuse the parent's read and grep tools, which already
     point at the parent's sandbox. Adding a role is one build_* function
-    and one branch here.
+    and one branch here. on_event is optional: pass a listener to watch
+    subagent runs live (the web UI does).
 
     Spawn permissions (not enforced yet): once subagents can call `task`
     themselves, a map such as
@@ -370,8 +441,10 @@ def create_task_tool(sandbox: Sandbox, read_tool, grep_tool):
 
     async def task(args: dict) -> dict:
         inp = TaskInput.model_validate(args)
-        build = build_executor if inp.subagent_type == "executor" else build_explorer
-        options = build(sandbox, read_tool, grep_tool)
-        return text_result(await run_subagent(inp.subagent_type, options, inp.description))
+        if inp.subagent_type == "executor":
+            options, model = build_executor(sandbox, read_tool, grep_tool), EXECUTOR_MODEL
+        else:
+            options, model = build_explorer(sandbox, read_tool, grep_tool), EXPLORER_MODEL
+        return text_result(await run_subagent(inp.subagent_type, model, options, inp.description, on_event))
 
     return tool("task", TASK_DESCRIPTION, TaskInput.model_json_schema())(task)

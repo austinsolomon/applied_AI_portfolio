@@ -34,9 +34,11 @@ set -a && . ./.env && set +a
 
 ## Model
 
-Haiku (`claude-haiku-4-5`) by default. Override per run with `MODEL`, e.g.
-`MODEL=claude-sonnet-5-5 bun run index.ts .. "..."`. Sonnet follows the prompt's
-Verification contract reliably; Haiku often claims success without running `tsc`.
+The parent agent runs on Sonnet (`claude-sonnet-5-5`); both subagents (explorer
+and executor) run on Haiku (`claude-haiku-4-5`). The parent plans, delegates and
+follows the Verification contract (Haiku often skips it); the subagents do
+narrow, instruction-driven work. Override the parent per run with `MODEL`, e.g.
+`MODEL=claude-haiku-4-5 bun run index.ts .. "..."`.
 
 ## Sandbox
 

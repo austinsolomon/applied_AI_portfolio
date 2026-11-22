@@ -26,12 +26,14 @@ export const sandbox =
 const lifecycle: SandboxLifecycle = {};
 await lifecycle.afterStart?.(sandbox);
 
-// Which Claude model does the thinking. Haiku is the cheap default; set
-// MODEL=claude-sonnet-5-5 when instruction-following matters (e.g. Haiku
-// skips the Verification contract; Sonnet follows it).
+// The parent agent's model: Sonnet, because the parent plans, routes work to
+// subagents, follows the prompt's contracts (Verification) and writes the
+// final answer. The subagents run on Haiku (src/tools.ts): their work is
+// narrow and instruction-driven, so the cheaper model fits. MODEL overrides
+// the parent's model, e.g. MODEL=claude-haiku-4-5.
 // Course uses "anthropic/claude-haiku-4.5" via AI Gateway (blocked on free
 // tier), so we call Anthropic directly; reads ANTHROPIC_API_KEY from .env.
-export const MODEL_ID = process.env.MODEL ?? "claude-haiku-4-5";
+export const MODEL_ID = process.env.MODEL ?? "claude-sonnet-5-5";
 export const model = anthropic(MODEL_ID);
 
 const approval = approvalFromEnv();

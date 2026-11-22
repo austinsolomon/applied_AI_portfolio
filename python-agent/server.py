@@ -53,20 +53,15 @@ pending: dict[str, asyncio.Future] = {}
 # index.py blocks). Two pieces make that work:
 #   needs_human  the interactive rule: is this command off the safe list?
 #                can_use_tool uses it to decide whether to ask you.
-#   web_tools    read and grep, plus a bash tool in background mode (no gate
+#   web tools    read and grep, plus a bash tool in background mode (no gate
 #                of its own), because by the time bash runs, the command was
-#                either safe or you approved it.
+#                either safe or you approved it. Built per request (in
+#                make_options) so the task tool's subagent events reach that
+#                request's stream.
 needs_human = create_approval(Interactive())
-web_tools = create_sdk_mcp_server(
-    name="teensy",
-    version="0.1.0",
-    tools=[
-        web_read := create_read_tool(sandbox),
-        web_grep := create_grep_tool(sandbox),
-        create_bash_tool(sandbox, create_approval(Background())),
-        create_task_tool(sandbox, web_read, web_grep),
-    ],
-)
+web_read = create_read_tool(sandbox)
+web_grep = create_grep_tool(sandbox)
+web_bash = create_bash_tool(sandbox, create_approval(Background()))
 
 
 def sse(event: dict) -> str:
@@ -93,6 +88,16 @@ def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
     can_use_tool is created fresh per request so it can push approval
     requests into this request's event queue (and so into its stream).
     """
+
+    async def on_subagent(event: dict) -> None:
+        """Forward a subagent event to the browser's Subagents panel."""
+        await events.put({"type": "data-subagent", "data": event})
+
+    web_tools = create_sdk_mcp_server(
+        name="teensy",
+        version="0.1.0",
+        tools=[web_read, web_grep, web_bash, create_task_tool(sandbox, web_read, web_grep, on_subagent)],
+    )
 
     async def can_use_tool(
         tool_name: str, input_data: dict, context: ToolPermissionContext

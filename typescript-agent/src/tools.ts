@@ -7,6 +7,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import type { Sandbox } from "./sandbox";
 import { createApproval, type RequiresApproval } from "./approval";
+import { createTokenBudget, splitUsage } from "./telemetry";
 
 const MAX_LINES = 500;
 const MAX_MATCHES = 50;
@@ -180,11 +181,12 @@ Working directory: ${sandbox.workingDirectory}`,
   });
 }
 
-// Executor: implementation. Sonnet because a wrong change costs more than a
-// wrong summary; 15 steps. Its bash runs in delegated mode: only the
+// Executor: implementation, on Haiku like the explorer. The parent (Sonnet)
+// does the planning and hands over precise instructions, so the executor
+// only has to carry them out; 15 steps. Its bash runs in delegated mode: only the
 // commands on the trust list run, everything else is blocked. It gets its
 // own bash rather than the parent's, because no human answers its prompts.
-const EXECUTOR_MODEL = "claude-sonnet-4-6";
+const EXECUTOR_MODEL = "claude-haiku-4-5";
 const EXECUTOR_STEPS = 15;
 const EXECUTOR_TRUST = ["npm test", "npm run build", "npx tsc"];
 
@@ -200,38 +202,92 @@ Do NOT ask questions. Do NOT explore beyond what's needed. Execute the task.`,
   });
 }
 
-// Runs a subagent and formats its answer as "[role: N steps]". Errors come
-// back as text, because the parent expects a string from every tool and an
-// exception would break its loop. The stderr line shows what happened
-// inside the subagent, which the parent's own trace never shows.
+// What a subagent run reports while it works. The task tool forwards these
+// to an optional listener (the web UI's Subagents panel); the CLI passes
+// none. Same shapes in the Python app.
+//   start  the run began: role, model, the parent's instructions
+//   tool   one tool call finished: name, input, start of the output
+//   usage  one step finished: token counts and cost (priced like the parent)
+//   end    the run finished: status, steps, total cost, start of the answer
+export type SubagentEvent =
+  | { kind: "start"; id: string; role: string; model: string; description: string }
+  | { kind: "tool"; id: string; toolName: string; input: unknown; output: string }
+  | { kind: "usage"; id: string; step: number; cost: number | null; costWithout: number | null }
+  | {
+      kind: "end";
+      id: string;
+      status: "done" | "error";
+      steps: number;
+      cost: number | null;
+      costWithout: number | null;
+      durationMs: number;
+      answer: string;
+    };
+export type SubagentListener = (event: SubagentEvent) => void;
+
 type Subagent = {
-  generate(call: { prompt: string }): Promise<{
+  generate(call: { prompt: string; onStepEnd?: (step: any) => void }): Promise<{
     text: string;
     steps: unknown[];
     totalUsage: { inputTokens?: number; outputTokens?: number };
   }>;
 };
 
-async function runSubagent(role: string, agent: Subagent, description: string) {
+// Runs a subagent and formats its answer as "[role: N steps]". Errors come
+// back as text, because the parent expects a string from every tool and an
+// exception would break its loop. Each step is priced with the role's
+// model and reported to the listener; the stderr line shows what happened
+// inside the subagent, which the parent's own trace never shows.
+async function runSubagent(
+  role: string,
+  model: string,
+  agent: Subagent,
+  description: string,
+  onEvent?: SubagentListener,
+) {
+  const id = crypto.randomUUID();
+  const started = Date.now();
+  const budget = createTokenBudget(model);
+  onEvent?.({ kind: "start", id, role, model, description });
+  const end = (status: "done" | "error", steps: number, answer: string) => {
+    const totals = budget.totals();
+    onEvent?.({
+      kind: "end", id, status, steps, cost: totals.cost, costWithout: totals.costWithout,
+      durationMs: Date.now() - started, answer: answer.slice(0, 400),
+    });
+  };
   try {
-    const { text, steps, totalUsage } = await agent.generate({ prompt: description });
+    const { text, steps, totalUsage } = await agent.generate({
+      prompt: description,
+      onStepEnd: ({ usage, stepNumber, toolResults }) => {
+        for (const r of toolResults) {
+          onEvent?.({ kind: "tool", id, toolName: r.toolName, input: r.input, output: String(r.output).slice(0, 300) });
+        }
+        const step = budget.record(stepNumber, splitUsage(usage));
+        onEvent?.({ kind: "usage", id, step: stepNumber, cost: step.cost, costWithout: step.costWithout });
+      },
+    });
     console.error(
-      `[${role}] ${steps.length} steps · ${totalUsage.inputTokens ?? 0} input, ${totalUsage.outputTokens ?? 0} output · answer ${text.length} chars`,
+      `[${role}] done · ${steps.length} steps · ${totalUsage.inputTokens ?? 0} input, ${totalUsage.outputTokens ?? 0} output · answer ${text.length} chars`,
     );
+    end("done", steps.length, text);
     return text ? `[${role}: ${steps.length} steps]\n${text}` : `(no response from ${role})`;
   } catch (e: any) {
+    console.error(`[${role}] error after ${budget.steps.length} steps · ${e.message}`);
+    end("error", budget.steps.length, e.message);
     return `${role} error: ${e.message}`;
   }
 }
 
 // The task tool is a router: pick the role, build that subagent, run it.
-// Adding a role is one build function and one branch.
-export function createTaskTool(sandbox: Sandbox, parentTools: ParentTools) {
+// Adding a role is one build function and one branch. onEvent is optional:
+// pass a listener to watch subagent runs live (the web UI does).
+export function createTaskTool(sandbox: Sandbox, parentTools: ParentTools, onEvent?: SubagentListener) {
   return tool({
     description: `Delegate work to a subagent.
 Explorer (default): read-only research with Haiku. Use for searching across files,
   understanding patterns, and gathering context.
-Executor: implementation with Sonnet and delegated bash. Use for focused
+Executor: implementation with Haiku and delegated bash. Use for focused
   changes with explicit instructions and a known verification step.
 
 WHEN TO USE: research across many files (explorer), bulk implementation (executor).
@@ -243,9 +299,11 @@ DO NOT USE FOR: single-step tasks the parent can do directly.`,
       subagentType: z.enum(["explorer", "executor"]).default("explorer").describe("Subagent role"),
     }),
     execute: async ({ description, subagentType }) => {
-      const agent =
-        subagentType === "executor" ? buildExecutor(sandbox, parentTools) : buildExplorer(sandbox, parentTools);
-      return runSubagent(subagentType, agent, description);
+      const [agent, model] =
+        subagentType === "executor"
+          ? [buildExecutor(sandbox, parentTools), EXECUTOR_MODEL]
+          : [buildExplorer(sandbox, parentTools), EXPLORER_MODEL];
+      return runSubagent(subagentType, model, agent, description, onEvent);
     },
   });
 }

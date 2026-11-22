@@ -10,7 +10,7 @@ import {
 } from "ai";
 import { MODEL_ID, instructions, model, sandbox } from "./index";
 import { createApproval } from "./src/approval";
-import { createBashTool, createGrepTool, createReadTool, createTaskTool } from "./src/tools";
+import { createBashTool, createGrepTool, createReadTool, createTaskTool, type SubagentListener } from "./src/tools";
 import { createContextPolicy, createTokenBudget, formatSummary, splitUsage, type StepUsage } from "./src/telemetry";
 
 const PORT = 3000;
@@ -29,14 +29,13 @@ const PORT = 3000;
 const needsHuman = createApproval({ mode: "interactive" });
 const read = createReadTool(sandbox);
 const grep = createGrepTool(sandbox);
-const tools = {
-  read,
-  grep,
-  bash: createBashTool(sandbox, createApproval({ mode: "background" })),
-  task: createTaskTool(sandbox, { read, grep }),
-};
+const bash = createBashTool(sandbox, createApproval({ mode: "background" }));
 
-function createWebAgent(onStep: (step: StepUsage) => void) {
+// onStep reports the parent's steps (token budget); onSubagent reports
+// subagent runs (Subagents panel). The task tool is built per run so its
+// events reach this run's browser stream.
+function createWebAgent(onStep: (step: StepUsage) => void, onSubagent: SubagentListener) {
+  const tools = { read, grep, bash, task: createTaskTool(sandbox, { read, grep }, onSubagent) };
   const contextPolicy = createContextPolicy();
   const budget = createTokenBudget(MODEL_ID);
   const agent = new ToolLoopAgent({
@@ -75,7 +74,11 @@ function runAgent(conversationId: string) {
     stream: createUIMessageStream({
       async execute({ writer }) {
         // Each finished step is sent to the browser as a "data-usage" event.
-        const { agent, budget } = createWebAgent((step) => writer.write({ type: "data-usage", data: step }));
+        // Parent steps go out as "data-usage", subagent events as "data-subagent".
+        const { agent, budget } = createWebAgent(
+          (step) => writer.write({ type: "data-usage", data: step }),
+          (event) => writer.write({ type: "data-subagent", data: event }),
+        );
         const result = await agent.stream({ messages });
         writer.merge(toUIMessageStream({ stream: result.stream }));
         messages.push(...(await result.responseMessages));
