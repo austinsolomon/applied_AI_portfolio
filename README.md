@@ -32,6 +32,12 @@ set -a && . ./.env && set +a
 .venv/bin/python server.py .                         # web UI on :3000
 ```
 
+## Model
+
+Haiku (`claude-haiku-4-5`) by default. Override per run with `MODEL`, e.g.
+`MODEL=claude-sonnet-5-5 bun run index.ts .. "..."`. Sonnet follows the prompt's
+Verification contract reliably; Haiku often claims success without running `tsc`.
+
 ## Approval modes (CLI)
 
 `APPROVAL_MODE=interactive` (default: safe list only), `background` (everything

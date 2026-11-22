@@ -8,6 +8,7 @@ Setup: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 Run:   set -a && . ./.env && set +a      (loads ANTHROPIC_API_KEY)
        .venv/bin/python index.py <folder> "your question"
        APPROVAL_MODE=background .venv/bin/python index.py . "..."
+       MODEL=claude-sonnet-5-5 .venv/bin/python index.py . "..."
        APPROVAL_MODE=delegated APPROVAL_TRUST="git status,pwd" .venv/bin/python index.py . "..."
 """
 
@@ -36,6 +37,11 @@ from claude_agent_sdk import (
 # the folder you ran the script from. Every file path the agent uses is
 # resolved relative to this.
 cwd = Path(sys.argv[1] if len(sys.argv) > 1 else os.getcwd()).resolve()
+
+# Which Claude model does the thinking. Haiku is the cheap default; set
+# MODEL=claude-sonnet-5-5 when instruction-following matters (Haiku tends to
+# skip the Verification contract; Sonnet follows it).
+MODEL = os.environ.get("MODEL", "claude-haiku-4-5")
 
 # Output caps. Tool output goes straight into the model's context, and huge
 # outputs waste tokens and bury the useful part, so long results are cut off
@@ -481,7 +487,7 @@ teensy = create_sdk_mcp_server(name="teensy", version="0.1.0", tools=TOOLS)
 #                  policy itself.
 #   max_turns      stop after 10 rounds, in case the agent gets stuck in a loop
 options = ClaudeAgentOptions(
-    model="claude-haiku-4-5",
+    model=MODEL,
     system_prompt=SYSTEM_PROMPT,
     cwd=str(cwd),
     tools=[],
@@ -505,7 +511,7 @@ async def main():
       - ResultMessage: the loop is done; num_turns says how many rounds it took.
     """
     prompt = " ".join(sys.argv[2:]) or "Hello!"
-    print(f"(approval: {approval.model_dump()})")
+    print(f"(model: {MODEL} · approval: {approval.model_dump()})")
     text, turns = "", 0
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):

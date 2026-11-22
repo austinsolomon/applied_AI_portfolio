@@ -226,9 +226,13 @@ export const localOps: BashOperations = {
   },
 };
 
-// Course uses "anthropic/claude-haiku-4.5" via AI Gateway (blocked on free tier).
-// We call Anthropic directly; reads ANTHROPIC_API_KEY from .env.
-export const model = anthropic("claude-haiku-4-5");
+// Which Claude model does the thinking. Haiku is the cheap default; set
+// MODEL=claude-sonnet-5-5 when instruction-following matters (e.g. Haiku
+// skips the Verification contract; Sonnet follows it).
+// Course uses "anthropic/claude-haiku-4.5" via AI Gateway (blocked on free
+// tier), so we call Anthropic directly; reads ANTHROPIC_API_KEY from .env.
+export const MODEL_ID = process.env.MODEL ?? "claude-haiku-4-5";
+export const model = anthropic(MODEL_ID);
 const approval = approvalFromEnv();
 const bash = createBashTool(localOps, createApproval(approval));
 const tools = { read, grep, bash };
@@ -264,7 +268,7 @@ export const agent = new ToolLoopAgent({
 // which mode let a command through.
 if (import.meta.main) {
   const prompt = process.argv.slice(3).join(" ") || "Hello!";
-  console.log(`(approval: ${JSON.stringify(approval)})`);
+  console.log(`(model: ${MODEL_ID} · approval: ${JSON.stringify(approval)})`);
   const result = await agent.generate({ prompt });
   for (const step of result.steps) {
     for (const r of step.toolResults) {

@@ -8,7 +8,7 @@ import {
   toUIMessageStream,
   type ModelMessage,
 } from "ai";
-import { createApproval, createBashTool, grep, instructions, localOps, model, read } from "./index";
+import { MODEL_ID, createApproval, createBashTool, grep, instructions, localOps, model, read } from "./index";
 
 const PORT = 3000;
 
@@ -110,4 +110,4 @@ Bun.serve({
   },
 });
 
-console.log(`TeensyCode UI on http://localhost:${PORT}`);
+console.log(`TeensyCode UI on http://localhost:${PORT} (model: ${MODEL_ID})`);

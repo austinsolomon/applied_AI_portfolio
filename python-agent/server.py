@@ -36,6 +36,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from index import (
+    MODEL,
     SYSTEM_PROMPT,
     Background,
     Interactive,
@@ -142,7 +143,7 @@ def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
     # No allowed_tools: every call goes through can_use_tool, which waves
     # read and grep straight through.
     return ClaudeAgentOptions(
-        model="claude-haiku-4-5",
+        model=MODEL,
         system_prompt=SYSTEM_PROMPT,
         cwd=str(cwd),
         tools=[],
@@ -243,5 +244,5 @@ async def approve(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    print(f"TeensyCode UI (Python) on http://localhost:{PORT}  ·  working in {cwd}")
+    print(f"TeensyCode UI (Python) on http://localhost:{PORT}  ·  model {MODEL}  ·  working in {cwd}")
     uvicorn.run(app, port=PORT)
