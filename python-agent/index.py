@@ -453,7 +453,22 @@ def detect_git_branch(directory: Path) -> str | None:
         return None
 
 
+def load_project_context(directory: Path) -> str | None:
+    """Return the contents of AGENTS.md in the working directory, or None.
+
+    AGENTS.md is a plain markdown file a project keeps in its repo to tell
+    agents how it works: which commands run the tests, how the code is laid
+    out, style rules, past mistakes to avoid. Whatever it says goes into the
+    prompt as a "Project Instructions" section, so the same agent adapts to
+    each project. Checked once at startup, in the working directory only
+    (walking up through a monorepo comes later).
+    """
+    agents_path = directory / "AGENTS.md"
+    return agents_path.read_text(encoding="utf-8") if agents_path.exists() else None
+
+
 TOOLS = [read, grep, bash]
+PROJECT_CONTEXT = load_project_context(cwd)
 
 # The system prompt, built from runtime facts (see system.py). tool_names is
 # read off the tools actually wired in, so the prompt's tool list can't drift
@@ -463,6 +478,7 @@ SYSTEM_PROMPT = build_system_prompt(PromptContext(
     sandbox_type="local",
     tool_names=[t.name for t in TOOLS],
     git_branch=detect_git_branch(cwd),
+    project_context=PROJECT_CONTEXT,
 ))
 
 # Bundle the three tools so the agent can use them. The SDK calls a bundle
@@ -511,7 +527,7 @@ async def main():
       - ResultMessage: the loop is done; num_turns says how many rounds it took.
     """
     prompt = " ".join(sys.argv[2:]) or "Hello!"
-    print(f"(model: {MODEL} · approval: {approval.model_dump()})")
+    print(f"(model: {MODEL} · approval: {approval.model_dump()} · AGENTS.md: {'loaded' if PROJECT_CONTEXT else 'none'})")
     text, turns = "", 0
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):

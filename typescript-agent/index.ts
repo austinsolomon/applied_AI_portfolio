@@ -1,8 +1,8 @@
 import { ToolLoopAgent, isStepCount, tool } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
 import { buildSystemPrompt } from "./src/system";
 
@@ -247,6 +247,13 @@ function detectGitBranch(dir: string): string | undefined {
   }
 }
 
+// Project instructions: if the working directory has an AGENTS.md, its
+// contents go into the prompt as a "Project Instructions" section (test
+// commands, architecture, style, lessons learned). No file, no section.
+// Checked once at startup. Only cwd for now; monorepo walking comes later.
+const agentsPath = join(cwd, "AGENTS.md");
+const projectContext = existsSync(agentsPath) ? readFileSync(agentsPath, "utf-8") : undefined;
+
 // The system prompt, built from runtime facts (see src/system.ts).
 // toolNames comes from the tools actually wired in, so it can't drift.
 export const instructions = buildSystemPrompt({
@@ -254,6 +261,7 @@ export const instructions = buildSystemPrompt({
   sandboxType: "local",
   toolNames: Object.keys(tools),
   gitBranch: detectGitBranch(cwd),
+  projectContext,
 });
 
 export const agent = new ToolLoopAgent({
@@ -268,7 +276,7 @@ export const agent = new ToolLoopAgent({
 // which mode let a command through.
 if (import.meta.main) {
   const prompt = process.argv.slice(3).join(" ") || "Hello!";
-  console.log(`(model: ${MODEL_ID} · approval: ${JSON.stringify(approval)})`);
+  console.log(`(model: ${MODEL_ID} · approval: ${JSON.stringify(approval)} · AGENTS.md: ${projectContext ? "loaded" : "none"})`);
   const result = await agent.generate({ prompt });
   for (const step of result.steps) {
     for (const r of step.toolResults) {
