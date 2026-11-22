@@ -45,7 +45,7 @@ from sandbox_local import create_local_sandbox
 from sandbox_memory import create_temp_copy_sandbox
 from system import PromptContext, build_system_prompt
 from telemetry import TokenBudget, format_step
-from tools import create_bash_tool, create_grep_tool, create_read_tool
+from tools import create_bash_tool, create_grep_tool, create_read_tool, create_task_tool
 
 # The project folder the agent works in: the first command-line argument, or
 # the folder you ran the script from.
@@ -93,10 +93,15 @@ MODEL = os.environ.get("MODEL", "claude-haiku-4-5")
 
 # The approval mode for this run, and the tools built on the sandbox.
 approval = approval_from_env()
+# task delegates to a fresh explorer or executor subagent (tools.py); the
+# subagents reuse the parent's read and grep.
+read_tool = create_read_tool(sandbox)
+grep_tool = create_grep_tool(sandbox)
 TOOLS = [
-    create_read_tool(sandbox),
-    create_grep_tool(sandbox),
+    read_tool,
+    grep_tool,
     create_bash_tool(sandbox, create_approval(approval)),
+    create_task_tool(sandbox, read_tool, grep_tool),
 ]
 
 
@@ -172,7 +177,7 @@ options = ClaudeAgentOptions(
     setting_sources=[],
     strict_mcp_config=True,
     mcp_servers={"teensy": teensy},
-    allowed_tools=["mcp__teensy__read", "mcp__teensy__grep", "mcp__teensy__bash"],
+    allowed_tools=[f"mcp__teensy__{t.name}" for t in TOOLS],
     max_turns=15,
     include_partial_messages=True,
 )

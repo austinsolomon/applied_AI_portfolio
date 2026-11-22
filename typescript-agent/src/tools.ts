@@ -2,10 +2,11 @@
 // only ever call sandbox.readFile / sandbox.exec, never Node's fs or
 // child_process, so swapping the backend never touches this file. The
 // model-facing contract (description, schema, caps) is unchanged.
-import { tool } from "ai";
+import { ToolLoopAgent, isStepCount, tool } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import type { Sandbox } from "./sandbox";
-import type { RequiresApproval } from "./approval";
+import { createApproval, type RequiresApproval } from "./approval";
 
 const MAX_LINES = 500;
 const MAX_MATCHES = 50;
@@ -150,3 +151,110 @@ EXAMPLES:
     },
   });
 }
+
+// ---- Subagents (Module 6) ----
+//
+// The parent agent delegates through one `task` tool. Each call builds a
+// fresh subagent with its own context window, so the parent receives the
+// subagent's final answer, not every file it read on the way. Each role
+// fixes its own tools, model and step budget. Neither role can ask the user
+// anything; that stays with the parent.
+
+type ParentTools = {
+  read: ReturnType<typeof createReadTool>;
+  grep: ReturnType<typeof createGrepTool>;
+};
+
+// Explorer: read-only research. Haiku because exploration is reading and
+// summarizing; 5 steps, so larger questions get split into several tasks.
+const EXPLORER_MODEL = "claude-haiku-4-5";
+const EXPLORER_STEPS = 5;
+
+function buildExplorer(sandbox: Sandbox, parentTools: ParentTools) {
+  return new ToolLoopAgent({
+    model: anthropic(EXPLORER_MODEL),
+    instructions: `You are an explorer agent. Investigate and report back concisely.
+Working directory: ${sandbox.workingDirectory}`,
+    tools: { read: parentTools.read, grep: parentTools.grep },
+    stopWhen: isStepCount(EXPLORER_STEPS),
+  });
+}
+
+// Executor: implementation. Sonnet because a wrong change costs more than a
+// wrong summary; 15 steps. Its bash runs in delegated mode: only the
+// commands on the trust list run, everything else is blocked. It gets its
+// own bash rather than the parent's, because no human answers its prompts.
+const EXECUTOR_MODEL = "claude-sonnet-4-6";
+const EXECUTOR_STEPS = 15;
+const EXECUTOR_TRUST = ["npm test", "npm run build", "npx tsc"];
+
+function buildExecutor(sandbox: Sandbox, parentTools: ParentTools) {
+  const executorBash = createBashTool(sandbox, createApproval({ mode: "delegated", trust: EXECUTOR_TRUST }));
+  return new ToolLoopAgent({
+    model: anthropic(EXECUTOR_MODEL),
+    instructions: `You are an executor agent. Follow instructions precisely.
+Working directory: ${sandbox.workingDirectory}
+Do NOT ask questions. Do NOT explore beyond what's needed. Execute the task.`,
+    tools: { read: parentTools.read, grep: parentTools.grep, bash: executorBash },
+    stopWhen: isStepCount(EXECUTOR_STEPS),
+  });
+}
+
+// Runs a subagent and formats its answer as "[role: N steps]". Errors come
+// back as text, because the parent expects a string from every tool and an
+// exception would break its loop. The stderr line shows what happened
+// inside the subagent, which the parent's own trace never shows.
+type Subagent = {
+  generate(call: { prompt: string }): Promise<{
+    text: string;
+    steps: unknown[];
+    totalUsage: { inputTokens?: number; outputTokens?: number };
+  }>;
+};
+
+async function runSubagent(role: string, agent: Subagent, description: string) {
+  try {
+    const { text, steps, totalUsage } = await agent.generate({ prompt: description });
+    console.error(
+      `[${role}] ${steps.length} steps · ${totalUsage.inputTokens ?? 0} input, ${totalUsage.outputTokens ?? 0} output · answer ${text.length} chars`,
+    );
+    return text ? `[${role}: ${steps.length} steps]\n${text}` : `(no response from ${role})`;
+  } catch (e: any) {
+    return `${role} error: ${e.message}`;
+  }
+}
+
+// The task tool is a router: pick the role, build that subagent, run it.
+// Adding a role is one build function and one branch.
+export function createTaskTool(sandbox: Sandbox, parentTools: ParentTools) {
+  return tool({
+    description: `Delegate work to a subagent.
+Explorer (default): read-only research with Haiku. Use for searching across files,
+  understanding patterns, and gathering context.
+Executor: implementation with Sonnet and delegated bash. Use for focused
+  changes with explicit instructions and a known verification step.
+
+WHEN TO USE: research across many files (explorer), bulk implementation (executor).
+WHEN NOT TO USE: ambiguous requirements (use askUser), architectural decisions
+  (the parent decides).
+DO NOT USE FOR: single-step tasks the parent can do directly.`,
+    inputSchema: z.object({
+      description: z.string().describe("Task instructions for the subagent"),
+      subagentType: z.enum(["explorer", "executor"]).default("explorer").describe("Subagent role"),
+    }),
+    execute: async ({ description, subagentType }) => {
+      const agent =
+        subagentType === "executor" ? buildExecutor(sandbox, parentTools) : buildExplorer(sandbox, parentTools);
+      return runSubagent(subagentType, agent, description);
+    },
+  });
+}
+
+// Spawn permissions (not enforced yet): once subagents can call `task`
+// themselves, a map like this limits which roles each role may start, and
+// the check goes at the top of execute.
+//   const SPAWN_PERMISSIONS: Record<string, string[]> = {
+//     orchestrator: ["explorer", "executor"],
+//     executor: ["explorer"],
+//     explorer: [],
+//   };

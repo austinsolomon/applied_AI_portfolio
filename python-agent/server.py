@@ -39,7 +39,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from approval import Background, Interactive, create_approval
 from index import MODEL, SYSTEM_PROMPT, sandbox
 from telemetry import TokenBudget
-from tools import create_bash_tool, create_grep_tool, create_read_tool
+from tools import create_bash_tool, create_grep_tool, create_read_tool, create_task_tool
 
 PORT = 3000
 app = FastAPI()
@@ -61,9 +61,10 @@ web_tools = create_sdk_mcp_server(
     name="teensy",
     version="0.1.0",
     tools=[
-        create_read_tool(sandbox),
-        create_grep_tool(sandbox),
+        web_read := create_read_tool(sandbox),
+        web_grep := create_grep_tool(sandbox),
         create_bash_tool(sandbox, create_approval(Background())),
+        create_task_tool(sandbox, web_read, web_grep),
     ],
 )
 
@@ -106,7 +107,7 @@ def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
         context.tool_use_id lets the browser attach the buttons to the
         right tool call on screen.
         """
-        if tool_name in ("mcp__teensy__read", "mcp__teensy__grep"):
+        if tool_name in ("mcp__teensy__read", "mcp__teensy__grep", "mcp__teensy__task"):
             return PermissionResultAllow()
         if tool_name != "mcp__teensy__bash":
             return PermissionResultDeny(message=f"{tool_name} is not available.")

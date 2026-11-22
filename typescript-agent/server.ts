@@ -10,7 +10,7 @@ import {
 } from "ai";
 import { MODEL_ID, instructions, model, sandbox } from "./index";
 import { createApproval } from "./src/approval";
-import { createBashTool, createGrepTool, createReadTool } from "./src/tools";
+import { createBashTool, createGrepTool, createReadTool, createTaskTool } from "./src/tools";
 import { createContextPolicy, createTokenBudget, formatSummary, splitUsage, type StepUsage } from "./src/telemetry";
 
 const PORT = 3000;
@@ -27,10 +27,13 @@ const PORT = 3000;
 // One agent is built per run so its onStepEnd can report usage to that
 // run's browser stream (the token-budget panel).
 const needsHuman = createApproval({ mode: "interactive" });
+const read = createReadTool(sandbox);
+const grep = createGrepTool(sandbox);
 const tools = {
-  read: createReadTool(sandbox),
-  grep: createGrepTool(sandbox),
+  read,
+  grep,
   bash: createBashTool(sandbox, createApproval({ mode: "background" })),
+  task: createTaskTool(sandbox, { read, grep }),
 };
 
 function createWebAgent(onStep: (step: StepUsage) => void) {

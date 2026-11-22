@@ -7,7 +7,7 @@ import { buildSystemPrompt } from "./src/system";
 import { createLocalSandbox } from "./src/sandbox-local";
 import { createJustBashSandbox } from "./src/sandbox-just-bash";
 import type { SandboxLifecycle } from "./src/sandbox";
-import { createReadTool, createGrepTool, createBashTool } from "./src/tools";
+import { createReadTool, createGrepTool, createBashTool, createTaskTool } from "./src/tools";
 import { approvalFromEnv, createApproval } from "./src/approval";
 import { createContextPolicy, createTokenBudget, formatStep, formatSummary, splitUsage } from "./src/telemetry";
 
@@ -35,10 +35,15 @@ export const MODEL_ID = process.env.MODEL ?? "claude-haiku-4-5";
 export const model = anthropic(MODEL_ID);
 
 const approval = approvalFromEnv();
+const read = createReadTool(sandbox);
+const grep = createGrepTool(sandbox);
+// task delegates to a fresh explorer or executor subagent (src/tools.ts);
+// the subagents reuse the parent's read and grep.
 const tools = {
-  read: createReadTool(sandbox),
-  grep: createGrepTool(sandbox),
+  read,
+  grep,
   bash: createBashTool(sandbox, createApproval(approval)),
+  task: createTaskTool(sandbox, { read, grep }),
 };
 
 // The current git branch, or undefined if the sandbox folder isn't a git repo.

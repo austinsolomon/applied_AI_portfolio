@@ -11,11 +11,21 @@ function is created inside the factory.
 """
 
 import shlex
+import sys
+from typing import Literal
 
-from claude_agent_sdk import tool
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ResultMessage,
+    TextBlock,
+    create_sdk_mcp_server,
+    query,
+    tool,
+)
 from pydantic import BaseModel, Field
 
-from approval import RequiresApproval
+from approval import Delegated, RequiresApproval, create_approval
 from sandbox import Sandbox
 
 # Output caps. Tool output goes straight into the model's context, and huge
@@ -230,3 +240,138 @@ def create_bash_tool(sandbox: Sandbox, requires_approval: RequiresApproval):
         return text_result(output)
 
     return tool("bash", BASH_DESCRIPTION, BashInput.model_json_schema())(bash)
+
+
+# ---- Subagents (Module 6) ----
+#
+# The parent agent delegates through one `task` tool. Each call starts a
+# fresh subagent (its own query() run, with its own context window), so the
+# parent receives the subagent's final answer, not every file it read on the
+# way. Each role fixes its own tools, model and turn budget. Neither role
+# can ask the user anything; that stays with the parent.
+
+# Explorer: read-only research. Haiku because exploration is reading and
+# summarizing; 5 turns, so larger questions get split into several tasks.
+EXPLORER_MODEL = "claude-haiku-4-5"
+EXPLORER_TURNS = 5
+
+# Executor: implementation. Sonnet because a wrong change costs more than a
+# wrong summary; 15 turns. Its bash runs in delegated mode: only the
+# commands on the trust list run, everything else is blocked. It gets its
+# own bash rather than the parent's, because no human answers its prompts.
+EXECUTOR_MODEL = "claude-sonnet-4-6"
+EXECUTOR_TURNS = 15
+EXECUTOR_TRUST = ["npm test", "npm run build", "npx tsc"]
+
+
+def subagent_options(sandbox: Sandbox, name: str, model: str, prompt: str, tools: list, turns: int) -> ClaudeAgentOptions:
+    """Agent settings for one subagent run.
+
+    The subagent's tools are bundled into their own in-process MCP server
+    (named after the role) and pre-approved; the approval policy lives
+    inside the bash tool itself. tools=[], setting_sources=[] and
+    strict_mcp_config=True keep the SDK's built-in tools and your local
+    Claude Code setup out, exactly as for the parent.
+    """
+    server = create_sdk_mcp_server(name=name, version="0.1.0", tools=tools)
+    return ClaudeAgentOptions(
+        model=model,
+        system_prompt=prompt,
+        cwd=sandbox.working_directory,
+        tools=[],
+        setting_sources=[],
+        strict_mcp_config=True,
+        mcp_servers={name: server},
+        allowed_tools=[f"mcp__{name}__{t.name}" for t in tools],
+        max_turns=turns,
+    )
+
+
+def build_explorer(sandbox: Sandbox, read_tool, grep_tool) -> ClaudeAgentOptions:
+    """Explorer settings: read and grep only, Haiku, 5 turns."""
+    prompt = (
+        "You are an explorer agent. Investigate and report back concisely.\n"
+        f"Working directory: {sandbox.working_directory}"
+    )
+    return subagent_options(sandbox, "explorer", EXPLORER_MODEL, prompt, [read_tool, grep_tool], EXPLORER_TURNS)
+
+
+def build_executor(sandbox: Sandbox, read_tool, grep_tool) -> ClaudeAgentOptions:
+    """Executor settings: read, grep and a delegated-mode bash, Sonnet, 15 turns."""
+    executor_bash = create_bash_tool(sandbox, create_approval(Delegated(trust=EXECUTOR_TRUST)))
+    prompt = (
+        "You are an executor agent. Follow instructions precisely.\n"
+        f"Working directory: {sandbox.working_directory}\n"
+        "Do NOT ask questions. Do NOT explore beyond what's needed. Execute the task."
+    )
+    return subagent_options(
+        sandbox, "executor", EXECUTOR_MODEL, prompt, [read_tool, grep_tool, executor_bash], EXECUTOR_TURNS
+    )
+
+
+async def run_subagent(role: str, options: ClaudeAgentOptions, description: str) -> str:
+    """Run one subagent and format its answer as "[role: N steps]".
+
+    Keeps the subagent's latest text, since its last message is its answer.
+    Errors come back as text, because the parent expects a string from every
+    tool and an exception would break its loop. If the subagent hits its
+    turn limit (the SDK raises an error), whatever it had written so far is
+    still returned. The stderr line shows what happened inside the subagent,
+    which the parent's own trace never shows.
+    """
+    text, turns, cost = "", 0, None
+    try:
+        async for message in query(prompt=description, options=options):
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        text = block.text
+            elif isinstance(message, ResultMessage):
+                turns, cost = message.num_turns, message.total_cost_usd
+    except Exception as error:
+        if not text:
+            return f"{role} error: {error}"
+        text += f"\n(stopped early: {error})"
+    print(f"[{role}] {turns} steps · cost ${cost or 0:.4f} · answer {len(text)} chars", file=sys.stderr, flush=True)
+    return f"[{role}: {turns} steps]\n{text}" if text else f"(no response from {role})"
+
+
+class TaskInput(BaseModel):
+    """The arguments for the task tool: what to do, and which role does it."""
+
+    description: str = Field(description="Task instructions for the subagent")
+    subagent_type: Literal["explorer", "executor"] = Field(default="explorer", description="Subagent role")
+
+
+TASK_DESCRIPTION = """Delegate work to a subagent.
+Explorer (default): read-only research with Haiku. Use for searching across files,
+  understanding patterns, and gathering context.
+Executor: implementation with Sonnet and delegated bash. Use for focused
+  changes with explicit instructions and a known verification step.
+
+WHEN TO USE: research across many files (explorer), bulk implementation (executor).
+WHEN NOT TO USE: ambiguous requirements (use askUser), architectural decisions
+  (the parent decides).
+DO NOT USE FOR: single-step tasks the parent can do directly."""
+
+
+def create_task_tool(sandbox: Sandbox, read_tool, grep_tool):
+    """Build the task tool: a router that picks the role, builds it, runs it.
+
+    The subagents reuse the parent's read and grep tools, which already
+    point at the parent's sandbox. Adding a role is one build_* function
+    and one branch here.
+
+    Spawn permissions (not enforced yet): once subagents can call `task`
+    themselves, a map such as
+        {"orchestrator": ["explorer", "executor"], "executor": ["explorer"], "explorer": []}
+    limits which roles each role may start, checked at the top of task().
+    """
+
+    async def task(args: dict) -> dict:
+        inp = TaskInput.model_validate(args)
+        build = build_executor if inp.subagent_type == "executor" else build_explorer
+        options = build(sandbox, read_tool, grep_tool)
+        return text_result(await run_subagent(inp.subagent_type, options, inp.description))
+
+    return tool("task", TASK_DESCRIPTION, TaskInput.model_json_schema())(task)

@@ -18,6 +18,7 @@ import { addCacheControl } from "./cache";
 const PRICES: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
   "claude-haiku-4-5": { input: 1.0, output: 5.0, cacheWrite: 1.25, cacheRead: 0.1 },
   "claude-sonnet-5-5": { input: 2.0, output: 10.0, cacheWrite: 2.5, cacheRead: 0.1 },
+  "claude-sonnet-4-6": { input: 3.0, output: 15.0, cacheWrite: 3.75, cacheRead: 0.3 },
 };
 
 export interface StepUsage {
