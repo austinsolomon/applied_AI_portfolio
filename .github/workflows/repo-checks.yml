@@ -43,5 +43,16 @@ jobs:
           SKIP: gitleaks,ruff-check-p1,ruff-format-p1
         run: uvx pre-commit@4.6.2 run --all-files --show-diff-on-failure
 
+      # The course-build repos keep the course's lesson text (course_context/, (c) Vercel) private.
+      # scripts/sync_course_build.sh pulls them in without it; this fails if any commit adds it.
+      - name: No course lesson text in history
+        run: |
+          leaked=$(git log --all --oneline -- '*/course_context/*')
+          if [ -n "$leaked" ]; then
+            echo "course_context/ appears in these commits; it must stay in the private repos:"
+            echo "$leaked"
+            exit 1
+          fi
+
       - name: Secret scan of the full git history
         run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.0 git /repo --redact --verbose
