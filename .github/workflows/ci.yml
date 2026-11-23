@@ -1,9 +1,22 @@
 name: CI
 
+# Runs only when the lead-gen project (or repo-wide config it depends on) changes. A passing run
+# on main triggers the production deploy, so changes to the course-build folders must not start it.
+# Repo-wide checks (secret scan, file hooks) run on every change in repo-checks.yml.
 on:
   pull_request:
+    paths:
+      - "leadgen_pipeline_agents/**"
+      - ".github/**"
+      - ".pre-commit-config.yaml"
+      - ".streamlit/**"
   push:
     branches: [main]
+    paths:
+      - "leadgen_pipeline_agents/**"
+      - ".github/**"
+      - ".pre-commit-config.yaml"
+      - ".streamlit/**"
   workflow_dispatch:
 
 # Read-only token: no step in this workflow can push code or change the repository.

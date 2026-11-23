@@ -465,4 +465,3 @@ less work for the same result."
 
 This is the local precursor to LangSmith: the same events (runs, tool spans,
 token usage) become LangSmith traces when the harness moves there.
-

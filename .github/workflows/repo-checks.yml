@@ -1,0 +1,47 @@
+name: Repo checks
+
+# Repo-wide checks for every change, in every folder: the secret scan of the full git history and
+# the file hooks (whitespace, end of file, YAML/TOML, merge markers, large files). CI (ci.yml) runs
+# only for lead-gen changes because a passing CI run on main triggers the production deploy; this
+# workflow keeps the repo-wide checks running for changes to the course-build folders too. It has
+# no deploy attached.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only token: no step in this workflow can push code or change the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: secret scan and file hooks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Same pinned actions as ci.yml (commit SHAs; the comment names the release).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history, for the secret scan
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.1"
+
+      # The repo-wide hooks from .pre-commit-config.yaml. gitleaks runs as its own step below
+      # (pinned image, no Go toolchain download); the ruff hooks belong to the lead-gen project
+      # and run in ci.yml.
+      - name: File hooks
+        env:
+          SKIP: gitleaks,ruff-check-p1,ruff-format-p1
+        run: uvx pre-commit@4.6.2 run --all-files --show-diff-on-failure
+
+      - name: Secret scan of the full git history
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.0 git /repo --redact --verbose
