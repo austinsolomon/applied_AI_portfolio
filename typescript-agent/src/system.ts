@@ -10,6 +10,7 @@ export interface PromptContext {
   gitBranch?: string; // only when the folder is a git repo
   projectContext?: string; // e.g. the contents of AGENTS.md
   verificationCommands?: string[]; // the project's check commands, in run order
+  skills?: { name: string; description: string }[]; // names + one-line descriptions only
 }
 
 export function buildSystemPrompt(ctx: PromptContext): string {
@@ -43,6 +44,17 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 - Prefer simple, minimal changes
 - Search before creating, and reuse existing patterns
 - No new dependencies without asking`);
+
+  // Skills: one line per skill (name and description). The full content
+  // stays on disk until the agent calls loadSkill, so listing skills costs a
+  // few tokens per skill instead of their whole text on every call.
+  if (ctx.skills?.length) {
+    const lines = ctx.skills.map((s) => `- ${s.name}: ${s.description}`).join("\n");
+    sections.push(`
+# Skills
+The following skills are available. Call \`loadSkill\` with the name to get full content.
+${lines}`);
+  }
 
   // Handling Ambiguity: models prefer guessing to asking, so the prompt
   // scripts the order: search first (so the question is informed), then ask

@@ -46,6 +46,12 @@ def test_project_context_only_when_set():
     assert "Project Instructions" not in build_system_prompt(BASE)
 
 
+def test_skills_only_when_present():
+    prompt = build_system_prompt(replace(BASE, skills=[("auth-patterns", "Auth tips")]))
+    assert "# Skills" in prompt and "- auth-patterns: Auth tips" in prompt
+    assert "# Skills" not in build_system_prompt(BASE)
+
+
 def test_pure():
     assert build_system_prompt(BASE) == build_system_prompt(BASE)
 

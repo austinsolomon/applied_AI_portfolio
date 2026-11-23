@@ -337,6 +337,43 @@ def create_todo_tool():
     return tool("todo", TODO_DESCRIPTION, TodoInput.model_json_schema())(todo)
 
 
+class LoadSkillInput(BaseModel):
+    """The argument for loadSkill: the skill's name as listed in the prompt."""
+
+    name: str = Field(description="Skill name as listed in the Skills section")
+
+
+LOAD_SKILL_DESCRIPTION = """Load the full content of a skill.
+WHEN TO USE: the task touches a domain you have a skill for (auth, db, testing,
+  deployment, etc.). Check the # Skills section in your instructions.
+WHEN NOT TO USE: tasks unrelated to any available skill.
+DO NOT USE FOR: tasks where the skill name is not in the listed skills."""
+
+MAX_SKILL_CHARS = 4000
+
+
+def create_load_skill_tool(skills: list):
+    """Build loadSkill: return the full text of one skill (see skills.py).
+
+    The prompt lists skill names and descriptions only; this is how the
+    content enters context, and only when the agent asks. Capped like the
+    other tools so one long skill can't flood the context window.
+    """
+    by_name = {skill.name: skill for skill in skills}
+
+    async def load_skill(args: dict) -> dict:
+        inp = LoadSkillInput.model_validate(args)
+        skill = by_name.get(inp.name)
+        if skill is None:
+            return text_result(f"Unknown skill: {inp.name}")
+        content = skill.path.read_text(encoding="utf-8")
+        if len(content) > MAX_SKILL_CHARS:
+            content = content[:MAX_SKILL_CHARS] + f"\n... (truncated at {MAX_SKILL_CHARS} chars)"
+        return text_result(content)
+
+    return tool("loadSkill", LOAD_SKILL_DESCRIPTION, LoadSkillInput.model_json_schema())(load_skill)
+
+
 # ---- Subagents (Module 6) ----
 #
 # The parent agent delegates through one `task` tool. Each call starts a

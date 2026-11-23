@@ -8,9 +8,10 @@ import {
   toUIMessageStream,
   type ModelMessage,
 } from "ai";
-import { MODEL_ID, instructions, model, sandbox } from "./index";
+import { MODEL_ID, instructions, model, sandbox, skills } from "./index";
+import { createRegistry, registerBuiltins } from "./src/registry";
 import { createApproval } from "./src/approval";
-import { createAskUserTool, createBashTool, createGrepTool, createReadTool, createTaskTool, createTodoTool, type SubagentListener } from "./src/tools";
+import type { SubagentListener } from "./src/tools";
 import { createContextPolicy, createTokenBudget, formatSummary, splitUsage, type StepUsage } from "./src/telemetry";
 
 const PORT = 3000;
@@ -27,15 +28,10 @@ const PORT = 3000;
 // One agent is built per run so its onStepEnd can report usage to that
 // run's browser stream (the token-budget panel).
 const needsHuman = createApproval({ mode: "interactive" });
-const read = createReadTool(sandbox);
-const grep = createGrepTool(sandbox);
-const bash = createBashTool(sandbox, createApproval({ mode: "background" }));
-
-// onStep reports the parent's steps (token budget); onSubagent reports
-// subagent runs (Subagents panel). The task tool is built per run so its
-// events reach this run's browser stream.
 function createWebAgent(onStep: (step: StepUsage) => void, onSubagent: SubagentListener) {
-  const tools = { read, grep, bash, task: createTaskTool(sandbox, { read, grep }, onSubagent), askUser: createAskUserTool(), todo: createTodoTool() };
+  const registry = createRegistry();
+  registerBuiltins(registry, sandbox, skills, { approval: { mode: "background" }, onSubagent });
+  const tools = Object.fromEntries(registry.entries());
   const contextPolicy = createContextPolicy();
   const budget = createTokenBudget(MODEL_ID);
   const agent = new ToolLoopAgent({

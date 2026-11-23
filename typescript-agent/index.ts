@@ -4,12 +4,13 @@
 import { parseArgs } from "node:util";
 import { ToolLoopAgent, isStepCount } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { buildSystemPrompt } from "./src/system";
 import { createLocalSandbox } from "./src/sandbox-local";
 import { createJustBashSandbox } from "./src/sandbox-just-bash";
 import type { Sandbox, SandboxLifecycle } from "./src/sandbox";
-import { createReadTool, createGrepTool, createBashTool, createTaskTool, createAskUserTool, createTodoTool } from "./src/tools";
+import { createRegistry, registerBuiltins } from "./src/registry";
+import { discoverSkills } from "./src/skills";
 import { discoverGates } from "./src/verification";
 import { approvalFromEnv, createApproval } from "./src/approval";
 import { createContextPolicy, createTokenBudget, formatStep, formatSummary, splitUsage } from "./src/telemetry";
@@ -58,18 +59,17 @@ export const MODEL_ID = String(values.model);
 export const model = anthropic(MODEL_ID);
 
 const approval = approvalFromEnv();
-const read = createReadTool(sandbox);
-const grep = createGrepTool(sandbox);
-// task delegates to a fresh explorer or executor subagent (src/tools.ts);
-// the subagents reuse the parent's read and grep.
-const tools = {
-  read,
-  grep,
-  bash: createBashTool(sandbox, createApproval(approval)),
-  task: createTaskTool(sandbox, { read, grep }),
-  askUser: createAskUserTool(),
-  todo: createTodoTool(),
-};
+// Skills: project skills (./skills) first, then global ones
+// (~/.harness/skills); a project skill overrides a global one with the same
+// name. Only names and descriptions go in the prompt (see src/skills.ts).
+const skills = discoverSkills([join(cwd, "skills"), join(process.env.HOME ?? "", ".harness", "skills")]);
+
+// The tool set comes from the registry (src/registry.ts). Add a project tool
+// with registry.register(name, tool), or wrap a built-in with wrapTool,
+// before the agent is built.
+const registry = createRegistry();
+registerBuiltins(registry, sandbox, skills, { approval });
+const tools = Object.fromEntries(registry.entries());
 
 // The current git branch, or undefined if the sandbox folder isn't a git repo.
 // Asked through the sandbox, since the code may not live on this machine.
@@ -87,13 +87,15 @@ const verificationCommands = await discoverGates(sandbox);
 
 // The system prompt, built from runtime facts (see src/system.ts).
 // sandboxType and toolNames come from the real objects, so they can't drift.
+export { skills };
 export const instructions = buildSystemPrompt({
   workingDirectory: sandbox.workingDirectory,
   sandboxType: sandbox.type,
-  toolNames: Object.keys(tools),
+  toolNames: registry.list(),
   gitBranch,
   projectContext,
   verificationCommands,
+  skills: skills.map((s) => ({ name: s.name, description: s.description })),
 });
 
 // Module 5 context policy (prune, then cache) and the token budget that

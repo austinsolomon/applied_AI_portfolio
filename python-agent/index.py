@@ -46,7 +46,8 @@ from sandbox_local import create_local_sandbox
 from sandbox_memory import create_temp_copy_sandbox
 from system import PromptContext, build_system_prompt
 from telemetry import TokenBudget, format_step
-from tools import create_ask_user_tool, create_bash_tool, create_grep_tool, create_read_tool, create_task_tool, create_todo_tool
+from registry import create_registry, register_builtins
+from skills import discover_skills
 from verification import discover_gates
 
 def parse_cli_args() -> argparse.Namespace:
@@ -118,18 +119,17 @@ MODEL = ARGS.model
 
 # The approval mode for this run, and the tools built on the sandbox.
 approval = approval_from_env()
-# task delegates to a fresh explorer or executor subagent (tools.py); the
-# subagents reuse the parent's read and grep.
-read_tool = create_read_tool(sandbox)
-grep_tool = create_grep_tool(sandbox)
-TOOLS = [
-    read_tool,
-    grep_tool,
-    create_bash_tool(sandbox, create_approval(approval)),
-    create_task_tool(sandbox, read_tool, grep_tool),
-    create_ask_user_tool(),
-    create_todo_tool(),
-]
+# Skills: project skills (./skills) first, then global ones (~/.harness/skills);
+# a project skill overrides a global one with the same name. Only names and
+# descriptions go in the prompt (see skills.py).
+SKILLS = discover_skills([cwd / "skills", Path.home() / ".harness" / "skills"])
+
+# The tool set comes from the registry (registry.py). Add a project tool with
+# registry.register(name, tool), or wrap a built-in with wrap_tool, before the
+# tool bundle below is built.
+registry = create_registry()
+register_builtins(registry, sandbox, SKILLS, approval)
+TOOLS = registry.tools()
 
 
 async def gather_project_facts(sb: Sandbox) -> tuple[str | None, str | None, list[str]]:
@@ -158,10 +158,11 @@ GIT_BRANCH, PROJECT_CONTEXT, VERIFICATION_COMMANDS = asyncio.run(gather_project_
 SYSTEM_PROMPT = build_system_prompt(PromptContext(
     working_directory=sandbox.working_directory,
     sandbox_type=sandbox.type,
-    tool_names=[t.name for t in TOOLS],
+    tool_names=registry.list(),
     git_branch=GIT_BRANCH,
     project_context=PROJECT_CONTEXT,
     verification_commands=VERIFICATION_COMMANDS,
+    skills=[(s.name, s.description) for s in SKILLS],
 ))
 
 # Bundle the three tools so the agent can use them. The SDK calls a bundle

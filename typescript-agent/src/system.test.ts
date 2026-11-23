@@ -33,6 +33,13 @@ test("gitBranch line only when set", () => {
   expect(buildSystemPrompt(base)).not.toContain("Current branch");
 });
 
+test("skills section only when skills exist, one line each", () => {
+  const prompt = buildSystemPrompt({ ...base, skills: [{ name: "auth-patterns", description: "Auth tips" }] });
+  expect(prompt).toContain("# Skills");
+  expect(prompt).toContain("- auth-patterns: Auth tips");
+  expect(buildSystemPrompt(base)).not.toContain("# Skills");
+});
+
 test("project instructions only when set", () => {
   expect(buildSystemPrompt({ ...base, projectContext: "Use tabs." })).toContain(
     "# Project Instructions (from AGENTS.md)\nUse tabs.",

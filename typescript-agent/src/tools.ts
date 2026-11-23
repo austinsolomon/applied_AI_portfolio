@@ -8,6 +8,8 @@ import { z } from "zod";
 import type { Sandbox } from "./sandbox";
 import { createApproval, type RequiresApproval } from "./approval";
 import { createTokenBudget, splitUsage } from "./telemetry";
+import { readFileSync } from "node:fs";
+import type { Skill } from "./skills";
 
 const MAX_LINES = 500;
 const MAX_MATCHES = 50;
@@ -224,6 +226,34 @@ DO NOT USE FOR: status updates to the user (just answer them directly).`,
         return `Completed: [${item.id}] ${item.description}`;
       }
       return todos.map((t) => `[${t.state}] ${t.id}: ${t.description}`).join("\n") || "No todos.";
+    },
+  });
+}
+
+// loadSkill: returns the full text of one skill (see src/skills.ts). The
+// prompt lists skill names and descriptions only; this is how the content
+// enters context, and only when the agent asks. Capped like the other tools
+// so one long skill can't flood the context window.
+const MAX_SKILL_CHARS = 4000;
+
+export function createLoadSkillTool(skills: Skill[]) {
+  const byName = new Map(skills.map((s) => [s.name, s]));
+  return tool({
+    description: `Load the full content of a skill.
+WHEN TO USE: the task touches a domain you have a skill for (auth, db, testing,
+  deployment, etc.). Check the # Skills section in your instructions.
+WHEN NOT TO USE: tasks unrelated to any available skill.
+DO NOT USE FOR: tasks where the skill name is not in the listed skills.`,
+    inputSchema: z.object({
+      name: z.string().describe("Skill name as listed in the Skills section"),
+    }),
+    execute: async ({ name }) => {
+      const skill = byName.get(name);
+      if (!skill) return `Unknown skill: ${name}`;
+      const content = readFileSync(skill.path, "utf-8");
+      return content.length > MAX_SKILL_CHARS
+        ? content.slice(0, MAX_SKILL_CHARS) + `\n... (truncated at ${MAX_SKILL_CHARS} chars)`
+        : content;
     },
   });
 }

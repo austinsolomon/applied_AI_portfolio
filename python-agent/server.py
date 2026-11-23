@@ -37,9 +37,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from approval import Background, Interactive, create_approval
-from index import MODEL, SYSTEM_PROMPT, sandbox
+from index import MODEL, SKILLS, SYSTEM_PROMPT, sandbox
 from telemetry import TokenBudget
-from tools import create_ask_user_tool, create_bash_tool, create_grep_tool, create_read_tool, create_task_tool, create_todo_tool
+from registry import create_registry, register_builtins
 
 PORT = 3000
 app = FastAPI()
@@ -59,9 +59,6 @@ pending: dict[str, asyncio.Future] = {}
 #                make_options) so the task tool's subagent events reach that
 #                request's stream.
 needs_human = create_approval(Interactive())
-web_read = create_read_tool(sandbox)
-web_grep = create_grep_tool(sandbox)
-web_bash = create_bash_tool(sandbox, create_approval(Background()))
 
 
 def sse(event: dict) -> str:
@@ -86,37 +83,37 @@ def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
     """Build the agent settings for one request.
 
     can_use_tool is created fresh per request so it can push approval
-    requests into this request's event queue (and so into its stream).
+    requests into this request's event queue (and so into its stream). The
+    tool bundle is also built per request, from the registry, so the task
+    tool's subagent events reach this request's stream.
     """
 
     async def on_subagent(event: dict) -> None:
         """Forward a subagent event to the browser's Subagents panel."""
         await events.put({"type": "data-subagent", "data": event})
 
-    web_tools = create_sdk_mcp_server(
-        name="teensy",
-        version="0.1.0",
-        tools=[web_read, web_grep, web_bash, create_task_tool(sandbox, web_read, web_grep, on_subagent), create_ask_user_tool(),
-               create_todo_tool()],
-    )
+    registry = create_registry()
+    register_builtins(registry, sandbox, SKILLS, Background(), on_subagent)
+    web_tools = create_sdk_mcp_server(name="teensy", version="0.1.0", tools=registry.tools())
 
     async def can_use_tool(
         tool_name: str, input_data: dict, context: ToolPermissionContext
     ) -> PermissionResultAllow | PermissionResultDeny:
         """Decide whether a tool call may run, asking the browser if needed.
 
-          read / grep              -> allowed (they only look at files)
+          our tools except bash    -> allowed (read, grep, task, askUser,
+                                      todo, loadSkill change nothing)
           bash, safe-list command  -> allowed
           bash, anything else      -> send Approve/Deny to the browser, wait
                                       for the click, then allow or refuse
-          any other tool           -> refused (only our three exist anyway)
+          any other tool           -> refused (built-in tools are off anyway)
         context.tool_use_id lets the browser attach the buttons to the
         right tool call on screen.
         """
-        if tool_name in ("mcp__teensy__read", "mcp__teensy__grep", "mcp__teensy__task", "mcp__teensy__askUser", "mcp__teensy__todo"):
-            return PermissionResultAllow()
-        if tool_name != "mcp__teensy__bash":
+        if not tool_name.startswith("mcp__teensy__"):
             return PermissionResultDeny(message=f"{tool_name} is not available.")
+        if tool_name != "mcp__teensy__bash":
+            return PermissionResultAllow()
 
         command = input_data.get("command", "")
         if not needs_human(command):

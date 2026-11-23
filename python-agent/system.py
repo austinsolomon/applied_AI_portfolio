@@ -19,6 +19,7 @@ class PromptContext:
     git_branch         the current branch, or None if it's not a git repo
     project_context    project instructions (e.g. AGENTS.md), or None
     verification_commands  the project's check commands, in run order
+    skills             (name, one-line description) for each available skill
 
     The last two default to None, so they can be left out entirely.
     `field(default_factory=list)` is how a dataclass gives each instance its
@@ -31,6 +32,7 @@ class PromptContext:
     git_branch: str | None = None
     project_context: str | None = None
     verification_commands: list[str] = field(default_factory=list)
+    skills: list[tuple[str, str]] = field(default_factory=list)
 
 
 def build_system_prompt(ctx: PromptContext) -> str:
@@ -45,6 +47,8 @@ def build_system_prompt(ctx: PromptContext) -> str:
       Agency       act with the tools instead of describing a plan, and
                    which tools exist
       Guardrails   small changes, reuse what exists, ask before new deps
+      Skills       one line per skill (name and description); the full text
+                   stays on disk until the agent calls loadSkill
       Ambiguity    models prefer guessing to asking, so the order is scripted:
                    search first (so the question is informed), then ask with
                    askUser, then act. Specific tasks skip straight to acting.
@@ -77,6 +81,13 @@ def build_system_prompt(ctx: PromptContext) -> str:
 - Prefer simple, minimal changes
 - Search before creating, and reuse existing patterns
 - No new dependencies without asking""")
+
+    if ctx.skills:
+        lines = "\n".join(f"- {name}: {description}" for name, description in ctx.skills)
+        sections.append(f"""
+# Skills
+The following skills are available. Call `loadSkill` with the name to get full content.
+{lines}""")
 
     sections.append("""
 # Handling Ambiguity
