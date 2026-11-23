@@ -9,6 +9,13 @@ Each project is a self-contained folder with its own README, design doc, tests a
 | Project | What it is | Status |
 |---|---|---|
 | [Leadgen pipeline agents](leadgen_pipeline_agents/) | An autonomous lead-generation pipeline with two bounded agents: finds the markets furthest below their lead goal, plans and prices the sourcing, gets one approval, then sources, dedupes, enriches, qualifies with cited evidence, and writes qualified leads to the CRM, within a budget | Running weekly on Google Cloud |
+| [Vercel coding harness](vercel_coding_harness/) | A coding-agent harness built twice, in TypeScript (Vercel AI SDK) and Python (Claude Agent SDK): tools with written contracts, approval modes, a swappable sandbox, context pruning and caching, explorer and executor subagents, skills and a tool registry, plus a local web UI with a token-budget dashboard and a live subagent panel | Course build ([Vercel Academy](https://vercel.com/academy/build-ai-agent-harness)), extended |
+| [Vercel filesystem agent](vercel_filesystem_agent/) | An agent that answers questions about sales-call transcripts by running bash in a Vercel Sandbox, deployed on Vercel | Course build ([Vercel Academy](https://vercel.com/academy/filesystem-agents)) on Vercel's starter |
+
+The two course builds follow Vercel Academy courses. The coding harness goes past the course:
+a full Python version on the Claude Agent SDK, a web UI with cost and subagent observability,
+and measured findings (such as the pruning threshold at which the agent stops looping) recorded
+in its commit history and `python-agent/post-course-todos.md`.
 
 ## Leadgen pipeline agents: full-stack architecture
 

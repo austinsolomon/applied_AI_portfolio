@@ -1,3 +1,9 @@
+> **Portfolio note:** I completed [Building Filesystem Agents](https://vercel.com/academy/filesystem-agents)
+> on Vercel's starter (below). My work is in `lib/agent.ts`, `lib/tools.ts` and `app/api/route.ts`
+> (sandbox setup, the bash tool, loading the call transcripts, a direct Anthropic model), plus
+> Python reference versions in `lib/ref_agent.py`, `lib/ref_tools.py` and `app/api/ref_route.py`.
+> The original starter README follows.
+
 # Building Filesystem Agents: starter
 
 > This is the starter for **[Building Filesystem Agents](https://vercel.com/academy/filesystem-agents)** on Vercel Academy. Start at [lesson 1.1, Project Setup](https://vercel.com/academy/filesystem-agents/filesystem-project-setup).
