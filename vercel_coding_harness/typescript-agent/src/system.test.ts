@@ -1,0 +1,52 @@
+// Smallest useful prompt tests: optional sections appear only when set.
+// Run: bun test
+import { expect, test } from "bun:test";
+import { buildSystemPrompt, type PromptContext } from "./system";
+
+const base: PromptContext = {
+  workingDirectory: "/repo",
+  sandboxType: "local",
+  toolNames: ["read", "grep", "bash"],
+};
+
+test("includes role, sandbox, tools, and both core sections", () => {
+  const prompt = buildSystemPrompt(base);
+  expect(prompt).toContain("You are a coding agent working in: /repo");
+  expect(prompt).toContain("Sandbox: local");
+  expect(prompt).toContain("Available tools: read, grep, bash");
+  expect(prompt).toContain("# Agency");
+  expect(prompt).toContain("# Guardrails");
+  expect(prompt).toContain("# Handling Ambiguity");
+  expect(prompt).toContain("# Verification");
+  expect(prompt).toContain('Do NOT claim "tests pass" without running them.');
+  expect(prompt).toContain("Search before reading.");
+  expect(prompt).toContain("(no verification commands discovered for this project)");
+});
+
+test("verification lists the discovered gates in order", () => {
+  const prompt = buildSystemPrompt({ ...base, verificationCommands: ["npx tsc --noEmit", "npm test"] });
+  expect(prompt).toContain("1. `npx tsc --noEmit`\n2. `npm test`");
+});
+
+test("gitBranch line only when set", () => {
+  expect(buildSystemPrompt({ ...base, gitBranch: "main" })).toContain("Current branch: main");
+  expect(buildSystemPrompt(base)).not.toContain("Current branch");
+});
+
+test("skills section only when skills exist, one line each", () => {
+  const prompt = buildSystemPrompt({ ...base, skills: [{ name: "auth-patterns", description: "Auth tips" }] });
+  expect(prompt).toContain("# Skills");
+  expect(prompt).toContain("- auth-patterns: Auth tips");
+  expect(buildSystemPrompt(base)).not.toContain("# Skills");
+});
+
+test("project instructions only when set", () => {
+  expect(buildSystemPrompt({ ...base, projectContext: "Use tabs." })).toContain(
+    "# Project Instructions (from AGENTS.md)\nUse tabs.",
+  );
+  expect(buildSystemPrompt(base)).not.toContain("Project Instructions");
+});
+
+test("pure: same context, same prompt", () => {
+  expect(buildSystemPrompt(base)).toBe(buildSystemPrompt(base));
+});
