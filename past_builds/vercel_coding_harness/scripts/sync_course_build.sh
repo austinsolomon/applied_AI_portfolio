@@ -9,13 +9,13 @@
 # (git filter-repo), then pulls from that clone. Commits that never touched course_context/ keep
 # their hashes, so the history already in the portfolio lines up with the filtered one.
 #
-# Usage: scripts/sync_course_build.sh <portfolio-folder> <source-repo-path> [branch]
-#   scripts/sync_course_build.sh vercel_coding_harness ../vercel-coding-harness
+# Usage: past_builds/vercel_coding_harness/scripts/sync_course_build.sh <portfolio-folder> <source-repo-path> [branch]
+#   past_builds/vercel_coding_harness/scripts/sync_course_build.sh past_builds/vercel_coding_harness ../vercel-coding-harness
 #
 # The script commits locally and never pushes; review with `git log` and push yourself.
 set -euo pipefail
 
-prefix=${1:?portfolio folder, e.g. vercel_coding_harness}
+prefix=${1:?portfolio folder, e.g. past_builds/vercel_coding_harness}
 source_repo=$(cd "${2:?path to the source repo}" && pwd)
 branch=${3:-main}
 excluded=course_context

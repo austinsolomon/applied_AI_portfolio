@@ -6,14 +6,14 @@ name: CI
 on:
   pull_request:
     paths:
-      - "leadgen_pipeline_agents/**"
+      - "past_builds/leadgen_pipeline_agents/**"
       - ".github/**"
       - ".pre-commit-config.yaml"
       - ".streamlit/**"
   push:
     branches: [main]
     paths:
-      - "leadgen_pipeline_agents/**"
+      - "past_builds/leadgen_pipeline_agents/**"
       - ".github/**"
       - ".pre-commit-config.yaml"
       - ".streamlit/**"
@@ -35,7 +35,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: leadgen_pipeline_agents
+        working-directory: past_builds/leadgen_pipeline_agents
     # Same Postgres version as compose.yaml. CI-only credentials for a database that lives for one job.
     services:
       postgres:
@@ -62,7 +62,7 @@ jobs:
         with:
           version: "0.12.1"
           enable-cache: true
-          cache-dependency-glob: leadgen_pipeline_agents/uv.lock
+          cache-dependency-glob: past_builds/leadgen_pipeline_agents/uv.lock
 
       - name: Install from the lockfile (fails if uv.lock is out of date)
         run: uv sync --locked

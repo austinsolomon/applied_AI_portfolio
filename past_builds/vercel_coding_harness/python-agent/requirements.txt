@@ -1,0 +1,4 @@
+claude-agent-sdk>=0.2.187
+fastapi
+uvicorn
+pydantic>=2
