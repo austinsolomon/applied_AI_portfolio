@@ -15,7 +15,9 @@ import leadgen
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 DOCKERFILE = PROJECT_DIR / "Dockerfile"
 DOCKERIGNORE = PROJECT_DIR / ".dockerignore"
-CI_WORKFLOW = PROJECT_DIR.parent / ".github" / "workflows" / "ci.yml"
+# The project lives at past_builds/leadgen_pipeline_agents; the workflow is at the repository root.
+REPO_ROOT = PROJECT_DIR.parents[1]
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def dockerfile_arg(name: str) -> str:
