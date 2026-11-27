@@ -4,11 +4,26 @@ AI systems that run go-to-market work end to end for marketing, sales, CX, and s
 built on Claude. Mostly deterministic pipelines with agentic steps: plain code does everything
 predictable, and the model makes only the judgment calls.
 
-This repository is being rebuilt around one project, the **GTM agent**: one brain that receives
-every request, decides what it is and who is asking, and hands the work to durable workflows
-(graphs), one per job.
+This repository is being rebuilt, in small steps, around one project: the **GTM agent**. It will
+be one brain that receives every request, works out who is asking and what they want, and hands
+the work to durable workflows (graphs), one per job.
 
-## Architecture
+## Where it stands today
+
+**The GTM agent does not run yet.** Step 1 (restructuring the repo) is done. Everything else is
+still to build. What exists:
+
+| Folder | What's there now | What's missing |
+|---|---|---|
+| [`gtm_agent/`](gtm_agent/) | An unmodified copy of my [Python coding harness](past_builds/vercel_coding_harness/) (Claude Agent SDK). It runs as a coding assistant: a CLI and a local web UI; a Sonnet parent agent with Haiku explorer and executor subagents; tools for reading, searching, bash, todos, questions, and skills; three approval modes; a local or throwaway sandbox; and token and cost logging per step. | Everything GTM-specific: no CRM, Slack, or enrichment tools; no front door or dispatcher; no profiles (settings come from startup flags); no saved state (conversations and pending approvals live in memory and are lost on restart); no way to start a graph. |
+| [`gtm_agent_graphs/`](gtm_agent_graphs/) | Two folders, `leadgen/` and `outreach/`, each holding only a README that describes the planned graph. | All code. Neither graph exists yet. |
+| [`past_builds/`](past_builds/) | Five finished projects, including the [leadgen pipeline](past_builds/leadgen_pipeline_agents/), which runs in production every week. | Nothing; these are complete. The leadgen pipeline is not connected to the GTM agent; it is the reference that graph 1 will be rebuilt from. |
+
+So the honest summary: **a working coding-agent skeleton, two empty graph folders, and one
+production pipeline that sits alongside them.** The roadmap below turns the skeleton into the
+brain and fills in the graphs, one step at a time.
+
+## Target architecture
 
 ```mermaid
 flowchart LR
@@ -27,34 +42,25 @@ flowchart LR
     G1 & G2 & G3 & G4 --> O[CRM · Slack · rep's AI assistant]
 ```
 
-1. **Ingestion:** every request (webhook, cron, Slack, chat UI) arrives through one front door.
-2. **Dispatch:** each request is classified by who asked and what they want, then given a
-   profile: permissions, tools, subagents, sandbox, approval mode, and budget.
-3. **Reasoning agent:** one main agent (Claude Agent SDK) is built fresh from that profile. It
-   plans, decides, and hands the work to the right graph.
-4. **Graphs:** durable workflows, one per job. Minimize LLM calls, maximize plain code.
-5. **Shared layer:** subagents keep context clean; every tool has a contract and capped output;
-   prompts are cached; every decision (tools, tokens, cost) is logged; writes and spend need
-   approval at first; failures and human corrections become evals.
-6. **Delivery:** output goes where reps already work: the CRM, Slack, or their AI assistant.
+Each layer, what it will do, what exists today, and the roadmap step that builds it:
+
+| Layer | Target | Today | Step |
+|---|---|---|---|
+| **1. Ingestion** | Every request (webhook, cron, Slack, chat UI) arrives through one front door. | Two entry points from the harness: a CLI and a local web UI. No webhook, cron, or Slack entry. | 3 |
+| **2. Dispatch** | Each request is classified by who asked and what they want, then given a profile: permissions, tools, subagents, sandbox, approval mode, and budget. | None. Every run gets the same setup, chosen by startup flags. | 3, 4 |
+| **3. Reasoning agent** | One main agent (Claude Agent SDK) is built fresh from that profile. It plans, decides, and hands the work to the right graph. | The agent loop exists (parent plus subagents), but it is built once at startup, has only coding tools, and cannot start a graph. The web server already builds agent options per request, which is the seed of the factory. | 4, 6, 7 |
+| **4. Graphs** | Durable workflows, one per job. Minimize LLM calls, maximize plain code. | None in `gtm_agent_graphs/`. The shipped leadgen pipeline shows the pattern (fixed Python stages, a Postgres job queue, checkpoints, two bounded agents) and is the reference for graph 1. | 2, 6, 7 |
+| **5. Shared layer** | Subagents keep context clean; every tool has a contract and capped output; prompts are cached; every decision (tools, tokens, cost) is logged; writes and spend need approval at first; failures and human corrections become evals. | Partly there, from the harness: subagents with their own context, tool contracts and capped output, prompt caching, per-step token and cost logging (printed, not stored), and per-command approval. Missing: stored traces, budget reservations, audit logging, and evals. | 2, 5, 10 |
+| **6. Delivery** | Output goes where reps already work: the CRM, Slack, or their AI assistant. | Answers appear only in the terminal or the local web UI. | 6, 8 |
 
 ## Use cases
 
-| # | Use case | Example request | Graph |
-|---|---|---|---|
-| 1 | Lead sourcing and qualifying | "Source 20 leads in Denver" | [`gtm_agent_graphs/leadgen/`](gtm_agent_graphs/leadgen/) |
-| 2 | Outreach, call prep and follow-up | "Create outreach for the 20 leads" (drafts in each rep's style, approved in Slack) | [`gtm_agent_graphs/outreach/`](gtm_agent_graphs/outreach/) (LangGraph) |
-| 3 | PLG new opportunity and expansion from product usage | "Which accounts are ready to expand?" | Planned |
-| 4 | Closed-lost reactivation and churn response | "Who should we re-engage this quarter?" | Planned |
-
-## Repository layout
-
-```
-gtm_agent/          the brain: starts as an exact copy of the Python coding harness, then
-                    evolves step by step into the GTM agent
-gtm_agent_graphs/   one folder per graph (leadgen, outreach)
-past_builds/        shipped and course projects, each self-contained with its own README
-```
+| # | Use case | Example request | Graph | Status |
+|---|---|---|---|---|
+| 1 | Lead sourcing and qualifying | "Source 20 leads in Denver" | [`gtm_agent_graphs/leadgen/`](gtm_agent_graphs/leadgen/) | Placeholder; rebuild planned (step 6) |
+| 2 | Outreach, call prep and follow-up | "Create outreach for the 20 leads" (drafts in each rep's style, approved in Slack) | [`gtm_agent_graphs/outreach/`](gtm_agent_graphs/outreach/) (LangGraph) | Placeholder; planned (steps 7 to 9) |
+| 3 | PLG new opportunity and expansion from product usage | "Which accounts are ready to expand?" | Not started | Later |
+| 4 | Closed-lost reactivation and churn response | "Who should we re-engage this quarter?" | Not started | Later |
 
 ## Status and roadmap
 
@@ -71,12 +77,23 @@ past_builds/        shipped and course projects, each self-contained with its ow
 | 9 | Style memory: each rep's edits (draft → edit → sent) update their style notes | Planned |
 | 10 | Measurement and evals: volume, usage, quality, time saved, and outcomes per graph | Planned |
 
+Each step lands as its own pull request, so the history shows how the harness changes from a
+coding assistant into the GTM agent.
+
+## Repository layout
+
+```
+gtm_agent/          the brain: today an exact copy of the Python coding harness
+gtm_agent_graphs/   one folder per graph: leadgen/ and outreach/ (placeholders today)
+past_builds/        finished projects, each self-contained with its own README
+```
+
 ## Past builds
 
 | Project | What it is | Status |
 |---|---|---|
 | [Leadgen pipeline agents](past_builds/leadgen_pipeline_agents/) | Autonomous lead-generation pipeline: finds the markets furthest below goal, plans and prices sourcing, gets one approval, then sources (Google Maps, Exa), dedupes, enriches, qualifies with cited evidence, and writes to the CRM within a budget. Two bounded Claude Agent SDK agents | Live: weekly on Google Cloud |
-| [Vercel coding harness](past_builds/vercel_coding_harness/) | A coding-agent harness built twice (Vercel AI SDK and Claude Agent SDK): tool contracts, approval modes, swappable sandbox, context management, explorer and executor subagents, skills, tool registry, web UI | Course build, extended; the Python version seeds `gtm_agent/` |
+| [Vercel coding harness](past_builds/vercel_coding_harness/) | A coding-agent harness built twice (Vercel AI SDK and Claude Agent SDK): tool contracts, approval modes, swappable sandbox, context management, explorer and executor subagents, skills, tool registry, web UI | Course build, extended; the Python version is the starting point for `gtm_agent/` |
 | [Vercel filesystem agent](past_builds/vercel_filesystem_agent/) | An agent that answers questions about sales-call transcripts by running bash in a Vercel Sandbox | Course build, deployed on Vercel |
 | [Research agent, three frameworks](past_builds/research-agent-three-frameworks/) | A research agent that decides, with cited evidence, whether a business takes online orders; the same task in the Claude Agent SDK, Vercel AI SDK, and OpenAI SDK | Course I wrote (Repository 2) |
 | [Semi-automated leadgen skills](past_builds/semi-automated-leadgen-skills/) | A source → enrich → qualify → outreach pipeline in plain Python plus Claude Code skills, with human review of uncertain cases | Course I wrote (Repository 1) |
