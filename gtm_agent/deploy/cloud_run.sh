@@ -76,7 +76,7 @@ deploy() {
   url=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')
   echo
   echo "Service URL:        $url"
-  echo "Health check:       curl $url/healthz"
+  echo "Health check:       curl $url/health"
   echo "Slack request URL:  $url/slack/events"
 }
 
