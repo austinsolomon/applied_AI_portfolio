@@ -13,7 +13,8 @@ PROJECT_ID=${PROJECT_ID:?set PROJECT_ID, e.g. applied-ai-portfolio}
 REGION=${REGION:-us-central1}
 SERVICE=${SERVICE:-gtm-agent}
 RUNTIME_SA="gtm-agent-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
-SECRETS=(anthropic-api-key slack-bot-token slack-signing-secret)
+# Secret names match the environment variable names (the same convention as the leadgen project).
+SECRETS=(ANTHROPIC_API_KEY SLACK_BOT_TOKEN SLACK_SIGNING_SECRET)
 SOURCE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 setup() {
@@ -69,7 +70,7 @@ deploy() {
     --memory 2Gi \
     --timeout 900 \
     --set-env-vars "MODEL=claude-sonnet-5-5,ALLOWED_SLACK_USER_IDS=${ALLOWED_SLACK_USER_IDS:-}" \
-    --set-secrets "ANTHROPIC_API_KEY=anthropic-api-key:latest,SLACK_BOT_TOKEN=slack-bot-token:latest,SLACK_SIGNING_SECRET=slack-signing-secret:latest"
+    --set-secrets "ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest"
 
   local url
   url=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')

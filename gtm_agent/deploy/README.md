@@ -47,9 +47,20 @@ PROJECT_ID=applied-ai-portfolio gtm_agent/deploy/cloud_run.sh setup
 ```
 
 It enables Cloud Run, Cloud Build, Artifact Registry, and Secret Manager; creates the
-`gtm-agent-runtime` service account; and asks for three secrets with hidden input:
-`anthropic-api-key`, `slack-bot-token`, `slack-signing-secret`. Run it again any time to replace
-a secret (press Enter to keep one).
+`gtm-agent-runtime` service account; and makes sure three secrets exist, asking for each value
+with hidden input: `ANTHROPIC_API_KEY`, `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`. If a secret
+already has a value (for example, created in the console or copied from another project), press
+Enter to keep it. Run it again any time to replace a secret.
+
+To copy existing secrets from another project without displaying them:
+
+```bash
+SRC=<source-project-id>; DST=applied-ai-portfolio
+for S in ANTHROPIC_API_KEY APIFY_API_KEY BLITZ_API_KEY EXA_API_KEY; do
+  gcloud secrets versions access latest --secret="$S" --project="$SRC" \
+    | gcloud secrets create "$S" --project="$DST" --replication-policy=automatic --data-file=-
+done
+```
 
 ## 5. Deploy
 
