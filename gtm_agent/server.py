@@ -11,10 +11,16 @@ then carries on, and its results keep flowing down the original stream.
 
 Run:  .venv/bin/python server.py <folder>    ->  http://localhost:3000
 Needs: ANTHROPIC_API_KEY in the environment.
+
+Slack: POST /slack/events (slack_events.py) runs the same agent for Slack
+messages and replies in the thread. On Cloud Run the web UI routes are
+switched off with DISABLE_WEB_UI=1, because the URL is public; only the
+Slack route (which checks Slack's signature) and /healthz stay on.
 """
 
 import asyncio
 import json
+import os
 import uuid
 from pathlib import Path
 
@@ -40,9 +46,25 @@ from approval import Background, Interactive, create_approval
 from index import MODEL, SKILLS, SYSTEM_PROMPT, sandbox
 from telemetry import TokenBudget
 from registry import create_registry, register_builtins
+from slack_events import router as slack_router
 
-PORT = 3000
+# Cloud Run tells the container which port to listen on; locally it's 3000.
+PORT = int(os.environ.get("PORT", "3000"))
+# Locally the server only listens on this machine; in the container it must listen on all
+# interfaces (HOST=0.0.0.0) so Cloud Run can reach it.
+HOST = os.environ.get("HOST", "127.0.0.1")
+# The web UI can run the agent and approve bash commands, so it must not be reachable on a
+# public URL. Cloud Run sets DISABLE_WEB_UI=1.
+WEB_UI_DISABLED = os.environ.get("DISABLE_WEB_UI") == "1"
+
 app = FastAPI()
+app.include_router(slack_router)
+
+
+@app.get("/healthz")
+async def healthz():
+    """Liveness check for Cloud Run and for you: returns ok if the server is up."""
+    return {"ok": True}
 
 # Approvals waiting on a click: approval id -> the Future that the paused
 # can_use_tool call is waiting on. Kept in memory, so a server restart
@@ -160,6 +182,8 @@ def make_options(events: asyncio.Queue) -> ClaudeAgentOptions:
 @app.get("/")
 async def home():
     """Serve the chat page."""
+    if WEB_UI_DISABLED:
+        return Response(status_code=404)
     return FileResponse(Path(__file__).parent / "public" / "index.html")
 
 
@@ -179,6 +203,8 @@ async def api(request: Request):
                         for the token-budget panel
       ResultMessage     the run is done
     """
+    if WEB_UI_DISABLED:
+        return Response(status_code=404)
     prompt = (await request.json())["prompt"]
     events: asyncio.Queue = asyncio.Queue()
 
@@ -243,6 +269,8 @@ async def approve(request: Request):
     stream starts here (204 = "done, nothing to send back"): the original
     /api stream picks back up on its own.
     """
+    if WEB_UI_DISABLED:
+        return Response(status_code=404)
     body = await request.json()
     for decision in body["decisions"]:
         future = pending.pop(decision["approvalId"], None)
@@ -255,5 +283,5 @@ async def approve(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    print(f"TeensyCode UI (Python) on http://localhost:{PORT}  ·  model {MODEL}  ·  working in {sandbox.working_directory}")
-    uvicorn.run(app, port=PORT)
+    print(f"TeensyCode UI (Python) on http://{HOST}:{PORT}  ·  model {MODEL}  ·  working in {sandbox.working_directory}")
+    uvicorn.run(app, host=HOST, port=PORT)
