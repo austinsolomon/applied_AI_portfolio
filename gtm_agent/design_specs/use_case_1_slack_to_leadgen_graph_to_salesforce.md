@@ -281,7 +281,7 @@ gtm_agent/
   app/            main.py, slack.py, slack_client.py, dispatch.py, brain.py, tasks.py, db.py
   tools/          coding.py (moved), gtm.py (new)
   migrations/     numbered SQL
-  docs/           this spec
+  design_specs/   this spec
   tests/
   Dockerfile, pyproject.toml
 gtm_agent_graphs/
@@ -289,18 +289,133 @@ gtm_agent_graphs/
 .github/workflows/  gtm-agent CI and deploy (leadgen workflows unchanged)
 ```
 
-## 10. Build order (one PR each)
+## 10. Build plan: 10 items, granular steps
 
-| PR | Scope | Roadmap step |
-|---|---|---|
-| A | This spec | — |
-| B | Slack ingestion locally: `/slack/events` and `/slack/interactions`, signature checks, retry dedupe, outbound client; tested with signed fake requests | 3 (part) |
-| C | Dispatch placeholder + harness factory: `build_options(profile)`, GTM prompt, GTM tools stubbed; CLI and Slack both reach the brain | 3, 4 |
-| D | Postgres foundation: migrations for section 5 tables, db access, LangGraph checkpointer setup | 2 |
-| E | Leadgen graph with fake providers: all nodes, interrupt and resume, budget reservations | 6 (part) |
-| F | Live providers and Salesforce writes, behind the approval | 6 |
-| G | GCP: Dockerfile, Cloud Run, Cloud Tasks, Cloud SQL, secrets, GitHub Actions deploy | 3–6 (deploy) |
-| H | Artifact and outreach queue: CSV upload, summary, button, queue row; first live end-to-end run | 6, prep for 7 |
+Each item lands as one or more small PRs. Steps marked **(you)** need your accounts; everything
+else I can build and test here. Items 2 to 8 run entirely locally with fakes; nothing spends
+money until item 9.
+
+### Item 1. Accounts and cloud setup (you, with steps from me)
+- [ ] 1.1 Create the GCP project: display name `applied_ai_portfolio`, ID `applied-ai-portfolio` (suffix if taken), on your billing account **(you)**
+- [ ] 1.2 Set a $20/month budget alert with emails at 50%, 90%, 100% **(you)**
+- [ ] 1.3 Enable APIs: Cloud Run, Cloud Tasks, Cloud SQL Admin, Secret Manager, Artifact Registry, Cloud Storage, IAM Credentials **(you, one command I provide)**
+- [ ] 1.4 Create the Slack app from a manifest I write (scopes, events, interactivity); install it to your workspace **(you)**
+- [ ] 1.5 Create a Salesforce Developer Edition org; add the Lead external ID field (`GTM_Lead_Key__c`) and lead fields from 4.5; create a Connected App for client-credentials login **(you)**
+- [ ] 1.6 Get API keys: Anthropic, Apify, Exa, BlitzAPI, LangSmith **(you)**
+- [ ] 1.7 Write a setup checklist doc (`design_specs/setup_accounts.md`) with every command and click path
+
+### Item 2. Project scaffolding and local development
+- [ ] 2.1 Add `gtm_agent/pyproject.toml` (uv, pinned Python), keep `requirements.txt` only until it is replaced
+- [ ] 2.2 Create the package layout: `gtm_agent/app/`, `gtm_agent/tools/`, `gtm_agent/tests/`; move nothing yet
+- [ ] 2.3 Settings module (`app/settings.py`, pydantic-settings): every env var from section 6 with safe local defaults
+- [ ] 2.4 Local Postgres with `compose.yaml` (Postgres 16 on a non-default port)
+- [ ] 2.5 `.env.example` listing every variable, with no values
+- [ ] 2.6 Lint and format (ruff) and pytest wired; pre-commit hook entries for `gtm_agent/`
+- [ ] 2.7 CI workflow `gtm-agent-ci.yml`: runs on `gtm_agent/**` and `gtm_agent_graphs/**` changes, with a Postgres service; never spends
+- [ ] 2.8 Confirm the existing harness still runs (CLI and web UI) after the layout change
+
+### Item 3. Postgres foundation
+- [ ] 3.1 Migration runner: numbered SQL files in `gtm_agent/migrations/`, a `schema_migrations` table, `gtm-agent db migrate`
+- [ ] 3.2 Migration 0001: `requests`, `brain_sessions`
+- [ ] 3.3 Migration 0002: `graph_runs`, `approvals`
+- [ ] 3.4 Migration 0003: `budget_reservations`, `cost_ledger`
+- [ ] 3.5 Migration 0004: `leads`, `outreach_queue`
+- [ ] 3.6 Database access module (`app/db.py`): connection pool, small typed functions per table
+- [ ] 3.7 LangGraph Postgres checkpointer: create tables with `setup()` from the migrate command
+- [ ] 3.8 Tests against a throwaway database per test session
+
+### Item 4. Slack ingestion (inbound)
+- [ ] 4.1 FastAPI app skeleton (`app/main.py`) with `GET /healthz`
+- [ ] 4.2 Signature verification (`app/slack_signing.py`): `v0:{ts}:{body}` HMAC, 5-minute window, constant-time compare
+- [ ] 4.3 `POST /slack/events`: answer `url_verification`
+- [ ] 4.4 Parse `app_mention` and `message.im`; strip the bot mention; ignore bot and edited messages
+- [ ] 4.5 Retry handling: ignore requests with `X-Slack-Retry-Num`; unique `event_id` in `requests`
+- [ ] 4.6 Save the request row (user, channel, thread, text, status `received`)
+- [ ] 4.7 Task queue interface (`app/tasks.py`): `enqueue(path, payload)`; local implementation runs the task in-process after the response; Cloud Tasks implementation in item 10
+- [ ] 4.8 Return 200 within 3 seconds; measure it in a test
+- [ ] 4.9 Tests: signed fake events (valid, bad signature, stale timestamp, retry, duplicate, bot message)
+
+### Item 5. Slack outbound and interactions
+- [ ] 5.1 Slack client wrapper (`app/slack_client.py`): `post_message`, `update_message`, `upload_file`; one fake for tests that records calls
+- [ ] 5.2 Threaded replies: every message goes to the request's thread
+- [ ] 5.3 Block Kit builders (`app/slack_blocks.py`): plan approval card, summary card, outreach button
+- [ ] 5.4 `POST /slack/interactions`: verify signature, parse `block_actions`, route by `action_id`
+- [ ] 5.5 Actions: `approve_plan`, `cancel_plan`, `queue_outreach`; each enqueues a task and updates the message so it can't be clicked twice
+- [ ] 5.6 Tests: signed fake button payloads, double-click, unknown action
+
+### Item 6. Dispatch placeholder
+- [ ] 6.1 `Profile` dataclass (`app/dispatch.py`): name, tools, subagents, sandbox, approval mode, budget
+- [ ] 6.2 `dispatch(request) -> Profile`: returns `placeholder-all` (every tool, no sandbox, spend needs approval, $5 cap)
+- [ ] 6.3 Save the profile on the request row
+- [ ] 6.4 `POST /tasks/brain`: load request → dispatch → run brain (item 7) → mark request done or failed
+- [ ] 6.5 Tests: profile contents, saved on the row, task endpoint rejects calls without the task auth header
+
+### Item 7. Brain: adapt the harness to GTM
+- [ ] 7.1 Move coding tools: `tools.py` → `tools/coding.py`; imports updated; existing tests pass
+- [ ] 7.2 Factory: `make_options(events)` → `build_options(profile, context)` in `app/brain.py`; tools filtered by the profile
+- [ ] 7.3 GTM system prompt sections in `system.py` (role, reading leadgen requests, never spend outside the approval flow, reply in the thread)
+- [ ] 7.4 GTM tools in `tools/gtm.py` (in-process MCP server), each with a when-to-use contract and capped output:
+  - [ ] `start_leadgen(market, target, budget_usd?)`: creates a `graph_runs` row and enqueues `/tasks/graph` (stubbed graph until item 8)
+  - [ ] `get_leadgen_run(run_id)`, `list_leadgen_runs(limit)`
+  - [ ] `reply_in_thread(text)`
+- [ ] 7.5 `can_use_tool` for GTM: allow GTM tools in the profile; refuse built-in and unlisted tools
+- [ ] 7.6 Sessions: save the Agent SDK session ID per Slack thread in `brain_sessions`; resume on follow-up messages
+- [ ] 7.7 LangSmith: wrap each brain run with `@traceable` (request ID, profile, run ID as metadata)
+- [ ] 7.8 Cost: write each brain run's token cost to `cost_ledger` (reuse `telemetry.py` pricing)
+- [ ] 7.9 CLI for local testing: `gtm-agent ask "source 20 leads in Denver"`
+- [ ] 7.10 Tests: tool contracts, profile filtering, session resume, "source 20 leads in Denver" calls `start_leadgen` (recorded model response)
+
+### Item 8. Leadgen graph with fake providers
+- [ ] 8.1 Package `gtm_agent_graphs/leadgen/` (`leadgen_graph`): `state.py` (typed state from 4.4), `graph.py`
+- [ ] 8.2 Provider interfaces with fakes: Maps, Exa, Blitz, Claude judge, Salesforce, Slack
+- [ ] 8.3 Category config and Census places data (copied from the shipped pipeline, with attribution)
+- [ ] 8.4 Node `plan`: cities, keywords, per-provider ceilings, budget
+- [ ] 8.5 Node `approve`: post the approval card, `interrupt()`, resume with the decision; Cancel ends the run
+- [ ] 8.6 Budget reservations: `reserve(run_id, node, item, ceiling)` before every paid call; record outcome; skip on resume if already succeeded
+- [ ] 8.7 Nodes `source_maps`, `source_exa` (page text cached for evidence)
+- [ ] 8.8 Node `dedupe`: within the run and against Salesforce by domain, phone, email
+- [ ] 8.9 Node `enrich`: only leads missing contacts
+- [ ] 8.10 Node `qualify`: one structured call per lead; code checks the quote is in the page text; no quote → low confidence
+- [ ] 8.11 Node `write_salesforce`: upsert by external ID; record Salesforce IDs on `leads`
+- [ ] 8.12 Node `artifact`: CSV, summary, outreach button
+- [ ] 8.13 `POST /tasks/graph`: start a run or resume it with `Command(resume=...)`
+- [ ] 8.14 Tests: full run with fakes; cancel; crash mid-run then resume without repeating paid calls; budget exhausted stops the run
+
+### Item 9. Live providers, Salesforce, and the artifact
+- [ ] 9.1 Apify Google Maps client (live), behind the provider interface
+- [ ] 9.2 Exa search and contents client (live)
+- [ ] 9.3 BlitzAPI enrichment client (live)
+- [ ] 9.4 Claude judge (live): structured output, model cost recorded
+- [ ] 9.5 Salesforce client: client-credentials login, query for dedupe, composite upsert for Leads
+- [ ] 9.6 Slack file upload (two-step external upload) and summary with a LangSmith trace link
+- [ ] 9.7 Cloud Storage copy of each CSV
+- [ ] 9.8 `queue_outreach` writes an `outreach_queue` row with the run ID and replies "Queued for outreach"
+- [ ] 9.9 Local live smoke: `target=5`, budget $2, real providers, real Salesforce, fake Slack (prints messages)
+
+### Item 10. Deploy to GCP and run end to end
+- [ ] 10.1 Dockerfile: Python, the Claude Agent SDK and its `claude` program, both packages; non-root user
+- [ ] 10.2 Smoke test the image locally: `/healthz`, and one brain call that proves the `claude` subprocess runs
+- [ ] 10.3 Cloud SQL instance (`db-f1-micro`, Postgres 16, backups) and database user **(you run the commands I provide, or approve me running them)**
+- [ ] 10.4 Secrets in Secret Manager (section 6 list) **(you enter the values)**
+- [ ] 10.5 Service accounts and IAM: runtime and deployer, least privilege
+- [ ] 10.6 Artifact Registry repo, Cloud Storage bucket with 30-day lifecycle
+- [ ] 10.7 Cloud Tasks queue and the Cloud Tasks implementation of `enqueue` (OIDC token to the service)
+- [ ] 10.8 Cloud Run service `gtm-agent` (min 0, max 2, 30-minute timeout, Cloud SQL attached, secrets mounted)
+- [ ] 10.9 GitHub Actions deploy via Workload Identity Federation: build, migrate, deploy on merge to `main`
+- [ ] 10.10 Point the Slack app's event and interactivity URLs at the service **(you)**
+- [ ] 10.11 Live run 1: "source 5 leads in Denver", budget $2; check Slack, Salesforce, LangSmith, cost ledger
+- [ ] 10.12 Live run 2: "source 20 leads in Denver", budget $5; click "Create outreach"; confirm the queue row
+- [ ] 10.13 Update the root README status and record results (counts, cost, screenshots)
+
+### Mapping to the roadmap
+
+| Item | Roadmap step |
+|---|---|
+| 1, 10 | Deploys for steps 2 to 6 |
+| 2, 3 | 2 (Postgres foundation) |
+| 4, 5, 6 | 3 (front door and dispatcher; placeholder) |
+| 7 | 4 (factory and profiles) and part of 5 (cost logging) |
+| 8, 9 | 6 (graph 1, lead sourcing) and part of 5 (budget reservations) |
 
 ## 11. Risks and open questions
 
