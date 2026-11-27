@@ -1,0 +1,20 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung0_one_model_call",
+  "companyId": "rye_and_rosemary_bakery",
+  "conversationId": "rung0_one_model_call:rye_and_rosemary_bakery",
+  "promptSummary": "Bakery: Rye & Rosemary Bakery, Chicago IL (rye-and-rosemary.example). Does this bakery already take online orders? Find: how customers place an order today, how many locations it runs, and who owns or manages it. Cite the page you took each fact from.",
+  "teachingNote": "A model with no tools can only answer from what it already absorbed during training. For a small neighborhood bakery that is nothing, so the honest recorded answer is a refusal with no sources. This is the rung that shows why the other rungs exist.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "I do not have reliable information about a bakery called Rye & Rosemary Bakery in Chicago, Illinois. It is a small local business, and I cannot cite a source for how it takes orders, how many locations it runs or who owns it. If I answered anyway I would be guessing. This question needs a tool that can read the bakery's own pages.",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "text",
+        "answerText": "I do not have reliable information about a bakery called Rye & Rosemary Bakery in Chicago, Illinois. It is a small local business, and I cannot cite a source for how it takes orders, how many locations it runs or who owns it. If I answered anyway I would be guessing. This question needs a tool that can read the bakery's own pages."
+      }
+    }
+  ]
+}

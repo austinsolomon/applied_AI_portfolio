@@ -1,0 +1,185 @@
+{
+  "about": "The research answers you have already checked in the course. Enrich copies an agent answer into the record only when a confirmation here names the same bakery, value and source page. Rye & Rosemary Bakery is left out on purpose: you check it yourself with python -m pipeline.review_research. Dos Rios Panaderia is left out because the agent could not tell.",
+  "confirmations": [
+    {
+      "lead_id": "apify-maps-72a168d9e318",
+      "bakery_name": "Sunrise Bakery",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://sunrise.example/menu",
+      "quote": "Cake orders: please call the shop at least two days ahead. We do not take orders on this website.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-f0fe374ccec2",
+      "bakery_name": "Riverbend Bread",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://riverbend-bread.example/order",
+      "quote": "To order bread, call 312-555-0102 by noon the day before. That is the only way to order.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-657921fbe661",
+      "bakery_name": "Oak Street Bakes",
+      "field": "ordering_platform",
+      "value": "pos_online_store",
+      "source_url": "https://oak-street-bakes.example/order",
+      "quote": "Welcome to the Oak Street Bakes online store. This is how we take orders.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-9fd995a9cb11",
+      "bakery_name": "Flour & Hearth",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://maps.example/place/fixture-place-004",
+      "quote": "No website. No order link. Phone: +1 312-555-0104.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-b1376a14177b",
+      "bakery_name": "Morning Crumb",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://maps.example/place/fixture-place-005",
+      "quote": "No website. No order link. Phone: +1 312-555-0105.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-cb488d4932cd",
+      "bakery_name": "Bluebird Bakery",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://bluebird-bakery.example/order",
+      "quote": "To order a cake, call us or stop by the counter. We do not take orders online.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-aaaa3e5131fb",
+      "bakery_name": "Golden Wheat Bakery Cafe",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://golden-wheat.example/catering",
+      "quote": "For catering and cake orders, email partnerships@golden-wheat.example or ask at any of our cafes.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-de70049ff199",
+      "bakery_name": "Lantern Lane Pies",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://lantern-lane-pies.example/holidays",
+      "quote": "Holiday pie pre-orders: pick up a paper form at the counter and drop it back with a deposit.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-62e64e5b88ed",
+      "bakery_name": "Butter & Thyme Bakery",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://butter-and-thyme.example/locations",
+      "quote": "Call the shop nearest you to place an order. Numbers for all four shops are below.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-5cfae4b54a99",
+      "bakery_name": "Sweet Thistle Bakeshop",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://sweet-thistle.example/custom-cakes",
+      "quote": "Custom cakes start with an email. Tell us the date, the size and the flavor, and we will reply with a quote.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-e37b7bfc1eb6",
+      "bakery_name": "Tiny Kiln Bakery",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://maps.example/place/fixture-place-013",
+      "quote": "No website. No order link. No phone listed.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-ff2499df9fe9",
+      "bakery_name": "Fig & Feather Bakery",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://maps.example/place/fixture-place-014",
+      "quote": "No website. No order link. Phone: +1 312-555-0114.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-ae675c78b0a0",
+      "bakery_name": "Tin Roof Bakery",
+      "field": "ordering_platform",
+      "value": "pos_online_store",
+      "source_url": "https://tin-roof-bakery.example/order",
+      "quote": "Order online for pickup. Choose a time, pay by card, and we will have it ready.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-423d3ade609c",
+      "bakery_name": "Honeycomb Oven",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://maps.example/place/fixture-place-019",
+      "quote": "No website. No order link. No phone listed.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-a29a96a58a53",
+      "bakery_name": "Grand Avenue Cake Hall",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://grand-avenue-cake-hall.example/cakes",
+      "quote": "Cake orders are taken in person at the counter. We do not take orders online or by phone.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-81270ebdc081",
+      "bakery_name": "Little Anvil Bread Co.",
+      "field": "ordering_platform",
+      "value": "restaurant_ordering_app",
+      "source_url": "https://little-anvil-bread.example/",
+      "quote": "Skip the line: order ahead in our app and pick up at the counter.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-d4321a585a22",
+      "bakery_name": "Porchlight Pastry",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://maps.example/place/fixture-place-024",
+      "quote": "No website. No order link. No phone listed.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    },
+    {
+      "lead_id": "apify-maps-08a0b0bfedca",
+      "bakery_name": "Night Owl Bagels & Bakes",
+      "field": "ordering_platform",
+      "value": "none",
+      "source_url": "https://night-owl-bagels.example/catering",
+      "quote": "Group bagel orders: call us by 2pm the day before.",
+      "reviewed_by": "course fixture (checked in the lesson)",
+      "reviewed_at": "2026-09-26T00:00:00Z"
+    }
+  ]
+}

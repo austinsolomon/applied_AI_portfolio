@@ -1,0 +1,28 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung3_judge_verdict",
+  "companyId": "dos_rios_panaderia",
+  "conversationId": "rung3_judge_verdict:dos_rios_panaderia",
+  "promptSummary": "RUBRIC + the stored rung 2 research report. No tools. Return supportsNoOnlineOrdering, researchReason and sourceUrls.",
+  "teachingNote": "A second call with no tools, over research that is already stored. Change the rubric and you re-run only this call; the expensive research does not move. Here rules 1 and 3 pass and rule 2 cannot be proven either way, so the rubric's false-when-unproven instruction decides the verdict, and the reason names the rule so a person knows what to check.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "{\"supportsNoOnlineOrdering\":false,\"researchReason\":\"The ordering method is unproven: the bakery's own pages never say how orders are taken, and the only outside listing is undated and inactive.\",\"sourceUrls\":[\"https://dos-rios-panaderia.example/\",\"https://dos-rios-panaderia.example/menu\",\"https://chicago-delivery-directory.example/stores/dos-rios-panaderia\"]}",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "json",
+        "answerJson": {
+          "supportsNoOnlineOrdering": false,
+          "researchReason": "The ordering method is unproven: the bakery's own pages never say how orders are taken, and the only outside listing is undated and inactive.",
+          "sourceUrls": [
+            "https://dos-rios-panaderia.example/",
+            "https://dos-rios-panaderia.example/menu",
+            "https://chicago-delivery-directory.example/stores/dos-rios-panaderia"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+[project]
+name = "leadgen-skills-pipeline"
+version = "2.0.0"
+description = "The real lead-generation pipeline from Lead Gen: The Game — one stage per level, as Claude Code skills plus Python."
+requires-python = ">=3.11"
+# NO RUNTIME DEPENDENCIES, ON PURPOSE. The Apify client is stdlib urllib and
+# every provider has a mock twin, so `git clone && pytest` works on a bare
+# interpreter with no network, no keys, and no runtime install step. The optional
+# `mcp` extra adds the local connection exercise; `live` adds the model library.
+dependencies = []
+
+[project.optional-dependencies]
+live = ["anthropic>=0.40"]   # only needed to let Claude write the outreach copy
+dev = ["pytest>=8.0"]
+mcp = ["mcp==2.2.0"]        # optional local tool-connection exercise
+
+# The same test dependency, spelled the way `uv` reads it, so `uv run pytest`
+# works with nothing installed globally.
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+leadgen-source = "pipeline.source_bakeries:main"
+leadgen-enrich = "pipeline.enrich:main"
+leadgen-qualify = "pipeline.qualify:main"
+leadgen-outreach = "pipeline.outreach:main"
+leadgen-run = "pipeline.run_pipeline:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pipeline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

@@ -1,0 +1,45 @@
+{
+  "fixtureVersion": "2.0.0",
+  "companies": [
+    {
+      "companyId": "bluebird_bakery",
+      "companyName": "Bluebird Bakery",
+      "websiteDomain": "bluebird-bakery.example",
+      "cityName": "Chicago",
+      "stateCode": "IL",
+      "industryLabel": "Retail bakery and coffee counter",
+      "expectedOutcomeNote": "Evidence supports no online ordering. One storefront, two named owner-operators, and an ordering page that says to call or walk in.",
+      "pipelineLeadId": "apify-maps-cb488d4932cd"
+    },
+    {
+      "companyId": "oak_street_bakes",
+      "companyName": "Oak Street Bakes",
+      "websiteDomain": "oak-street-bakes.example",
+      "cityName": "Chicago",
+      "stateCode": "IL",
+      "industryLabel": "Neighborhood bakery with two shops",
+      "expectedOutcomeNote": "Evidence contradicts no online ordering. The home page has a working Order Online button that opens a cart and checkout.",
+      "pipelineLeadId": "apify-maps-657921fbe661"
+    },
+    {
+      "companyId": "rye_and_rosemary_bakery",
+      "companyName": "Rye & Rosemary Bakery",
+      "websiteDomain": "rye-and-rosemary.example",
+      "cityName": "Chicago",
+      "stateCode": "IL",
+      "industryLabel": "Sourdough and pastry bakery",
+      "expectedOutcomeNote": "Deliberately ambiguous. The home page's Order Ahead button looks like online ordering. The order page behind it says to phone or email a form, with payment at pickup. An agent that stops at the home page gets it wrong.",
+      "pipelineLeadId": "apify-maps-34ca750a92da"
+    },
+    {
+      "companyId": "dos_rios_panaderia",
+      "companyName": "Dos Rios Panaderia",
+      "websiteDomain": "dos-rios-panaderia.example",
+      "cityName": "Chicago",
+      "stateCode": "IL",
+      "industryLabel": "Family panaderia",
+      "expectedOutcomeNote": "Deliberately ambiguous. The bakery's own pages never say how orders are taken. A search result hints at a delivery listing, and the page behind it is undated and says the store is not accepting orders. Rule 2 is unproven, so the verdict is false.",
+      "pipelineLeadId": "apify-maps-6713fb0e5ad6"
+    }
+  ]
+}

@@ -1,0 +1,330 @@
+{
+  "about": "Recorded answers from the research agent built in Repository 2 (research-agent-four-ways). One answer per bakery that Apollo could not answer ordering_platform for. The verdict keys are Repository 2's shape. platform_kind names the kind of online ordering when the verdict is false and the page shows one; it is null when the agent could not tell. Every bakery and page is made up.",
+  "field": "ordering_platform",
+  "agent": "research_agent(recorded)",
+  "answers": [
+    {
+      "lead_id": "apify-maps-72a168d9e318",
+      "bakery_name": "Sunrise Bakery",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The menu page asks customers to call the shop for cake orders and has no cart or checkout.",
+        "sourceUrls": [
+          "https://sunrise.example/menu"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://sunrise.example/menu",
+        "quote": "Cake orders: please call the shop at least two days ahead. We do not take orders on this website."
+      }
+    },
+    {
+      "lead_id": "apify-maps-f0fe374ccec2",
+      "bakery_name": "Riverbend Bread",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The order page lists a phone number for orders and nothing else.",
+        "sourceUrls": [
+          "https://riverbend-bread.example/order"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://riverbend-bread.example/order",
+        "quote": "To order bread, call 312-555-0102 by noon the day before. That is the only way to order."
+      }
+    },
+    {
+      "lead_id": "apify-maps-657921fbe661",
+      "bakery_name": "Oak Street Bakes",
+      "verdict": {
+        "supportsNoOnlineOrdering": false,
+        "researchReason": "The order page is a working online store with a cart, pickup times and card payment, so the bakery already takes online orders.",
+        "sourceUrls": [
+          "https://oak-street-bakes.example/order"
+        ]
+      },
+      "platform_kind": "pos_online_store",
+      "evidence": {
+        "source_url": "https://oak-street-bakes.example/order",
+        "quote": "Welcome to the Oak Street Bakes online store. This is how we take orders."
+      }
+    },
+    {
+      "lead_id": "apify-maps-9fd995a9cb11",
+      "bakery_name": "Flour & Hearth",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The bakery has no website, and its listing has no order link; orders come in by phone or message.",
+        "sourceUrls": [
+          "https://maps.example/place/fixture-place-004"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://maps.example/place/fixture-place-004",
+        "quote": "No website. No order link. Phone: +1 312-555-0104."
+      }
+    },
+    {
+      "lead_id": "apify-maps-b1376a14177b",
+      "bakery_name": "Morning Crumb",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The bakery has no website, and its listing has no order link; orders are taken by phone or at the counter.",
+        "sourceUrls": [
+          "https://maps.example/place/fixture-place-005"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://maps.example/place/fixture-place-005",
+        "quote": "No website. No order link. Phone: +1 312-555-0105."
+      }
+    },
+    {
+      "lead_id": "apify-maps-cb488d4932cd",
+      "bakery_name": "Bluebird Bakery",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The ordering page says cake orders are taken by phone or in person only, at the bakery's single Lincoln Square shop run by its two named owners.",
+        "sourceUrls": [
+          "https://bluebird-bakery.example/order"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://bluebird-bakery.example/order",
+        "quote": "To order a cake, call us or stop by the counter. We do not take orders online."
+      }
+    },
+    {
+      "lead_id": "apify-maps-aaaa3e5131fb",
+      "bakery_name": "Golden Wheat Bakery Cafe",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The catering page says orders go by email or through any cafe, with no online checkout.",
+        "sourceUrls": [
+          "https://golden-wheat.example/catering"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://golden-wheat.example/catering",
+        "quote": "For catering and cake orders, email partnerships@golden-wheat.example or ask at any of our cafes."
+      }
+    },
+    {
+      "lead_id": "apify-maps-de70049ff199",
+      "bakery_name": "Lantern Lane Pies",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The holiday page says pre-orders use a paper form picked up at the counter.",
+        "sourceUrls": [
+          "https://lantern-lane-pies.example/holidays"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://lantern-lane-pies.example/holidays",
+        "quote": "Holiday pie pre-orders: pick up a paper form at the counter and drop it back with a deposit."
+      }
+    },
+    {
+      "lead_id": "apify-maps-62e64e5b88ed",
+      "bakery_name": "Butter & Thyme Bakery",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The locations page says each of the four shops takes orders by phone.",
+        "sourceUrls": [
+          "https://butter-and-thyme.example/locations"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://butter-and-thyme.example/locations",
+        "quote": "Call the shop nearest you to place an order. Numbers for all four shops are below."
+      }
+    },
+    {
+      "lead_id": "apify-maps-5cfae4b54a99",
+      "bakery_name": "Sweet Thistle Bakeshop",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The custom cakes page says orders start with an email to the shop.",
+        "sourceUrls": [
+          "https://sweet-thistle.example/custom-cakes"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://sweet-thistle.example/custom-cakes",
+        "quote": "Custom cakes start with an email. Tell us the date, the size and the flavor, and we will reply with a quote."
+      }
+    },
+    {
+      "lead_id": "apify-maps-e37b7bfc1eb6",
+      "bakery_name": "Tiny Kiln Bakery",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The bakery has no website, and its listing has no order link; orders are taken at the counter.",
+        "sourceUrls": [
+          "https://maps.example/place/fixture-place-013"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://maps.example/place/fixture-place-013",
+        "quote": "No website. No order link. No phone listed."
+      }
+    },
+    {
+      "lead_id": "apify-maps-ff2499df9fe9",
+      "bakery_name": "Fig & Feather Bakery",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The bakery has no website, and its listing has no order link; orders are taken by phone.",
+        "sourceUrls": [
+          "https://maps.example/place/fixture-place-014"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://maps.example/place/fixture-place-014",
+        "quote": "No website. No order link. Phone: +1 312-555-0114."
+      }
+    },
+    {
+      "lead_id": "apify-maps-ae675c78b0a0",
+      "bakery_name": "Tin Roof Bakery",
+      "verdict": {
+        "supportsNoOnlineOrdering": false,
+        "researchReason": "The order page is an online store with pickup times and card payment, so the bakery already takes online orders.",
+        "sourceUrls": [
+          "https://tin-roof-bakery.example/order"
+        ]
+      },
+      "platform_kind": "pos_online_store",
+      "evidence": {
+        "source_url": "https://tin-roof-bakery.example/order",
+        "quote": "Order online for pickup. Choose a time, pay by card, and we will have it ready."
+      }
+    },
+    {
+      "lead_id": "apify-maps-34ca750a92da",
+      "bakery_name": "Rye & Rosemary Bakery",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The Order Ahead page only gives a phone number and an emailed order form with payment at pickup, so the single-shop bakery does not take online orders.",
+        "sourceUrls": [
+          "https://rye-and-rosemary.example/order",
+          "https://rye-and-rosemary.example/about"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://rye-and-rosemary.example/order",
+        "quote": "Order ahead by calling the shop or emailing our order form. We confirm by phone. Pay when you pick up."
+      }
+    },
+    {
+      "lead_id": "apify-maps-423d3ade609c",
+      "bakery_name": "Honeycomb Oven",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The bakery has no website, and its listing has no order link; orders come in by message.",
+        "sourceUrls": [
+          "https://maps.example/place/fixture-place-019"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://maps.example/place/fixture-place-019",
+        "quote": "No website. No order link. No phone listed."
+      }
+    },
+    {
+      "lead_id": "apify-maps-a29a96a58a53",
+      "bakery_name": "Grand Avenue Cake Hall",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The cakes page says to order in person at the counter.",
+        "sourceUrls": [
+          "https://grand-avenue-cake-hall.example/cakes"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://grand-avenue-cake-hall.example/cakes",
+        "quote": "Cake orders are taken in person at the counter. We do not take orders online or by phone."
+      }
+    },
+    {
+      "lead_id": "apify-maps-81270ebdc081",
+      "bakery_name": "Little Anvil Bread Co.",
+      "verdict": {
+        "supportsNoOnlineOrdering": false,
+        "researchReason": "The home page links to an ordering app for pickup, so the bakery already takes online orders.",
+        "sourceUrls": [
+          "https://little-anvil-bread.example/"
+        ]
+      },
+      "platform_kind": "restaurant_ordering_app",
+      "evidence": {
+        "source_url": "https://little-anvil-bread.example/",
+        "quote": "Skip the line: order ahead in our app and pick up at the counter."
+      }
+    },
+    {
+      "lead_id": "apify-maps-6713fb0e5ad6",
+      "bakery_name": "Dos Rios Panaderia",
+      "verdict": {
+        "supportsNoOnlineOrdering": false,
+        "researchReason": "The ordering method is unproven: the bakery's own pages never say how orders are taken, and the only outside listing is undated and inactive.",
+        "sourceUrls": [
+          "https://dos-rios-panaderia.example/",
+          "https://dos-rios-panaderia.example/menu",
+          "https://chicago-delivery-directory.example/stores/dos-rios-panaderia"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://chicago-delivery-directory.example/stores/dos-rios-panaderia",
+        "quote": "This store is not currently accepting orders."
+      }
+    },
+    {
+      "lead_id": "apify-maps-d4321a585a22",
+      "bakery_name": "Porchlight Pastry",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The bakery has no website, and its listing has no order link; it sells at a weekend market and takes orders by message.",
+        "sourceUrls": [
+          "https://maps.example/place/fixture-place-024"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://maps.example/place/fixture-place-024",
+        "quote": "No website. No order link. No phone listed."
+      }
+    },
+    {
+      "lead_id": "apify-maps-08a0b0bfedca",
+      "bakery_name": "Night Owl Bagels & Bakes",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The catering page says group bagel orders come in by phone.",
+        "sourceUrls": [
+          "https://night-owl-bagels.example/catering"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://night-owl-bagels.example/catering",
+        "quote": "Group bagel orders: call us by 2pm the day before."
+      }
+    }
+  ]
+}

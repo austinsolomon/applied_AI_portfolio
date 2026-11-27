@@ -1,0 +1,20 @@
+{
+  "name": "course-research-agent",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 6: one research agent inside Enrich, built with Claude Agent SDK.",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "workspaces": [
+    "claude_agent_sdk",
+    "shared"
+  ],
+  "scripts": {
+    "demo": "node --experimental-strip-types scripts/demo.ts",
+    "research:live": "node --experimental-strip-types scripts/live.ts",
+    "test": "npm --prefix claude_agent_sdk test && npm --prefix shared test",
+    "validate": "npm --prefix shared run validate"
+  }
+}

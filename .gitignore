@@ -20,8 +20,8 @@ out/
 !**/tests/fixtures/**/*.csv
 !**/db/seed/**/*.csv
 # public US Census places snapshot (not lead data)
-!leadgen_pipeline_agents/src/leadgen/data/
-!leadgen_pipeline_agents/src/leadgen/data/us_places_2020.csv
+!past_builds/leadgen_pipeline_agents/src/leadgen/data/
+!past_builds/leadgen_pipeline_agents/src/leadgen/data/us_places_2020.csv
 
 # os / editors
 .DS_Store

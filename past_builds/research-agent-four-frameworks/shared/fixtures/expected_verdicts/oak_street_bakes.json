@@ -1,0 +1,17 @@
+{
+  "fixtureVersion": "2.0.0",
+  "companyId": "oak_street_bakes",
+  "qualificationRubricId": "bakery_ordering_evidence_v2",
+  "expectedVerdict": {
+    "supportsNoOnlineOrdering": false,
+    "researchReason": "The order page is a working online store with a cart, pickup times and card payment, so the bakery already takes online orders.",
+    "sourceUrls": [
+      "https://oak-street-bakes.example/order"
+    ]
+  },
+  "expectedResearchFactSubstrings": [
+    "add to cart",
+    "pay by card",
+    "Dale Pruitt"
+  ]
+}

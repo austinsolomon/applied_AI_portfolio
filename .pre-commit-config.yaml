@@ -6,6 +6,8 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
+        # Imported unchanged from its original repository (no final newline in one test file).
+        exclude: ^past_builds/semi-automated-leadgen-skills/
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
@@ -21,14 +23,14 @@ repos:
   - repo: local
     hooks:
       - id: ruff-check-p1
-        name: ruff check (leadgen_pipeline_agents)
-        entry: uv run --project leadgen_pipeline_agents ruff check --fix
+        name: ruff check (past_builds/leadgen_pipeline_agents)
+        entry: uv run --project past_builds/leadgen_pipeline_agents ruff check --fix
         language: system
         types: [python]
-        files: ^leadgen_pipeline_agents/
+        files: ^past_builds/leadgen_pipeline_agents/
       - id: ruff-format-p1
-        name: ruff format (leadgen_pipeline_agents)
-        entry: uv run --project leadgen_pipeline_agents ruff format
+        name: ruff format (past_builds/leadgen_pipeline_agents)
+        entry: uv run --project past_builds/leadgen_pipeline_agents ruff format
         language: system
         types: [python]
-        files: ^leadgen_pipeline_agents/
+        files: ^past_builds/leadgen_pipeline_agents/

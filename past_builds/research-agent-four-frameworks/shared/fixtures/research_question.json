@@ -1,0 +1,13 @@
+{
+  "fixtureVersion": "2.0.0",
+  "researchQuestionId": "takes_online_orders",
+  "researchQuestionShort": "Does this bakery already take online orders?",
+  "researchQuestionTemplate": "Bakery: {{companyName}}, {{cityName}} {{stateCode}} ({{websiteDomain}}). Does this bakery already take online orders? Find: how customers place an order today, how many locations it runs, and who owns or manages it. Cite the page you took each fact from.",
+  "templatePlaceholderNames": [
+    "companyName",
+    "cityName",
+    "stateCode",
+    "websiteDomain"
+  ],
+  "templatePlaceholderNote": "Placeholders are written as {{name}} and are replaced with the matching field from a companies.json record. This is the same {{column}} substitution convention the artifact pages use for a research table cell."
+}

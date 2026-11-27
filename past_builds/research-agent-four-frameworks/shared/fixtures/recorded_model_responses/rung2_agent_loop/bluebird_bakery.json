@@ -1,0 +1,76 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung2_agent_loop",
+  "companyId": "bluebird_bakery",
+  "conversationId": "rung2_agent_loop:bluebird_bakery",
+  "promptSummary": "Bakery: Bluebird Bakery, Chicago IL (bluebird-bakery.example). Does this bakery already take online orders? Find: how customers place an order today, how many locations it runs, and who owns or manages it. Cite the page you took each fact from.",
+  "teachingNote": "Four turns: search, read three pages at once, one narrow follow-up search, then stop and write. Nobody wrote that sequence down in advance - the model chose each step from what came back. That choosing is the whole difference between an agent and a script.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "I do not know which pages exist yet, so I will search for the bakery first and pick the pages worth reading from the results.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "bluebird_bakery_rung2_search_bakery",
+          "toolName": "searchTheWeb",
+          "toolArguments": {
+            "searchQueryText": "Bluebird Bakery Chicago IL online orders locations owner"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 1,
+      "assistantText": "The search returned three of the bakery's own pages: home, order and about. I will read all three, in one batch, rather than one at a time.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "bluebird_bakery_rung2_fetch_0",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://bluebird-bakery.example/"
+          }
+        },
+        {
+          "toolCallId": "bluebird_bakery_rung2_fetch_1",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://bluebird-bakery.example/order"
+          }
+        },
+        {
+          "toolCallId": "bluebird_bakery_rung2_fetch_2",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://bluebird-bakery.example/about"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 2,
+      "assistantText": "Locations and owners are settled. The order page says the bakery does not take orders online, but a bakery can be listed on an outside ordering service without saying so on its own site. I will run one more search aimed only at online ordering before I write the report.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "bluebird_bakery_rung2_search_ordering",
+          "toolName": "searchTheWeb",
+          "toolArguments": {
+            "searchQueryText": "Bluebird Bakery Chicago order online"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 3,
+      "assistantText": "RESEARCH REPORT — Bluebird Bakery, Chicago IL (bluebird-bakery.example)\n\nHOW ORDERS ARE TAKEN: By phone or in person only. The order page says \"To order a cake, call us or stop by the counter. We do not take orders online.\" It adds \"There is no order form on this site, no shopping cart, no app, and we are not listed on any delivery service,\" and that orders are written by hand in a book next to the register. Customers pay at the register at pickup; the bakery takes no deposits and no payment over the phone. The home page has no order button and says an order starts \"with a conversation with one of us, not with a form.\" A narrow search for online ordering returned only the bakery's own order page and home page, with no outside ordering platform.\nSource: https://bluebird-bakery.example/order and https://bluebird-bakery.example/\n\nLOCATIONS: One. The about page says \"We have had one location since 2016, and we intend to keep it that way,\" and that the owners twice declined to open a second shop. The home page says \"There is one Bluebird,\" and the order page says pickup is at \"our one shop in Lincoln Square.\" The only address on any page is 15 Example Street, Chicago, IL 60625.\nSource: https://bluebird-bakery.example/about, https://bluebird-bakery.example/ and https://bluebird-bakery.example/order\n\nOWNER OR MANAGER: Hannah Kowalski and Pete Kowalski, co-owners. The about page says \"Bluebird Bakery is owned and run by two people, Hannah Kowalski and Pete Kowalski.\" Hannah Kowalski is the baker; Pete Kowalski runs the counter and answers the phone. The order page names both of them as well.\nSource: https://bluebird-bakery.example/about and https://bluebird-bakery.example/order\n\nCONFIDENCE: High. All three facts are stated directly on the bakery's own pages, the pages agree with each other, and the order page answers the question in one sentence.",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "text",
+        "answerText": "RESEARCH REPORT — Bluebird Bakery, Chicago IL (bluebird-bakery.example)\n\nHOW ORDERS ARE TAKEN: By phone or in person only. The order page says \"To order a cake, call us or stop by the counter. We do not take orders online.\" It adds \"There is no order form on this site, no shopping cart, no app, and we are not listed on any delivery service,\" and that orders are written by hand in a book next to the register. Customers pay at the register at pickup; the bakery takes no deposits and no payment over the phone. The home page has no order button and says an order starts \"with a conversation with one of us, not with a form.\" A narrow search for online ordering returned only the bakery's own order page and home page, with no outside ordering platform.\nSource: https://bluebird-bakery.example/order and https://bluebird-bakery.example/\n\nLOCATIONS: One. The about page says \"We have had one location since 2016, and we intend to keep it that way,\" and that the owners twice declined to open a second shop. The home page says \"There is one Bluebird,\" and the order page says pickup is at \"our one shop in Lincoln Square.\" The only address on any page is 15 Example Street, Chicago, IL 60625.\nSource: https://bluebird-bakery.example/about, https://bluebird-bakery.example/ and https://bluebird-bakery.example/order\n\nOWNER OR MANAGER: Hannah Kowalski and Pete Kowalski, co-owners. The about page says \"Bluebird Bakery is owned and run by two people, Hannah Kowalski and Pete Kowalski.\" Hannah Kowalski is the baker; Pete Kowalski runs the counter and answers the phone. The order page names both of them as well.\nSource: https://bluebird-bakery.example/about and https://bluebird-bakery.example/order\n\nCONFIDENCE: High. All three facts are stated directly on the bakery's own pages, the pages agree with each other, and the order page answers the question in one sentence."
+      }
+    }
+  ]
+}

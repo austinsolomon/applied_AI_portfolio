@@ -1,0 +1,17 @@
+{
+  "fixtureVersion": "2.0.0",
+  "companyId": "bluebird_bakery",
+  "qualificationRubricId": "bakery_ordering_evidence_v2",
+  "expectedVerdict": {
+    "supportsNoOnlineOrdering": true,
+    "researchReason": "The ordering page says cake orders are taken by phone or in person only, at the bakery's single Lincoln Square shop run by its two named owners.",
+    "sourceUrls": [
+      "https://bluebird-bakery.example/order"
+    ]
+  },
+  "expectedResearchFactSubstrings": [
+    "call us or stop by",
+    "Hannah Kowalski",
+    "one location"
+  ]
+}

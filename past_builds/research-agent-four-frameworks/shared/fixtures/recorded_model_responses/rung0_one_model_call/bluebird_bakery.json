@@ -1,0 +1,20 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung0_one_model_call",
+  "companyId": "bluebird_bakery",
+  "conversationId": "rung0_one_model_call:bluebird_bakery",
+  "promptSummary": "Bakery: Bluebird Bakery, Chicago IL (bluebird-bakery.example). Does this bakery already take online orders? Find: how customers place an order today, how many locations it runs, and who owns or manages it. Cite the page you took each fact from.",
+  "teachingNote": "A model with no tools can only answer from what it already absorbed during training. For a small neighborhood bakery that is nothing, so the honest recorded answer is a refusal with no sources. This is the rung that shows why the other rungs exist.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "I do not have reliable information about a bakery called Bluebird Bakery in Chicago, Illinois. Bluebird is a common name for a bakery, several unrelated shops may share it, and I cannot cite a source for how this one takes orders, how many locations it runs or who owns it. If I answered anyway I would be guessing. This question needs a tool that can read the bakery's own pages.",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "text",
+        "answerText": "I do not have reliable information about a bakery called Bluebird Bakery in Chicago, Illinois. Bluebird is a common name for a bakery, several unrelated shops may share it, and I cannot cite a source for how this one takes orders, how many locations it runs or who owns it. If I answered anyway I would be guessing. This question needs a tool that can read the bakery's own pages."
+      }
+    }
+  ]
+}

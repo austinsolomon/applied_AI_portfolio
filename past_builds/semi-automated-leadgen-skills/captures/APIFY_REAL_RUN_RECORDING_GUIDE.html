@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Apify Real Run — Recording Guide</title>
+  <style>
+    :root{color-scheme:dark;--bg:#09110f;--panel:#101a17;--line:#2a3d36;
+      --text:#e3ece6;--muted:#99aaa2;--gold:#f0bf58;--code:#07100e}
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{margin:0;background:radial-gradient(circle at 50% 0,#16231f 0,var(--bg) 42%);
+      color:var(--text);font:17px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    header{position:sticky;top:0;z-index:2;background:rgba(9,17,15,.94);backdrop-filter:blur(12px);
+      border-bottom:1px solid var(--line);padding:18px 24px}
+    header div{max-width:980px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:20px}
+    h1{font-size:18px;letter-spacing:.05em;margin:0;color:var(--gold)}
+    header span{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}
+    main{max-width:980px;margin:34px auto 80px;padding:0 24px}
+    #guide{margin:0;padding:34px 38px;border:1px solid var(--line);border-radius:12px;
+      background:rgba(16,26,23,.94);box-shadow:0 24px 70px rgba(0,0,0,.3);
+      color:var(--text);font:15px/1.72 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+      white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2}
+    .loading{color:var(--muted)}
+    .error{color:#ff9c89}
+    footer{max-width:980px;margin:0 auto 50px;padding:0 24px;color:var(--muted);font-size:12px}
+    @media(max-width:640px){body{font-size:15px}header{position:static;padding:15px}header div{display:block}
+      header span{display:block;margin-top:5px}main{margin-top:18px;padding:0 10px}#guide{padding:20px 16px;font-size:12px}}
+    @media print{header{position:static}.loading{display:none}body{background:#fff;color:#111}#guide{background:#fff;color:#111;border:0;box-shadow:none}}
+  </style>
+</head>
+<body>
+  <header><div><h1>APIFY REAL RUN · RECORDING GUIDE</h1><span>REPO 1 · PHASE 1 · SOURCE</span></div></header>
+  <main><pre id="guide" class="loading">Loading complete recording guide…</pre></main>
+  <footer>The full API token must never be shown or submitted.</footer>
+  <script>
+    fetch("./APIFY_REAL_RUN_RECORDING_GUIDE.md", {cache:"no-store"})
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+      })
+      .then((markdown) => {
+        const guide = document.getElementById("guide");
+        guide.className = "";
+        guide.textContent = markdown;
+      })
+      .catch((error) => {
+        const guide = document.getElementById("guide");
+        guide.className = "error";
+        guide.textContent = `Could not load the guide: ${error}\n\nOpen APIFY_REAL_RUN_RECORDING_GUIDE.md from the same folder.`;
+      });
+  </script>
+</body>
+</html>

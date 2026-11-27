@@ -1,0 +1,71 @@
+{
+  "answers": [
+    {
+      "lead_id": "apify-maps-657921fbe661",
+      "bakery_name": "Oak Street Bakes",
+      "verdict": {
+        "supportsNoOnlineOrdering": false,
+        "researchReason": "The order page is a working online store with a cart, pickup times and card payment, so the bakery already takes online orders.",
+        "sourceUrls": [
+          "https://oak-street-bakes.example/order"
+        ]
+      },
+      "platform_kind": "pos_online_store",
+      "evidence": {
+        "source_url": "https://oak-street-bakes.example/order",
+        "quote": "Welcome to the Oak Street Bakes online store. This is how we take orders."
+      }
+    },
+    {
+      "lead_id": "apify-maps-cb488d4932cd",
+      "bakery_name": "Bluebird Bakery",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The ordering page says cake orders are taken by phone or in person only, at the bakery's single Lincoln Square shop run by its two named owners.",
+        "sourceUrls": [
+          "https://bluebird-bakery.example/order"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://bluebird-bakery.example/order",
+        "quote": "To order a cake, call us or stop by the counter. We do not take orders online."
+      }
+    },
+    {
+      "lead_id": "apify-maps-34ca750a92da",
+      "bakery_name": "Rye & Rosemary Bakery",
+      "verdict": {
+        "supportsNoOnlineOrdering": true,
+        "researchReason": "The Order Ahead page only gives a phone number and an emailed order form with payment at pickup, so the single-shop bakery does not take online orders.",
+        "sourceUrls": [
+          "https://rye-and-rosemary.example/order",
+          "https://rye-and-rosemary.example/about"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://rye-and-rosemary.example/order",
+        "quote": "Order ahead by calling the shop or emailing our order form. We confirm by phone. Pay when you pick up."
+      }
+    },
+    {
+      "lead_id": "apify-maps-6713fb0e5ad6",
+      "bakery_name": "Dos Rios Panaderia",
+      "verdict": {
+        "supportsNoOnlineOrdering": false,
+        "researchReason": "The ordering method is unproven: the bakery's own pages never say how orders are taken, and the only outside listing is undated and inactive.",
+        "sourceUrls": [
+          "https://dos-rios-panaderia.example/",
+          "https://dos-rios-panaderia.example/menu",
+          "https://chicago-delivery-directory.example/stores/dos-rios-panaderia"
+        ]
+      },
+      "platform_kind": null,
+      "evidence": {
+        "source_url": "https://chicago-delivery-directory.example/stores/dos-rios-panaderia",
+        "quote": "This store is not currently accepting orders."
+      }
+    }
+  ]
+}
