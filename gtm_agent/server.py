@@ -15,7 +15,7 @@ Needs: ANTHROPIC_API_KEY in the environment.
 Slack: POST /slack/events (slack_events.py) runs the same agent for Slack
 messages and replies in the thread. On Cloud Run the web UI routes are
 switched off with DISABLE_WEB_UI=1, because the URL is public; only the
-Slack route (which checks Slack's signature) and /healthz stay on.
+Slack route (which checks Slack's signature) and /health stay on.
 """
 
 import asyncio
@@ -61,8 +61,8 @@ app = FastAPI()
 app.include_router(slack_router)
 
 
-@app.get("/healthz")
-async def healthz():
+@app.get("/health")
+async def health():
     """Liveness check for Cloud Run and for you: returns ok if the server is up."""
     return {"ok": True}
 

@@ -78,8 +78,11 @@ The first deploy builds the image with Cloud Build (a few minutes). It prints th
 Check it:
 
 ```bash
-curl https://<service-url>/healthz      # {"ok":true}
+curl https://<service-url>/health      # {"ok":true}
 ```
+
+Cloud Run reserves `/healthz` (and some other paths ending in `z`) and answers them itself with
+a Google 404 page, which is why the check is `/health`.
 
 ## 6. Point Slack at the service (once)
 
@@ -99,7 +102,7 @@ It replies "Working on it…" in the thread, then the answer.
 
 | Symptom | Check |
 |---|---|
-| Slack says the URL didn't verify | `curl <url>/healthz`; the signing secret in Secret Manager matches the app's; logs: `gcloud run services logs read gtm-agent --region us-central1` |
+| Slack says the URL didn't verify | `curl <url>/health`; the signing secret in Secret Manager matches the app's; logs: `gcloud run services logs read gtm-agent --region us-central1` |
 | No reply in Slack | Event subscriptions saved with both events; the app is in the channel; logs show `Slack post failed: …` (e.g. `not_in_channel`, `invalid_auth`) |
 | "not on this agent's allow list" | Your member ID is in `ALLOWED_SLACK_USER_IDS` |
 | Build fails with a permissions error | Rerun `setup` (it grants Cloud Build's service account the Cloud Run builder role) |

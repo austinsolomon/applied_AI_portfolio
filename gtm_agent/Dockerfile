@@ -21,7 +21,7 @@ USER agent
 
 # HOST: listen on all interfaces so Cloud Run can reach the server.
 # SANDBOX=temp-copy: the agent works on a throwaway copy of /app and never changes the image.
-# DISABLE_WEB_UI=1: the public URL serves only /slack/events and /healthz.
+# DISABLE_WEB_UI=1: the public URL serves only /slack/events and /health.
 # PORT is set by Cloud Run (8080 by default).
 ENV HOST=0.0.0.0 \
     PORT=8080 \
