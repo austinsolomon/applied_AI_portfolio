@@ -129,7 +129,7 @@ async def run_agent(prompt: str) -> str:
 
 async def handle_message(prompt: str, channel: str, thread_ts: str) -> None:
     """Background job: acknowledge in the thread, run the agent, post the answer."""
-    await post_to_slack(channel, thread_ts, "Working on it…")
+    await post_to_slack(channel, thread_ts, "I'm on it...running")
     try:
         answer = await run_agent(prompt)
     except Exception as error:  # report any failure back to the person who asked
