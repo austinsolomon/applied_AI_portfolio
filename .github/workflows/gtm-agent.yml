@@ -1,0 +1,96 @@
+name: GTM agent
+
+# Pull requests that touch the GTM agent: run its tests.
+# Merges to main that touch it: run the tests, then deploy to Cloud Run.
+#
+# The deploy signs in to Google Cloud with Workload Identity Federation: GitHub issues a
+# short-lived login token for this run, and Google exchanges it for the gtm-agent-deployer
+# service account. Google only accepts tokens from this repository's main branch, and no Google
+# key is stored in GitHub. The app's own keys (Anthropic, Slack) stay in Secret Manager.
+#
+# One-time setup: gtm_agent/deploy/github_deploy_setup.sh, then the repository variables it prints.
+on:
+  pull_request:
+    paths:
+      - "gtm_agent/**"
+      - ".github/workflows/gtm-agent.yml"
+  push:
+    branches: [main]
+    paths:
+      - "gtm_agent/**"
+      - ".github/workflows/gtm-agent.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # Actions are pinned to exact commits (the comment names the release), so a changed tag
+      # upstream can't change what runs here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.1"
+
+      - name: Install dependencies
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv -r gtm_agent/requirements-dev.txt
+
+      - name: Slack route tests
+        run: .venv/bin/python -m pytest -q gtm_agent/tests
+
+      - name: Prompt tests
+        working-directory: gtm_agent
+        run: ../.venv/bin/python test_system.py
+
+  deploy:
+    name: deploy to Cloud Run
+    needs: test
+    # Only merges to main (or a manual run) deploy; pull requests stop after the tests.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # The login token is requested only by this job.
+    permissions:
+      contents: read
+      id-token: write
+    # One deploy at a time; a newer merge waits instead of cancelling a deploy halfway.
+    concurrency:
+      group: gtm-agent-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      # The same script you can run by hand, so local and automatic deploys never drift apart.
+      - name: Build and deploy
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ALLOWED_SLACK_USER_IDS: ${{ vars.ALLOWED_SLACK_USER_IDS }}
+        run: gtm_agent/deploy/cloud_run.sh deploy
+
+      - name: Health check
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          url=$(gcloud run services describe gtm-agent --region us-central1 --project "$PROJECT_ID" --format='value(status.url)')
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 "$url/health"
+          echo
+          echo "Deployed: $url"
