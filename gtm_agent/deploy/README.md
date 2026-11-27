@@ -115,3 +115,38 @@ It replies "Working on it…" in the thread, then the answer.
   blocked, because nobody in Slack can approve it.
 - The agent works on a throwaway copy of the image's code (`SANDBOX=temp-copy`).
 - Secrets live in Secret Manager and reach the container as environment variables.
+
+## Automatic deploys from GitHub (after the first manual deploy)
+
+Once this is set up, nobody deploys from a laptop. Merging a pull request that changes
+`gtm_agent/` runs the tests and deploys to Cloud Run; test in Slack a few minutes later.
+
+```
+PR opened  → GitHub Actions runs the tests (.github/workflows/gtm-agent.yml)
+PR merged  → tests again → sign in to Google (Workload Identity Federation) → cloud_run.sh deploy → health check
+```
+
+### One-time setup
+
+1. From the repository root (with `gcloud auth login` done):
+
+   ```bash
+   PROJECT_ID=applied-ai-portfolio gtm_agent/deploy/github_deploy_setup.sh
+   ```
+
+   It creates the `gtm-agent-deployer` service account and a Workload Identity pool that trusts
+   only this repository's `main` branch, then prints three values.
+
+2. GitHub → this repository → **Settings** → **Secrets and variables** → **Actions** →
+   **Variables** tab → **New repository variable**, once for each:
+   `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_DEPLOYER_SA`
+   (and optionally `ALLOWED_SLACK_USER_IDS`). These are not secrets.
+
+3. Add colleagues as collaborators on the repository. They don't need Google Cloud access.
+
+### Day to day
+
+- Open a pull request → the **GTM agent / tests** check runs.
+- Merge it → the **GTM agent / deploy to Cloud Run** job runs (GitHub → **Actions** tab to watch).
+- When it shows a green check, test in Slack.
+- To redeploy without a code change: **Actions** → **GTM agent** → **Run workflow**.
