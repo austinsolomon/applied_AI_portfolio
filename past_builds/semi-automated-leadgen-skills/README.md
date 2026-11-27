@@ -4,7 +4,7 @@ A four-stage lead-generation pipeline (source → enrich → qualify → outreac
 plus Claude Code skills, with a human checking the uncertain cases. It runs end to end offline with
 mocked providers, and each stage can be switched to a real API one at a time. Built as Repository 1
 of a course I wrote (Automation Academy, paired with the browser game *Lead Gen: The Game*); the
-[research agent](../research-agent-four-frameworks/) is Repository 2 and fills one enrichment field.
+[research agent](../research-agent-three-frameworks/) is Repository 2 and fills one enrichment field.
 
 ## What it does
 
