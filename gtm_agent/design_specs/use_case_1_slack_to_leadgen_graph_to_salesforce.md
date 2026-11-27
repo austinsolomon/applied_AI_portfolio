@@ -292,8 +292,29 @@ gtm_agent_graphs/
 ## 10. Build plan: 10 items, granular steps
 
 Each item lands as one or more small PRs. Steps marked **(you)** need your accounts; everything
-else I can build and test here. Items 2 to 8 run entirely locally with fakes; nothing spends
-money until item 9.
+else I can build and test here.
+
+### Build order: local first, then production
+
+Everything runs on your laptop until phase 9. Account steps from item 1 move to the phase that
+first needs them.
+
+| Phase | Build | Pulls in | Runs |
+|---|---|---|---|
+| 1 | **Item 7: adapt the harness to GTM** | Item 2.1–2.3, 2.6, 2.8 (layout, settings, tests); an in-memory store for requests, sessions, and runs; `start_leadgen` returns a stub run | Locally, CLI |
+| 2 | **Item 4: Slack ingestion** | Item 1.4 (Slack app, you); item 5.1–5.2 (post a threaded reply) so the brain's answer shows up in your Slack; a local tunnel (ngrok or cloudflared) gives your laptop a public URL for the Events API | Locally, your real Slack |
+| 3 | **Item 6: dispatch placeholder** | Profile saved in the in-memory store | Locally, your real Slack |
+| 4 | **Item 3: Postgres foundation** | Item 2.4–2.5 (local Postgres via compose, `.env.example`); switch the in-memory store to Postgres; LangGraph checkpoint tables | Locally |
+| 5 | **Item 5 (rest): Slack interactions** | Block Kit cards, `/slack/interactions`, Approve / Cancel / Queue outreach through the tunnel | Locally, your real Slack |
+| 6 | **Item 8: leadgen graph with fakes** | End to end with fakes: Slack → brain → graph → approval click → fake run → summary in Slack | Locally, your real Slack |
+| 7 | **Item 9: live providers and Salesforce** | Items 1.5–1.6 (Salesforce org and API keys, you); live smoke test with 5 leads and a $2 budget | Locally, real providers |
+| 8 | **Item 2 (rest): CI** | Item 2.7 CI workflow; pre-commit entries | GitHub Actions |
+| 9 | **Item 1 (rest): GCP setup** | Items 1.1–1.3, 1.7 (project, budget alert, APIs, setup checklist) | Your GCP account |
+| 10 | **Item 10: deploy and run end to end** | Cloud SQL, secrets, Cloud Tasks, Cloud Run, deploys; Slack URLs switch from the tunnel to Cloud Run | GCP |
+
+The storage interface introduced in phase 1 (`app/store.py`) has an in-memory version and, from
+phase 4, a Postgres version. The task queue interface works the same way: it runs tasks
+in-process locally and uses Cloud Tasks from phase 10.
 
 ### Item 1. Accounts and cloud setup (you, with steps from me)
 - [ ] 1.1 Create the GCP project: display name `applied_ai_portfolio`, ID `applied-ai-portfolio` (suffix if taken), on your billing account **(you)**
