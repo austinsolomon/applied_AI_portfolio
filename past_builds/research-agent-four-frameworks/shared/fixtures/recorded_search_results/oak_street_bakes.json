@@ -1,0 +1,46 @@
+{
+  "fixtureVersion": "2.0.0",
+  "companyId": "oak_street_bakes",
+  "recordedSearches": [
+    {
+      "searchQueryText": "Oak Street Bakes Chicago IL online orders locations owner",
+      "searchResults": [
+        {
+          "resultUrl": "https://oak-street-bakes.example/",
+          "resultTitle": "Oak Street Bakes — bread, pastry and cakes in Hyde Park and South Chicago",
+          "resultSnippet": "Order Online — order and pay ahead, then skip the line at either shop. Oak Street Bakes is a neighborhood bakery with two shops in Chicago.",
+          "pageTextFixtureId": "oak_street_bakes/home"
+        },
+        {
+          "resultUrl": "https://oak-street-bakes.example/order",
+          "resultTitle": "Order Online — Oak Street Bakes",
+          "resultSnippet": "Welcome to the Oak Street Bakes online store. Choose what you want, add to cart, pick a shop and a pickup time, and pay by card.",
+          "pageTextFixtureId": "oak_street_bakes/order"
+        },
+        {
+          "resultUrl": "https://oak-street-bakes.example/about",
+          "resultTitle": "About Oak Street Bakes",
+          "resultSnippet": "Oak Street Bakes is owned by Dale Pruitt, who opened the first shop in Hyde Park in 2011. We have two locations, and two is the plan.",
+          "pageTextFixtureId": "oak_street_bakes/about"
+        }
+      ]
+    },
+    {
+      "searchQueryText": "Oak Street Bakes Chicago order online",
+      "searchResults": [
+        {
+          "resultUrl": "https://oak-street-bakes.example/order",
+          "resultTitle": "Order Online — Oak Street Bakes",
+          "resultSnippet": "Your order is confirmed the moment you pay. Pickup times come in 15-minute windows. We take all major credit and debit cards. Check out securely.",
+          "pageTextFixtureId": "oak_street_bakes/order"
+        },
+        {
+          "resultUrl": "https://oak-street-bakes.example/",
+          "resultTitle": "Oak Street Bakes — bread, pastry and cakes in Hyde Park and South Chicago",
+          "resultSnippet": "Most of our regulars no longer wait in the Saturday line. They open the online store, fill a cart, choose a shop and a pickup time, and pay by card. Start an order.",
+          "pageTextFixtureId": "oak_street_bakes/home"
+        }
+      ]
+    }
+  ]
+}

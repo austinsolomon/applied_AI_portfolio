@@ -1,0 +1,84 @@
+{
+  "fixtureVersion": "2.0.0",
+  "indexNote": "Maps a page URL to the Markdown file in this folder that holds its recorded text. The replay page-fetch provider looks a URL up here; a URL that is not listed is a miss, and the provider throws a named error rather than inventing text. The rows match section 0 of shared/FIXTURE_CONTRACT.md exactly.",
+  "recordedPages": [
+    {
+      "pageUrl": "https://bluebird-bakery.example/",
+      "pageTextFixtureId": "bluebird_bakery/home",
+      "pageTextFilePath": "bluebird_bakery/home.md",
+      "companyId": "bluebird_bakery"
+    },
+    {
+      "pageUrl": "https://bluebird-bakery.example/order",
+      "pageTextFixtureId": "bluebird_bakery/order",
+      "pageTextFilePath": "bluebird_bakery/order.md",
+      "companyId": "bluebird_bakery"
+    },
+    {
+      "pageUrl": "https://bluebird-bakery.example/about",
+      "pageTextFixtureId": "bluebird_bakery/about",
+      "pageTextFilePath": "bluebird_bakery/about.md",
+      "companyId": "bluebird_bakery"
+    },
+    {
+      "pageUrl": "https://oak-street-bakes.example/",
+      "pageTextFixtureId": "oak_street_bakes/home",
+      "pageTextFilePath": "oak_street_bakes/home.md",
+      "companyId": "oak_street_bakes"
+    },
+    {
+      "pageUrl": "https://oak-street-bakes.example/order",
+      "pageTextFixtureId": "oak_street_bakes/order",
+      "pageTextFilePath": "oak_street_bakes/order.md",
+      "companyId": "oak_street_bakes"
+    },
+    {
+      "pageUrl": "https://oak-street-bakes.example/about",
+      "pageTextFixtureId": "oak_street_bakes/about",
+      "pageTextFilePath": "oak_street_bakes/about.md",
+      "companyId": "oak_street_bakes"
+    },
+    {
+      "pageUrl": "https://rye-and-rosemary.example/",
+      "pageTextFixtureId": "rye_and_rosemary_bakery/home",
+      "pageTextFilePath": "rye_and_rosemary_bakery/home.md",
+      "companyId": "rye_and_rosemary_bakery"
+    },
+    {
+      "pageUrl": "https://rye-and-rosemary.example/order",
+      "pageTextFixtureId": "rye_and_rosemary_bakery/order",
+      "pageTextFilePath": "rye_and_rosemary_bakery/order.md",
+      "companyId": "rye_and_rosemary_bakery"
+    },
+    {
+      "pageUrl": "https://rye-and-rosemary.example/about",
+      "pageTextFixtureId": "rye_and_rosemary_bakery/about",
+      "pageTextFilePath": "rye_and_rosemary_bakery/about.md",
+      "companyId": "rye_and_rosemary_bakery"
+    },
+    {
+      "pageUrl": "https://dos-rios-panaderia.example/",
+      "pageTextFixtureId": "dos_rios_panaderia/home",
+      "pageTextFilePath": "dos_rios_panaderia/home.md",
+      "companyId": "dos_rios_panaderia"
+    },
+    {
+      "pageUrl": "https://dos-rios-panaderia.example/menu",
+      "pageTextFixtureId": "dos_rios_panaderia/menu",
+      "pageTextFilePath": "dos_rios_panaderia/menu.md",
+      "companyId": "dos_rios_panaderia"
+    },
+    {
+      "pageUrl": "https://dos-rios-panaderia.example/about",
+      "pageTextFixtureId": "dos_rios_panaderia/about",
+      "pageTextFilePath": "dos_rios_panaderia/about.md",
+      "companyId": "dos_rios_panaderia"
+    },
+    {
+      "pageUrl": "https://chicago-delivery-directory.example/stores/dos-rios-panaderia",
+      "pageTextFixtureId": "dos_rios_panaderia/delivery_directory_listing",
+      "pageTextFilePath": "dos_rios_panaderia/delivery_directory_listing.md",
+      "companyId": "dos_rios_panaderia"
+    }
+  ]
+}

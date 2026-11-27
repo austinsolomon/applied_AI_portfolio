@@ -1,0 +1,14 @@
+{
+  "name": "research-agent-shared-fixtures",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline recordings of four fictitious Chicago bakeries, and the replay modules shared by the three research-agent builds. No dependencies, no network, no API keys.",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "scripts": {
+    "validate": "node --experimental-strip-types validation/runFixtureValidation.ts",
+    "test": "node --experimental-strip-types --test validation/validateFixtures.test.ts"
+  }
+}

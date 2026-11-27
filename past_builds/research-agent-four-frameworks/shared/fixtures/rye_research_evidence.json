@@ -1,0 +1,8 @@
+{
+  "lead_id": "apify-maps-34ca750a92da",
+  "field": "ordering_platform",
+  "value": "none",
+  "source_url": "https://rye-and-rosemary.example/order",
+  "quote": "Order ahead by calling the shop or emailing our order form. We confirm by phone. Pay when you pick up.",
+  "evidence_kind": "fictional_course_fixture"
+}

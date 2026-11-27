@@ -1,0 +1,20 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung0_one_model_call",
+  "companyId": "oak_street_bakes",
+  "conversationId": "rung0_one_model_call:oak_street_bakes",
+  "promptSummary": "Bakery: Oak Street Bakes, Chicago IL (oak-street-bakes.example). Does this bakery already take online orders? Find: how customers place an order today, how many locations it runs, and who owns or manages it. Cite the page you took each fact from.",
+  "teachingNote": "A model with no tools can only answer from what it already absorbed during training. For a small neighborhood bakery that is nothing, so the honest recorded answer is a refusal with no sources. This is the rung that shows why the other rungs exist.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "I do not have reliable information about a bakery called Oak Street Bakes in Chicago, Illinois. It is a small local business, nothing I absorbed in training tells me whether it has an online store, and I cannot cite a source for how it takes orders, how many locations it runs or who owns it. Plenty of bakeries sell online and plenty do not, so any answer I gave would be a coin flip dressed up as a fact. This question needs a tool that can read the bakery's own pages.",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "text",
+        "answerText": "I do not have reliable information about a bakery called Oak Street Bakes in Chicago, Illinois. It is a small local business, nothing I absorbed in training tells me whether it has an online store, and I cannot cite a source for how it takes orders, how many locations it runs or who owns it. Plenty of bakeries sell online and plenty do not, so any answer I gave would be a coin flip dressed up as a fact. This question needs a tool that can read the bakery's own pages."
+      }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "fixtureVersion": "2.0.0",
+  "companyId": "rye_and_rosemary_bakery",
+  "recordedSearches": [
+    {
+      "searchQueryText": "Rye & Rosemary Bakery Chicago IL online orders locations owner",
+      "searchResults": [
+        {
+          "resultUrl": "https://rye-and-rosemary.example/",
+          "resultTitle": "Rye & Rosemary Bakery — sourdough and pastry in Roscoe Village",
+          "resultSnippet": "Skip the Saturday line. Order Ahead and your bread is bagged, labeled with your name and waiting on the shelf behind the register when you walk in.",
+          "pageTextFixtureId": "rye_and_rosemary_bakery/home"
+        },
+        {
+          "resultUrl": "https://rye-and-rosemary.example/order",
+          "resultTitle": "Order Ahead — Rye & Rosemary Bakery",
+          "resultSnippet": "Order Ahead means we set your bread and pastry aside before the door opens, so it cannot sell out from under you. Here is how it works.",
+          "pageTextFixtureId": "rye_and_rosemary_bakery/order"
+        },
+        {
+          "resultUrl": "https://rye-and-rosemary.example/about",
+          "resultTitle": "About Rye & Rosemary Bakery",
+          "resultSnippet": "Rye & Rosemary Bakery is owned by Sofia Marchetti, who is also the head baker. We have one shop, at 27 Example Street, Chicago, IL 60657.",
+          "pageTextFixtureId": "rye_and_rosemary_bakery/about"
+        }
+      ]
+    },
+    {
+      "searchQueryText": "Rye & Rosemary Bakery Chicago order ahead online",
+      "searchResults": [
+        {
+          "resultUrl": "https://rye-and-rosemary.example/order",
+          "resultTitle": "Order Ahead — Rye & Rosemary Bakery",
+          "resultSnippet": "Order ahead by calling the shop or emailing our order form. We confirm by phone. Pay when you pick up. You cannot place an order on this website.",
+          "pageTextFixtureId": "rye_and_rosemary_bakery/order"
+        },
+        {
+          "resultUrl": "https://rye-and-rosemary.example/",
+          "resultTitle": "Rye & Rosemary Bakery — sourdough and pastry in Roscoe Village",
+          "resultSnippet": "If you want to be certain of a loaf, a box of croissants or a slab of focaccia for a dinner, use Order Ahead and we will hold it for you.",
+          "pageTextFixtureId": "rye_and_rosemary_bakery/home"
+        }
+      ]
+    }
+  ]
+}

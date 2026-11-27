@@ -1,0 +1,76 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung2_agent_loop",
+  "companyId": "rye_and_rosemary_bakery",
+  "conversationId": "rung2_agent_loop:rye_and_rosemary_bakery",
+  "promptSummary": "Bakery: Rye & Rosemary Bakery, Chicago IL (rye-and-rosemary.example). Does this bakery already take online orders? Find: how customers place an order today, how many locations it runs, and who owns or manages it. Cite the page you took each fact from.",
+  "teachingNote": "Four turns: search, read three pages at once, one narrow follow-up search, then stop and write. Nobody wrote that sequence down in advance - the model chose each step from what came back. This is the bakery where the choosing pays off. Rung 1 read the home page, saw an Order Ahead button and got the answer wrong. The loop read the page behind the button, found a phone number and an emailed form, and got it right.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "I do not know which pages exist yet, so I will search for the bakery first and pick the pages worth reading from the results.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "rye_and_rosemary_bakery_rung2_search_bakery",
+          "toolName": "searchTheWeb",
+          "toolArguments": {
+            "searchQueryText": "Rye & Rosemary Bakery Chicago IL online orders locations owner"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 1,
+      "assistantText": "The search returned three of the bakery's own pages: home, order and about. The home page snippet mentions an Order Ahead button, which could mean online ordering, so I must read the page behind it and not judge from the button. I will read all three, in one batch, rather than one at a time.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "rye_and_rosemary_bakery_rung2_fetch_0",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://rye-and-rosemary.example/"
+          }
+        },
+        {
+          "toolCallId": "rye_and_rosemary_bakery_rung2_fetch_1",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://rye-and-rosemary.example/order"
+          }
+        },
+        {
+          "toolCallId": "rye_and_rosemary_bakery_rung2_fetch_2",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://rye-and-rosemary.example/about"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 2,
+      "assistantText": "Location and owner are settled. The Order Ahead button turns out to lead to a phone number and an emailed form, not a checkout. A bakery can still be listed on an outside ordering service without saying so on its own site, so I will run one more search aimed only at online ordering before I write the report.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "rye_and_rosemary_bakery_rung2_search_ordering",
+          "toolName": "searchTheWeb",
+          "toolArguments": {
+            "searchQueryText": "Rye & Rosemary Bakery Chicago order ahead online"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 3,
+      "assistantText": "RESEARCH REPORT — Rye & Rosemary Bakery, Chicago IL (rye-and-rosemary.example)\n\nHOW ORDERS ARE TAKEN: By phone or by an emailed form only; the bakery does not take online orders. The home page has a prominent \"Order Ahead\" button, which looks like online ordering, but the page behind it says \"Order ahead by calling the shop or emailing our order form. We confirm by phone. Pay when you pick up.\" The same page adds \"You cannot place an order on this website. There is no shopping cart, no checkout and no card payment here, and we are not on any ordering app or delivery service.\" The order form is a block of plain text that the customer copies into an email to orders@rye-and-rosemary.example, or prints and drops at the counter. The shop reads that inbox once a day and an order only exists once somebody has phoned the customer back. Payment is at the register at pickup, with no deposits. A narrow search for online ordering returned only the bakery's own order page and home page, with no outside ordering platform.\nSource: https://rye-and-rosemary.example/order and https://rye-and-rosemary.example/\n\nLOCATIONS: One. The about page says \"We have one shop, at 27 Example Street, Chicago, IL 60657, and everything we sell is baked there,\" and \"We have no second location, no stall and no truck, and we have no plans for any of them.\" The home page and the order page give the same single address, in Roscoe Village.\nSource: https://rye-and-rosemary.example/about, https://rye-and-rosemary.example/ and https://rye-and-rosemary.example/order\n\nOWNER OR MANAGER: Sofia Marchetti, owner and head baker. The about page says \"Rye & Rosemary Bakery is owned by Sofia Marchetti, who is also the head baker,\" that she opened the shop in 2019, and that she is the person to write to about the business, at sofia@rye-and-rosemary.example.\nSource: https://rye-and-rosemary.example/about\n\nCONFIDENCE: High, but only because the order page was read. The home page alone points the other way: an Order Ahead button with no explanation. The order page settles it in plain words, the about page agrees that orders live on a clipboard and in a shared inbox, and no page or search result shows a cart, a checkout or an ordering platform.",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "text",
+        "answerText": "RESEARCH REPORT — Rye & Rosemary Bakery, Chicago IL (rye-and-rosemary.example)\n\nHOW ORDERS ARE TAKEN: By phone or by an emailed form only; the bakery does not take online orders. The home page has a prominent \"Order Ahead\" button, which looks like online ordering, but the page behind it says \"Order ahead by calling the shop or emailing our order form. We confirm by phone. Pay when you pick up.\" The same page adds \"You cannot place an order on this website. There is no shopping cart, no checkout and no card payment here, and we are not on any ordering app or delivery service.\" The order form is a block of plain text that the customer copies into an email to orders@rye-and-rosemary.example, or prints and drops at the counter. The shop reads that inbox once a day and an order only exists once somebody has phoned the customer back. Payment is at the register at pickup, with no deposits. A narrow search for online ordering returned only the bakery's own order page and home page, with no outside ordering platform.\nSource: https://rye-and-rosemary.example/order and https://rye-and-rosemary.example/\n\nLOCATIONS: One. The about page says \"We have one shop, at 27 Example Street, Chicago, IL 60657, and everything we sell is baked there,\" and \"We have no second location, no stall and no truck, and we have no plans for any of them.\" The home page and the order page give the same single address, in Roscoe Village.\nSource: https://rye-and-rosemary.example/about, https://rye-and-rosemary.example/ and https://rye-and-rosemary.example/order\n\nOWNER OR MANAGER: Sofia Marchetti, owner and head baker. The about page says \"Rye & Rosemary Bakery is owned by Sofia Marchetti, who is also the head baker,\" that she opened the shop in 2019, and that she is the person to write to about the business, at sofia@rye-and-rosemary.example.\nSource: https://rye-and-rosemary.example/about\n\nCONFIDENCE: High, but only because the order page was read. The home page alone points the other way: an Order Ahead button with no explanation. The order page settles it in plain words, the about page agrees that orders live on a clipboard and in a shared inbox, and no page or search result shows a cart, a checkout or an ordering platform."
+      }
+    }
+  ]
+}

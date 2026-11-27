@@ -1,0 +1,26 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung3_judge_verdict",
+  "companyId": "bluebird_bakery",
+  "conversationId": "rung3_judge_verdict:bluebird_bakery",
+  "promptSummary": "RUBRIC + the stored rung 2 research report. No tools. Return supportsNoOnlineOrdering, researchReason and sourceUrls.",
+  "teachingNote": "A second call with no tools, over research that is already stored. Change the rubric and you re-run only this call; the expensive research does not move.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "{\"supportsNoOnlineOrdering\":true,\"researchReason\":\"The ordering page says cake orders are taken by phone or in person only, at the bakery's single Lincoln Square shop run by its two named owners.\",\"sourceUrls\":[\"https://bluebird-bakery.example/order\"]}",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "json",
+        "answerJson": {
+          "supportsNoOnlineOrdering": true,
+          "researchReason": "The ordering page says cake orders are taken by phone or in person only, at the bakery's single Lincoln Square shop run by its two named owners.",
+          "sourceUrls": [
+            "https://bluebird-bakery.example/order"
+          ]
+        }
+      }
+    }
+  ]
+}

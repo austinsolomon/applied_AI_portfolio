@@ -1,0 +1,27 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung3_judge_verdict",
+  "companyId": "rye_and_rosemary_bakery",
+  "conversationId": "rung3_judge_verdict:rye_and_rosemary_bakery",
+  "promptSummary": "RUBRIC + the stored rung 2 research report. No tools. Return supportsNoOnlineOrdering, researchReason and sourceUrls.",
+  "teachingNote": "A second call with no tools, over research that is already stored. Change the rubric and you re-run only this call; the expensive research does not move. The verdict is true here only because the stored report quotes the page behind the Order Ahead button.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "{\"supportsNoOnlineOrdering\":true,\"researchReason\":\"The Order Ahead page only gives a phone number and an emailed order form with payment at pickup, so the single-shop bakery does not take online orders.\",\"sourceUrls\":[\"https://rye-and-rosemary.example/order\",\"https://rye-and-rosemary.example/about\"]}",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "json",
+        "answerJson": {
+          "supportsNoOnlineOrdering": true,
+          "researchReason": "The Order Ahead page only gives a phone number and an emailed order form with payment at pickup, so the single-shop bakery does not take online orders.",
+          "sourceUrls": [
+            "https://rye-and-rosemary.example/order",
+            "https://rye-and-rosemary.example/about"
+          ]
+        }
+      }
+    }
+  ]
+}

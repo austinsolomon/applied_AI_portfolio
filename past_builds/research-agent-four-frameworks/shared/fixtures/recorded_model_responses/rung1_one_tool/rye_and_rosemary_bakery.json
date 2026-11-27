@@ -1,0 +1,34 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung1_one_tool",
+  "companyId": "rye_and_rosemary_bakery",
+  "conversationId": "rung1_one_tool:rye_and_rosemary_bakery",
+  "promptSummary": "Bakery: Rye & Rosemary Bakery, Chicago IL (rye-and-rosemary.example). Does this bakery already take online orders? Find: how customers place an order today, how many locations it runs, and who owns or manages it. Cite the page you took each fact from.",
+  "teachingNote": "One tool, used once. The model asks for the home page, the build runs the tool, the text comes back, and the model answers from it. Every fact now has a URL behind it - and for this bakery the answer is still wrong. The home page has an Order Ahead button, the model stops there, and it concludes the bakery already takes online orders. The page behind the button says the opposite. One page was not enough, which is the reason rung 2 exists.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "I need the bakery's own words. I will read https://rye-and-rosemary.example/ first.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "rye_and_rosemary_bakery_rung1_fetch_home",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://rye-and-rosemary.example/"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 1,
+      "assistantText": "From the Rye & Rosemary Bakery home page (https://rye-and-rosemary.example/): Rye & Rosemary is a sourdough and pastry bakery at 27 Example Street in the Roscoe Village part of Chicago, open Tuesday to Saturday 7am to 3pm and Sunday 8am to 1pm. Locations: the home page gives one address and mentions no other shop, so it appears to be a single location, although the page never states a number. Who runs it: the page says the crew is \"Sofia at the oven, two bakers on the bench with her, and three people who take turns at the counter.\" It gives no last name and does not say who the owner is; it points to an About page I have not read. How orders are taken: the first thing on the page is an \"Order Ahead\" button, with the line \"Skip the Saturday line. Order Ahead and your bread is bagged, labeled with your name and waiting on the shelf behind the register when you walk in.\" A second Order Ahead link sits further down, and holiday pies are described as \"Order Ahead only.\" Both links go to https://rye-and-rosemary.example/order, on the bakery's own site. A button like that on a bakery's home page normally opens an online order form, so my answer is that this bakery appears to take online orders already. I have not read the page behind the button.",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "text",
+        "answerText": "From the Rye & Rosemary Bakery home page (https://rye-and-rosemary.example/): Rye & Rosemary is a sourdough and pastry bakery at 27 Example Street in the Roscoe Village part of Chicago, open Tuesday to Saturday 7am to 3pm and Sunday 8am to 1pm. Locations: the home page gives one address and mentions no other shop, so it appears to be a single location, although the page never states a number. Who runs it: the page says the crew is \"Sofia at the oven, two bakers on the bench with her, and three people who take turns at the counter.\" It gives no last name and does not say who the owner is; it points to an About page I have not read. How orders are taken: the first thing on the page is an \"Order Ahead\" button, with the line \"Skip the Saturday line. Order Ahead and your bread is bagged, labeled with your name and waiting on the shelf behind the register when you walk in.\" A second Order Ahead link sits further down, and holiday pies are described as \"Order Ahead only.\" Both links go to https://rye-and-rosemary.example/order, on the bakery's own site. A button like that on a bakery's home page normally opens an online order form, so my answer is that this bakery appears to take online orders already. I have not read the page behind the button."
+      }
+    }
+  ]
+}

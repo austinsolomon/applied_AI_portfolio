@@ -1,0 +1,19 @@
+{
+  "fixtureVersion": "2.0.0",
+  "companyId": "dos_rios_panaderia",
+  "qualificationRubricId": "bakery_ordering_evidence_v2",
+  "expectedVerdict": {
+    "supportsNoOnlineOrdering": false,
+    "researchReason": "The ordering method is unproven: the bakery's own pages never say how orders are taken, and the only outside listing is undated and inactive.",
+    "sourceUrls": [
+      "https://dos-rios-panaderia.example/",
+      "https://dos-rios-panaderia.example/menu",
+      "https://chicago-delivery-directory.example/stores/dos-rios-panaderia"
+    ]
+  },
+  "expectedResearchFactSubstrings": [
+    "not currently accepting orders",
+    "Elena Villarreal",
+    "never say how orders are taken"
+  ]
+}

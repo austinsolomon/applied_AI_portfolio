@@ -1,0 +1,18 @@
+{
+  "fixtureVersion": "2.0.0",
+  "companyId": "rye_and_rosemary_bakery",
+  "qualificationRubricId": "bakery_ordering_evidence_v2",
+  "expectedVerdict": {
+    "supportsNoOnlineOrdering": true,
+    "researchReason": "The Order Ahead page only gives a phone number and an emailed order form with payment at pickup, so the single-shop bakery does not take online orders.",
+    "sourceUrls": [
+      "https://rye-and-rosemary.example/order",
+      "https://rye-and-rosemary.example/about"
+    ]
+  },
+  "expectedResearchFactSubstrings": [
+    "emailing our order form",
+    "Pay when you pick up",
+    "Sofia Marchetti"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "//": "Type checking only. Node runs these .ts files directly by stripping the types, so there is no build step and nothing is emitted. `npm run typecheck` is how this build proves the API names it uses are the ones the installed openai package actually has.",
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["worker/**/*.ts", "tests/**/*.ts", "../shared/replay/**/*.ts"],
+  "exclude": ["illustrative"]
+}

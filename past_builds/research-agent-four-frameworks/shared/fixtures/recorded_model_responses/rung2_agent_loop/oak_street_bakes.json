@@ -1,0 +1,76 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung2_agent_loop",
+  "companyId": "oak_street_bakes",
+  "conversationId": "rung2_agent_loop:oak_street_bakes",
+  "promptSummary": "Bakery: Oak Street Bakes, Chicago IL (oak-street-bakes.example). Does this bakery already take online orders? Find: how customers place an order today, how many locations it runs, and who owns or manages it. Cite the page you took each fact from.",
+  "teachingNote": "Four turns: search, read three pages at once, one narrow follow-up search, then stop and write. Nobody wrote that sequence down in advance - the model chose each step from what came back. That choosing is the whole difference between an agent and a script.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "I do not know which pages exist yet, so I will search for the bakery first and pick the pages worth reading from the results.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "oak_street_bakes_rung2_search_bakery",
+          "toolName": "searchTheWeb",
+          "toolArguments": {
+            "searchQueryText": "Oak Street Bakes Chicago IL online orders locations owner"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 1,
+      "assistantText": "The search returned three of the bakery's own pages: home, order and about. I will read all three, in one batch, rather than one at a time.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "oak_street_bakes_rung2_fetch_0",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://oak-street-bakes.example/"
+          }
+        },
+        {
+          "toolCallId": "oak_street_bakes_rung2_fetch_1",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://oak-street-bakes.example/order"
+          }
+        },
+        {
+          "toolCallId": "oak_street_bakes_rung2_fetch_2",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://oak-street-bakes.example/about"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 2,
+      "assistantText": "Locations and the owner are settled. The order page is a store with a cart and a checkout, which looks decisive, but I want to be sure it is the bakery's live ordering page and not a leftover. I will run one more search aimed only at online ordering before I write the report.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "oak_street_bakes_rung2_search_ordering",
+          "toolName": "searchTheWeb",
+          "toolArguments": {
+            "searchQueryText": "Oak Street Bakes Chicago order online"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 3,
+      "assistantText": "RESEARCH REPORT — Oak Street Bakes, Chicago IL (oak-street-bakes.example)\n\nHOW ORDERS ARE TAKEN: Online, through a working store on the bakery's own site. The order page says \"This is how we take orders. Choose what you want, add to cart, pick a shop and a pickup time, and pay by card.\" The page shows a cart total, priced items that each carry an Add to cart button, 15-minute pickup windows at either shop and a Check out securely button, and says \"Payment is taken in full when you place the order.\" It adds that the store \"runs on the same point-of-sale system as the registers in both shops\" and that \"We do not take cake or box orders over the phone any more.\" The home page opens with an Order Online button and says \"We moved all ordering online in the spring of 2024.\" A narrow search for online ordering returned the same order page first. The bakery is not listed on any delivery app; every order is for pickup.\nSource: https://oak-street-bakes.example/order and https://oak-street-bakes.example/\n\nLOCATIONS: Two. The about page says \"We have two locations, and two is the plan,\" and lists Hyde Park at 12 Example Street, Chicago, IL 60615 (opened 2011, where the kitchen is) and South Chicago at 112 Example Street, Chicago, IL 60617 (opened 2019). The home page and the order page list the same two shops.\nSource: https://oak-street-bakes.example/about, https://oak-street-bakes.example/ and https://oak-street-bakes.example/order\n\nOWNER OR MANAGER: Dale Pruitt, owner. The about page says \"Oak Street Bakes is owned by Dale Pruitt, who opened the first shop in Hyde Park in 2011 and still owns and runs both shops today.\" It gives dale@oak-street-bakes.example as the address to write to.\nSource: https://oak-street-bakes.example/about\n\nCONFIDENCE: High. All three facts are stated directly on the bakery's own pages, the pages agree with each other, and the order page is itself the online store the question asks about.",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "text",
+        "answerText": "RESEARCH REPORT — Oak Street Bakes, Chicago IL (oak-street-bakes.example)\n\nHOW ORDERS ARE TAKEN: Online, through a working store on the bakery's own site. The order page says \"This is how we take orders. Choose what you want, add to cart, pick a shop and a pickup time, and pay by card.\" The page shows a cart total, priced items that each carry an Add to cart button, 15-minute pickup windows at either shop and a Check out securely button, and says \"Payment is taken in full when you place the order.\" It adds that the store \"runs on the same point-of-sale system as the registers in both shops\" and that \"We do not take cake or box orders over the phone any more.\" The home page opens with an Order Online button and says \"We moved all ordering online in the spring of 2024.\" A narrow search for online ordering returned the same order page first. The bakery is not listed on any delivery app; every order is for pickup.\nSource: https://oak-street-bakes.example/order and https://oak-street-bakes.example/\n\nLOCATIONS: Two. The about page says \"We have two locations, and two is the plan,\" and lists Hyde Park at 12 Example Street, Chicago, IL 60615 (opened 2011, where the kitchen is) and South Chicago at 112 Example Street, Chicago, IL 60617 (opened 2019). The home page and the order page list the same two shops.\nSource: https://oak-street-bakes.example/about, https://oak-street-bakes.example/ and https://oak-street-bakes.example/order\n\nOWNER OR MANAGER: Dale Pruitt, owner. The about page says \"Oak Street Bakes is owned by Dale Pruitt, who opened the first shop in Hyde Park in 2011 and still owns and runs both shops today.\" It gives dale@oak-street-bakes.example as the address to write to.\nSource: https://oak-street-bakes.example/about\n\nCONFIDENCE: High. All three facts are stated directly on the bakery's own pages, the pages agree with each other, and the order page is itself the online store the question asks about."
+      }
+    }
+  ]
+}

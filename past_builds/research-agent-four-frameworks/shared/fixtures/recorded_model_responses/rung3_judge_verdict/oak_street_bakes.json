@@ -1,0 +1,26 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung3_judge_verdict",
+  "companyId": "oak_street_bakes",
+  "conversationId": "rung3_judge_verdict:oak_street_bakes",
+  "promptSummary": "RUBRIC + the stored rung 2 research report. No tools. Return supportsNoOnlineOrdering, researchReason and sourceUrls.",
+  "teachingNote": "A second call with no tools, over research that is already stored. Change the rubric and you re-run only this call; the expensive research does not move.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "{\"supportsNoOnlineOrdering\":false,\"researchReason\":\"The order page is a working online store with a cart, pickup times and card payment, so the bakery already takes online orders.\",\"sourceUrls\":[\"https://oak-street-bakes.example/order\"]}",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "json",
+        "answerJson": {
+          "supportsNoOnlineOrdering": false,
+          "researchReason": "The order page is a working online store with a cart, pickup times and card payment, so the bakery already takes online orders.",
+          "sourceUrls": [
+            "https://oak-street-bakes.example/order"
+          ]
+        }
+      }
+    }
+  ]
+}

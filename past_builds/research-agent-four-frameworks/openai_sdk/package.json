@@ -1,0 +1,27 @@
+{
+  "name": "research-agent-on-openai-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The research agent built on the official OpenAI TypeScript SDK. Rungs 0-3 run offline against the shared recordings; rungs 4-10 are illustrative files.",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "scripts": {
+    "rung0": "node --experimental-strip-types worker/rung0_oneModelCall.ts",
+    "rung1": "node --experimental-strip-types worker/rung1_oneTool.ts",
+    "rung2": "node --experimental-strip-types worker/rung2_agentLoop.ts",
+    "rung3": "node --experimental-strip-types worker/rung3_judgeVerdict.ts",
+    "rungs": "npm run rung0 && npm run rung1 && npm run rung2 && npm run rung3",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "openai": "7.20.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

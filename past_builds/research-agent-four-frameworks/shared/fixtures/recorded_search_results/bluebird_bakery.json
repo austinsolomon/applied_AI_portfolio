@@ -1,0 +1,46 @@
+{
+  "fixtureVersion": "2.0.0",
+  "companyId": "bluebird_bakery",
+  "recordedSearches": [
+    {
+      "searchQueryText": "Bluebird Bakery Chicago IL online orders locations owner",
+      "searchResults": [
+        {
+          "resultUrl": "https://bluebird-bakery.example/",
+          "resultTitle": "Bluebird Bakery — bread, pastry and coffee in Lincoln Square",
+          "resultSnippet": "One small bakery and coffee counter in north Chicago, open Wednesday to Sunday until the case is empty. There is one Bluebird. Bluebird is Hannah and Pete Kowalski.",
+          "pageTextFixtureId": "bluebird_bakery/home"
+        },
+        {
+          "resultUrl": "https://bluebird-bakery.example/order",
+          "resultTitle": "Cakes and orders — Bluebird Bakery",
+          "resultSnippet": "Whole cakes with seven days' notice and up to ten loaves with three days' notice. To order a cake, call us or stop by the counter.",
+          "pageTextFixtureId": "bluebird_bakery/order"
+        },
+        {
+          "resultUrl": "https://bluebird-bakery.example/about",
+          "resultTitle": "About Bluebird Bakery",
+          "resultSnippet": "Owned and run by two people, Hannah Kowalski and Pete Kowalski. We have had one location since 2016, and we intend to keep it that way.",
+          "pageTextFixtureId": "bluebird_bakery/about"
+        }
+      ]
+    },
+    {
+      "searchQueryText": "Bluebird Bakery Chicago order online",
+      "searchResults": [
+        {
+          "resultUrl": "https://bluebird-bakery.example/order",
+          "resultTitle": "Cakes and orders — Bluebird Bakery",
+          "resultSnippet": "We do not take orders online. There is no order form on this site, no shopping cart, no app, and we are not listed on any delivery service.",
+          "pageTextFixtureId": "bluebird_bakery/order"
+        },
+        {
+          "resultUrl": "https://bluebird-bakery.example/",
+          "resultTitle": "Bluebird Bakery — bread, pastry and coffee in Lincoln Square",
+          "resultSnippet": "Whole cakes and big bread orders: it starts with a conversation with one of us, not with a form. Phone 312-555-0106 during shop hours.",
+          "pageTextFixtureId": "bluebird_bakery/home"
+        }
+      ]
+    }
+  ]
+}

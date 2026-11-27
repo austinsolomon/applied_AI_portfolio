@@ -1,0 +1,11 @@
+{
+  "fixtureVersion": "2.0.0",
+  "qualificationRubricId": "bakery_ordering_evidence_v2",
+  "qualificationRubricText": "RESEARCH QUESTION — does the evidence support no online ordering today?\n\nSet supportsNoOnlineOrdering true only when the bakery’s own pages explicitly show phone, in-person, email or paper orders without a working online checkout. A cart, checkout or online-ordering platform means false. Missing, ambiguous or stale evidence also means false: explain that the answer remains unproven.\n\nThis is a research finding, not a customer-fit decision. Do not change the sales pipeline’s rules. Keep sourceUrls and a concise researchReason. A person inspects the evidence, then Repo 1 checks the original four rules: 20–1,000 reviews; 1–3 locations; Manager through Owner; ordering_platform none.",
+  "verdictMeaning": "true supports one field: no online ordering. false means contradicted or unproven, as stated in researchReason. Neither value qualifies a lead or continues the pipeline.",
+  "verdictFieldNames": [
+    "supportsNoOnlineOrdering",
+    "researchReason",
+    "sourceUrls"
+  ]
+}

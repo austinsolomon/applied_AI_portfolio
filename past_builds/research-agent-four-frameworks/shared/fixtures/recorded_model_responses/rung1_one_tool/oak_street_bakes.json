@@ -1,0 +1,34 @@
+{
+  "fixtureVersion": "2.0.0",
+  "rungId": "rung1_one_tool",
+  "companyId": "oak_street_bakes",
+  "conversationId": "rung1_one_tool:oak_street_bakes",
+  "promptSummary": "Bakery: Oak Street Bakes, Chicago IL (oak-street-bakes.example). Does this bakery already take online orders? Find: how customers place an order today, how many locations it runs, and who owns or manages it. Cite the page you took each fact from.",
+  "teachingNote": "One tool, used once. The model asks for the home page, the build runs the tool, the text comes back, and the model answers from it. Every fact now has a URL behind it. For this bakery the home page already gives the ordering answer away, and the model still says plainly what one page could not tell it: the owner's name.",
+  "modelTurns": [
+    {
+      "turnIndex": 0,
+      "assistantText": "I need the bakery's own words. I will read https://oak-street-bakes.example/ first.",
+      "toolCallsRequested": [
+        {
+          "toolCallId": "oak_street_bakes_rung1_fetch_home",
+          "toolName": "fetchPageText",
+          "toolArguments": {
+            "pageUrl": "https://oak-street-bakes.example/"
+          }
+        }
+      ],
+      "stopReason": "tool_calls"
+    },
+    {
+      "turnIndex": 1,
+      "assistantText": "From the Oak Street Bakes home page (https://oak-street-bakes.example/): How orders are taken: online. The first thing on the page is an \"Order Online\" button that links to https://oak-street-bakes.example/order, described as \"order and pay ahead, then skip the line at either shop.\" The page says regulars \"open the online store, fill a cart, choose a shop and a pickup time, and pay by card,\" that the store is open around the clock, and that \"We moved all ordering online in the spring of 2024.\" Cakes and catering boxes are ordered through the same store. Locations: two. The page lists a Hyde Park shop at 12 Example Street, Chicago, IL 60615 and a South Chicago shop at 112 Example Street, Chicago, IL 60617, with one phone number, 312-555-0103, for both. Who owns or manages it: the home page does not name anyone. It links to an About page (https://oak-street-bakes.example/about) that I have not read. I also have not opened the store itself, so I am reporting what the home page says about it, not a checkout I have seen.",
+      "toolCallsRequested": [],
+      "stopReason": "final_answer",
+      "finalAnswer": {
+        "answerKind": "text",
+        "answerText": "From the Oak Street Bakes home page (https://oak-street-bakes.example/): How orders are taken: online. The first thing on the page is an \"Order Online\" button that links to https://oak-street-bakes.example/order, described as \"order and pay ahead, then skip the line at either shop.\" The page says regulars \"open the online store, fill a cart, choose a shop and a pickup time, and pay by card,\" that the store is open around the clock, and that \"We moved all ordering online in the spring of 2024.\" Cakes and catering boxes are ordered through the same store. Locations: two. The page lists a Hyde Park shop at 12 Example Street, Chicago, IL 60615 and a South Chicago shop at 112 Example Street, Chicago, IL 60617, with one phone number, 312-555-0103, for both. Who owns or manages it: the home page does not name anyone. It links to an About page (https://oak-street-bakes.example/about) that I have not read. I also have not opened the store itself, so I am reporting what the home page says about it, not a checkout I have seen."
+      }
+    }
+  ]
+}

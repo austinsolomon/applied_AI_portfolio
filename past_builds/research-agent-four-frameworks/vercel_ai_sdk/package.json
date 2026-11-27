@@ -1,0 +1,23 @@
+{
+  "name": "research-agent-on-vercel-ai-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The research agent built on the Vercel AI SDK. Rungs 0-3 run offline against the shared recordings; rungs 4-10 are illustrative.",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "4.0.17",
+    "ai": "7.0.107",
+    "zod": "4.6.5"
+  },
+  "scripts": {
+    "rung0": "node --experimental-strip-types rungs/rung0_one_model_call.ts",
+    "rung1": "node --experimental-strip-types rungs/rung1_one_tool.ts",
+    "rung2": "node --experimental-strip-types rungs/rung2_agent_loop.ts",
+    "rung3": "node --experimental-strip-types rungs/rung3_judge_verdict.ts",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "rungs": "npm run rung0 && npm run rung1 && npm run rung2 && npm run rung3"
+  }
+}

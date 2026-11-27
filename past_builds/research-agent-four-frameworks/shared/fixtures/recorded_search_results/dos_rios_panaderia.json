@@ -1,0 +1,46 @@
+{
+  "fixtureVersion": "2.0.0",
+  "companyId": "dos_rios_panaderia",
+  "recordedSearches": [
+    {
+      "searchQueryText": "Dos Rios Panaderia Chicago IL online orders locations owner",
+      "searchResults": [
+        {
+          "resultUrl": "https://dos-rios-panaderia.example/",
+          "resultTitle": "Dos Rios Panaderia — pan dulce baked every morning in South Shore",
+          "resultSnippet": "A family panaderia in southeast Chicago. Open Monday to Friday 6am to 7pm, Saturday 6am to 8pm, Sunday 6am to 3pm. 32 Example Street, Chicago, IL 60649. Phone: 312-555-0123.",
+          "pageTextFixtureId": "dos_rios_panaderia/home"
+        },
+        {
+          "resultUrl": "https://dos-rios-panaderia.example/menu",
+          "resultTitle": "Menu — Dos Rios Panaderia",
+          "resultSnippet": "Concha $1.75. Bolillos, bag of 10 $5.00. Tres leches, slice $4.50. Whole cakes: tres leches, quarter sheet, serves 20 to 25, $58. Party trays: mini pan dulce, 24 pieces, $26.",
+          "pageTextFixtureId": "dos_rios_panaderia/menu"
+        },
+        {
+          "resultUrl": "https://dos-rios-panaderia.example/about",
+          "resultTitle": "About Dos Rios Panaderia",
+          "resultSnippet": "Dos Rios Panaderia is owned by Elena Villarreal. She opened it in 2009. We have one shop. It is the same one we opened in 2009, in South Shore.",
+          "pageTextFixtureId": "dos_rios_panaderia/about"
+        }
+      ]
+    },
+    {
+      "searchQueryText": "Dos Rios Panaderia Chicago delivery order online",
+      "searchResults": [
+        {
+          "resultUrl": "https://chicago-delivery-directory.example/stores/dos-rios-panaderia",
+          "resultTitle": "Dos Rios Panaderia delivery in Chicago — Chicago Delivery Directory",
+          "resultSnippet": "Get Dos Rios Panaderia delivered. Bakery · Mexican · Desserts. 32 Example Street, Chicago, IL 60649. Concha, bolillos, tres leches. View the menu and order delivery.",
+          "pageTextFixtureId": "dos_rios_panaderia/delivery_directory_listing"
+        },
+        {
+          "resultUrl": "https://dos-rios-panaderia.example/menu",
+          "resultTitle": "Menu — Dos Rios Panaderia",
+          "resultSnippet": "Everything on this page is baked in our kitchen at 32 Example Street. Whole cakes, party trays, pan dulce, bolillos and teleras, with prices.",
+          "pageTextFixtureId": "dos_rios_panaderia/menu"
+        }
+      ]
+    }
+  ]
+}
