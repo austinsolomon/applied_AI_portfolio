@@ -1,0 +1,30 @@
+# Slack app manifest for the GTM agent.
+#
+# Create the app at https://api.slack.com/apps → "Create New App" → "From an app manifest",
+# pick your workspace, and paste this file.
+#
+# Event subscriptions are added after the first deploy (deploy/README.md, step 6), because Slack
+# checks the request URL as soon as it is saved, and the Cloud Run URL doesn't exist yet.
+display_information:
+  name: GTM Agent
+  description: The applied AI portfolio's GTM agent (Claude Agent SDK on Cloud Run)
+features:
+  bot_user:
+    display_name: gtm-agent
+    always_online: true
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - chat:write
+      - im:history
+      - im:read
+      - im:write
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
