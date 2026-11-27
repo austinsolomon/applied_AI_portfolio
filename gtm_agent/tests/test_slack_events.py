@@ -70,7 +70,7 @@ def test_mention_runs_the_agent_and_replies_in_the_thread(client):
     assert response.status_code == 200
     assert client.calls["prompts"] == ["what does this project do?"]
     assert client.calls["posts"] == [
-        ("C1", "111.222", "Working on it…"),
+        ("C1", "111.222", "I'm on it...running"),
         ("C1", "111.222", "It is a coding agent harness."),
     ]
 

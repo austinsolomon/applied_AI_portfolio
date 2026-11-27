@@ -96,7 +96,7 @@ a Google 404 page, which is why the check is `/health`.
 - DM the app: "What does this project do?"
 - Or invite it to a channel (`/invite @gtm-agent`) and mention it.
 
-It replies "Working on it…" in the thread, then the answer.
+It replies "I'm on it...running" in the thread, then the answer.
 
 ## Troubleshooting
 
