@@ -58,7 +58,9 @@ deploy() {
   # --no-cpu-throttling: keep CPU after the 200 response, so the agent run started in the
   #   background isn't paused. Billed only while an instance is up; min instances is 0.
   # --timeout 900: Slack gets its 200 at once; this only bounds the request itself.
+  # --quiet: never stop to ask a question, so the same command works in GitHub Actions.
   gcloud run deploy "$SERVICE" \
+    --quiet \
     --source "$SOURCE_DIR" \
     --region "$REGION" \
     --service-account "$RUNTIME_SA" \
@@ -76,7 +78,7 @@ deploy() {
   url=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')
   echo
   echo "Service URL:        $url"
-  echo "Health check:       curl $url/healthz"
+  echo "Health check:       curl $url/health"
   echo "Slack request URL:  $url/slack/events"
 }
 
