@@ -70,7 +70,7 @@ gcloud iam workload-identity-pools providers describe "$PROVIDER" \
   --workload-identity-pool="$POOL" --location=global >/dev/null 2>&1 ||
   gcloud iam workload-identity-pools providers create-oidc "$PROVIDER" \
     --workload-identity-pool="$POOL" --location=global \
-    --display-name="GitHub: ${GITHUB_REPO}" \
+    --display-name="GitHub Actions main branch" \
     --issuer-uri="https://token.actions.githubusercontent.com" \
     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
     --attribute-condition="assertion.repository=='${GITHUB_REPO}' && assertion.ref=='refs/heads/main'"
