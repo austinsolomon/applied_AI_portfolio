@@ -6,6 +6,8 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
+        # Imported unchanged from its original repository (no final newline in one test file).
+        exclude: ^past_builds/semi-automated-leadgen-skills/
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict

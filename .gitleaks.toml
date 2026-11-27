@@ -1,0 +1,9 @@
+# Secret-scan config, read by the gitleaks pre-commit hook and the repo-checks workflow.
+# Uses gitleaks' default rules, plus allowlist entries for known false positives.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "semi-automated-leadgen-skills: versioned handoff schema keys (e.g. claude3d.qualified.v1), not credentials"
+paths = ['''^past_builds/semi-automated-leadgen-skills/''']
+regexes = ['''claude3d\.[a-z]+\.v1''']
