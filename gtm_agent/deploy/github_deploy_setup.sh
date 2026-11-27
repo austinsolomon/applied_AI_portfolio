@@ -32,21 +32,32 @@ echo "Creating the deployer service account…"
 gcloud iam service-accounts describe "$DEPLOYER" >/dev/null 2>&1 ||
   gcloud iam service-accounts create "$DEPLOYER_NAME" --display-name="GTM agent deployer (GitHub Actions)"
 
+# A new service account takes a few seconds to become visible to IAM; binding a role to it
+# straight away can fail with "does not exist". Retry each binding for up to a minute.
+retry() {
+  for attempt in 1 2 3 4 5 6; do
+    if "$@" >/dev/null 2>&1; then return 0; fi
+    echo "  waiting for the new service account to be ready (attempt $attempt)…"
+    sleep 10
+  done
+  "$@" >/dev/null   # last try, showing the error if it still fails
+}
+
 # What `gcloud run deploy --source` needs: upload the source, start a Cloud Build, push the image
 # to Artifact Registry, update the Cloud Run service (including allowing Slack to call it), and
 # read the build's status.
 for role in roles/run.admin roles/cloudbuild.builds.editor roles/artifactregistry.writer \
             roles/storage.admin roles/serviceusage.serviceUsageConsumer roles/logging.viewer; do
-  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="serviceAccount:${DEPLOYER}" --role="$role" --condition=None >/dev/null
+  retry gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${DEPLOYER}" --role="$role" --condition=None
   echo "  granted $role"
 done
 
 # The deployer must be allowed to act as the runtime account (the service runs as it) and as the
 # build account (Cloud Build runs as it).
 for sa in "$RUNTIME_SA" "$BUILD_SA"; do
-  gcloud iam service-accounts add-iam-policy-binding "$sa" \
-    --member="serviceAccount:${DEPLOYER}" --role="roles/iam.serviceAccountUser" >/dev/null
+  retry gcloud iam service-accounts add-iam-policy-binding "$sa" \
+    --member="serviceAccount:${DEPLOYER}" --role="roles/iam.serviceAccountUser"
   echo "  deployer can act as $sa"
 done
 
