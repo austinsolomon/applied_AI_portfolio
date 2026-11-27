@@ -1,0 +1,11 @@
+{
+  "schema": "claude3d.real-run-capture.v1",
+  "stage": "source",
+  "live": false,
+  "mode": "rehearsal",
+  "actor": "compass/crawler-google-places",
+  "query": "bakeries",
+  "location": "Chicago, Illinois",
+  "limit": 25,
+  "note": "Rehearsal metadata. With no recordsPath, the records are the bundled fixture fixtures/apify_bakeries_25.json. For a sanitized live capture, add recordsPath with the capture file's path relative to the repository root. Never include APIFY_TOKEN."
+}

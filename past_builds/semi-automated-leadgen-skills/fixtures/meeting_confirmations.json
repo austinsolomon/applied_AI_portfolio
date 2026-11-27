@@ -1,0 +1,16 @@
+[
+  {
+    "id": "meeting-sunrise-001",
+    "lead_id": "apify-maps-72a168d9e318",
+    "bakery_name": "Sunrise Bakery",
+    "owner_name": "Rosa Delgado",
+    "starts_at": "2026-09-24T10:00:00-05:00",
+    "ends_at": "2026-09-24T10:30:00-05:00",
+    "timezone": "America/Chicago",
+    "status": "confirmed",
+    "label": "Opportunity to pitch",
+    "confirmation": "Thursday at 10 works. Please send the invitation for a 30-minute online-ordering demo.",
+    "evidence": "Authored scheduling confirmation, following Sunrise\u2019s reply. Fictional course rehearsal.",
+    "simulated": true
+  }
+]

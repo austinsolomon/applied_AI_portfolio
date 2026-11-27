@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.coverage
+# Real keys never get committed; .env.example is the file that ships.
+.env
+.mcp.json
+# Handoff files are run artifacts, not source. They can also contain real
+# people's contact details after a live run — keep them out of git.
+out/
