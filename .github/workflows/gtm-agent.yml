@@ -8,7 +8,7 @@ name: GTM agent
 # service account. Google only accepts tokens from this repository's main branch, and no Google
 # key is stored in GitHub. The app's own keys (Anthropic, Slack) stay in Secret Manager.
 #
-# One-time setup: gtm_agent/deploy/github_deploy_setup.sh, then the repository variables it prints.
+# One-time setup: gtm_agent/deploy/one_time_setup/ (see its README).
 on:
   pull_request:
     paths:
@@ -45,12 +45,8 @@ jobs:
           uv venv --python 3.12 .venv
           uv pip install --python .venv -r gtm_agent/requirements-dev.txt
 
-      - name: Slack route tests
+      - name: Tests (gtm_agent/tests)
         run: .venv/bin/python -m pytest -q gtm_agent/tests
-
-      - name: Prompt tests
-        working-directory: gtm_agent
-        run: ../.venv/bin/python test_system.py
 
   deploy:
     name: deploy to Cloud Run
@@ -84,7 +80,7 @@ jobs:
         env:
           PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           ALLOWED_SLACK_USER_IDS: ${{ vars.ALLOWED_SLACK_USER_IDS }}
-        run: gtm_agent/deploy/cloud_run.sh deploy
+        run: gtm_agent/deploy/deploy.sh
 
       - name: Health check
         env:

@@ -1,6 +1,6 @@
 """Smallest useful prompt tests: optional sections appear only when set.
 
-Run: .venv/bin/python test_system.py   (or pytest, if installed)
+Run: python -m pytest gtm_agent/tests   (from the repository root)
 """
 
 from dataclasses import replace
@@ -54,10 +54,3 @@ def test_skills_only_when_present():
 
 def test_pure():
     assert build_system_prompt(BASE) == build_system_prompt(BASE)
-
-
-if __name__ == "__main__":
-    for name, fn in list(globals().items()):
-        if name.startswith("test_"):
-            fn()
-            print("ok ", name)

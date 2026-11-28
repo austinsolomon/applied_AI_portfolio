@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # One-time setup so GitHub Actions can deploy the GTM agent to Cloud Run, with no stored keys.
 #
-# Run once from the repository root, after `cloud_run.sh setup` and one manual deploy:
-#   PROJECT_ID=applied-ai-portfolio gtm_agent/deploy/github_deploy_setup.sh
+# Run once from the repository root, after gcp_project_setup.sh and one manual deploy.sh:
+#   PROJECT_ID=applied-ai-portfolio gtm_agent/deploy/one_time_setup/github_actions_setup.sh
 #
 # What it creates:
 #   - a deployer service account (the identity GitHub Actions acts as), allowed to build and
