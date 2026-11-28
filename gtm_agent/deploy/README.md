@@ -14,7 +14,7 @@ PR merged → tests → sign in to Google (Workload Identity Federation) → dep
 | File | Runs | What it does |
 |---|---|---|
 | `deploy.sh` | On every merge (by GitHub Actions), or by hand | Builds the container with Cloud Build and deploys it to the Cloud Run service `gtm-agent` |
-| `one_time_setup/` | Once per project | GCP project setup, GitHub deploy trust, Slack app manifest, and the step-by-step guide ([README](one_time_setup/README.md)) |
+| `../one_time_setup/` | Once per project (not part of deploys) | GCP project setup, GitHub deploy trust, Slack app manifest, and the step-by-step guide ([README](../one_time_setup/README.md)) |
 
 ## Deploy by hand (rarely needed)
 

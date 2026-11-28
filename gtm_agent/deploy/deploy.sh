@@ -5,7 +5,7 @@
 # (.github/workflows/gtm-agent.yml). To deploy by hand from the repository root:
 #   PROJECT_ID=applied-ai-portfolio gtm_agent/deploy/deploy.sh
 #
-# Needs the one-time setup in deploy/one_time_setup/ to have been done once.
+# Needs the one-time setup in gtm_agent/one_time_setup/ to have been done once.
 set -euo pipefail
 
 PROJECT_ID=${PROJECT_ID:?set PROJECT_ID, e.g. applied-ai-portfolio}

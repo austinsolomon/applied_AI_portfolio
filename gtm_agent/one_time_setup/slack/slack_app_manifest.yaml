@@ -3,7 +3,7 @@
 # Create the app at https://api.slack.com/apps → "Create New App" → "From an app manifest",
 # pick your workspace, and paste this file.
 #
-# Event subscriptions are added after the first deploy (one_time_setup/README.md, step 6), because Slack
+# Event subscriptions are added after the first deploy (gtm_agent/one_time_setup/README.md, step 6), because Slack
 # checks the request URL as soon as it is saved, and the Cloud Run URL doesn't exist yet.
 display_information:
   name: GTM Agent

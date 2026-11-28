@@ -1,7 +1,13 @@
 # One-time setup: GCP, Slack, and GitHub deploys
 
 Done once per project. Day-to-day deploys happen automatically on merge; see
-[`../README.md`](../README.md).
+[`../deploy/README.md`](../deploy/README.md).
+
+| Folder | What it set up | File |
+|---|---|---|
+| `gcp/` | Google Cloud project: APIs, the app's runtime identity, the secrets | `gcp_project_setup.sh` |
+| `slack/` | The GTM Agent Slack app | `slack_app_manifest.yaml` |
+| `github/` | GitHub Actions deploys with no stored key (deployer identity and trust link) | `github_actions_setup.sh` |
 
 Goal: @mention the agent in Slack (or DM it), and the harness running on Cloud Run answers in
 the thread. The harness is unchanged apart from a Slack route; it still answers questions about
@@ -29,7 +35,7 @@ In the [Cloud Console](https://console.cloud.google.com/projectcreate):
 ## 2. Create the Slack app (once)
 
 1. https://api.slack.com/apps → **Create New App** → **From an app manifest** → your workspace →
-   paste [`slack_app_manifest.yaml`](slack_app_manifest.yaml) → Create.
+   paste [`slack/slack_app_manifest.yaml`](slack/slack_app_manifest.yaml) → Create.
 2. **Install App** → Install to workspace.
 3. Keep two values for step 4 (don't paste them anywhere else):
    - **Basic Information → Signing Secret**
@@ -46,7 +52,7 @@ gcloud auth login
 From the repository root:
 
 ```bash
-PROJECT_ID=applied-ai-portfolio gtm_agent/deploy/one_time_setup/gcp_project_setup.sh
+PROJECT_ID=applied-ai-portfolio gtm_agent/one_time_setup/gcp/gcp_project_setup.sh
 ```
 
 It enables Cloud Run, Cloud Build, Artifact Registry, and Secret Manager; creates the
@@ -108,7 +114,7 @@ It replies "I'm on it...running" in the thread, then the answer.
 | Slack says the URL didn't verify | `curl <url>/health`; the signing secret in Secret Manager matches the app's; logs: `gcloud run services logs read gtm-agent --region us-central1` |
 | No reply in Slack | Event subscriptions saved with both events; the app is in the channel; logs show `Slack post failed: …` (e.g. `not_in_channel`, `invalid_auth`) |
 | "not on this agent's allow list" | Your member ID is in `ALLOWED_SLACK_USER_IDS` |
-| Build fails with a permissions error | Rerun `gcp_project_setup.sh` (it grants Cloud Build's service account the Cloud Run builder role) |
+| Build fails with a permissions error | Rerun `gcp/gcp_project_setup.sh` (it grants Cloud Build's service account the Cloud Run builder role) |
 
 ## Security notes
 
@@ -134,7 +140,7 @@ PR merged  → tests again → sign in to Google (Workload Identity Federation) 
 1. From the repository root (with `gcloud auth login` done):
 
    ```bash
-   PROJECT_ID=applied-ai-portfolio gtm_agent/deploy/one_time_setup/github_actions_setup.sh
+   PROJECT_ID=applied-ai-portfolio gtm_agent/one_time_setup/github/github_actions_setup.sh
    ```
 
    It creates the `gtm-agent-deployer` service account and a Workload Identity pool that trusts

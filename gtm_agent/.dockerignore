@@ -6,5 +6,6 @@ __pycache__/
 .env.*
 tests/
 deploy/
-design_specs/
+future_work/
+one_time_setup/
 requirements-dev.txt
