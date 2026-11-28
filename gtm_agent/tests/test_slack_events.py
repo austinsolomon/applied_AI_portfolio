@@ -7,16 +7,13 @@ record what they were asked to do.
 import hashlib
 import hmac
 import json
-import sys
 import time
-from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import slack_events  # noqa: E402
+import slack_events
 
 SECRET = "test-signing-secret"
 
