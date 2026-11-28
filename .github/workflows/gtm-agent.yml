@@ -8,7 +8,7 @@ name: GTM agent
 # service account. Google only accepts tokens from this repository's main branch, and no Google
 # key is stored in GitHub. The app's own keys (Anthropic, Slack) stay in Secret Manager.
 #
-# One-time setup: gtm_agent/deploy/one_time_setup/ (see its README).
+# One-time setup: gtm_agent/one_time_setup/ (see its README).
 on:
   pull_request:
     paths:

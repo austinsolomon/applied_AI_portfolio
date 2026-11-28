@@ -281,7 +281,7 @@ gtm_agent/
   app/            main.py, slack.py, slack_client.py, dispatch.py, brain.py, tasks.py, db.py
   tools/          coding.py (moved), gtm.py (new)
   migrations/     numbered SQL
-  design_specs/   this spec
+  future_work/    this spec
   tests/
   Dockerfile, pyproject.toml
 gtm_agent_graphs/
@@ -323,7 +323,7 @@ in-process locally and uses Cloud Tasks from phase 10.
 - [ ] 1.4 Create the Slack app from a manifest I write (scopes, events, interactivity); install it to your workspace **(you)**
 - [ ] 1.5 Create a Salesforce Developer Edition org; add the Lead external ID field (`GTM_Lead_Key__c`) and lead fields from 4.5; create a Connected App for client-credentials login **(you)**
 - [ ] 1.6 Get API keys: Anthropic, Apify, Exa, BlitzAPI, LangSmith **(you)**
-- [ ] 1.7 Write a setup checklist doc (`design_specs/setup_accounts.md`) with every command and click path
+- [ ] 1.7 Write a setup checklist doc (`one_time_setup/README.md`) with every command and click path
 
 ### Item 2. Project scaffolding and local development
 - [ ] 2.1 Add `gtm_agent/pyproject.toml` (uv, pinned Python), keep `requirements.txt` only until it is replaced

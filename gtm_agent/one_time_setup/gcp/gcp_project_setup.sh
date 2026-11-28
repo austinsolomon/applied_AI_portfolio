@@ -2,7 +2,7 @@
 # One-time setup of the Google Cloud project for the GTM agent.
 #
 # Run once from the repository root, after `gcloud auth login`:
-#   PROJECT_ID=applied-ai-portfolio gtm_agent/deploy/one_time_setup/gcp_project_setup.sh
+#   PROJECT_ID=applied-ai-portfolio gtm_agent/one_time_setup/gcp/gcp_project_setup.sh
 #
 # It enables the APIs, creates the runtime service account the app runs as, and makes sure the
 # app's three secrets exist in Secret Manager. Secret values are read from your keyboard (nothing
@@ -44,4 +44,4 @@ for name in "${SECRETS[@]}"; do
   gcloud secrets add-iam-policy-binding "$name" \
     --member="serviceAccount:${RUNTIME_SA}" --role="roles/secretmanager.secretAccessor" >/dev/null
 done
-echo "Project setup done. Next: run gtm_agent/deploy/deploy.sh once, then github_actions_setup.sh."
+echo "Project setup done. Next: run gtm_agent/deploy/deploy.sh once, then gtm_agent/one_time_setup/github/github_actions_setup.sh."
